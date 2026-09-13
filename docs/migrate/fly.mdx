@@ -1,0 +1,92 @@
+---
+title: "Migrate from Fly.io"
+description: "Move a Fly app and its Postgres onto InstaCloud."
+---
+
+A Fly app becomes an InstaCloud **compute** service, Fly Postgres becomes a **postgres** service, and `fly secrets` become project secrets bound into the app. Fly is the easiest platform to leave, because a Fly app already has the one thing the others lack: a `Dockerfile`.
+
+InstaCloud offers:
+
+- **Postgres with real branching.** A branch opens as a copy-on-write clone holding all of the parent's data, at its own connection string, so a feature or an agent task can run migrations nowhere near production.
+- **Built for coding agents.** A CLI and an MCP server your agent drives directly, with an approval gate on the actions that matter.
+- **Flexible deployments.** A local directory, a GitHub repo, or an image from any registry.
+- **Managed services alongside.** Postgres, Redis, MySQL, MongoDB, and object storage in one project.
+- **Real support.** An active community on [Discord](https://discord.com/invite/MPxwj5xVvW).
+
+## Migration steps
+
+Your `fly.toml` already holds most of what the migration needs. A typical one:
+
+```toml
+app = "mysite"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  LOG_LEVEL = "info"
+
+[http_service]
+  internal_port = 8080
+```
+
+| On Fly | On InstaCloud |
+|---|---|
+| The app | a **compute** service |
+| Fly Postgres | a **postgres** service |
+| `[env]` and `fly secrets` | project secrets |
+| `internal_port` | the `--port` your service is created with |
+| `DATABASE_URL` attached by `fly pg attach` | a binding, not a copied string |
+
+### 1. Set up your coding agent
+
+```bash
+npx -y insta@latest setup agent
+```
+
+That installs the `insta` CLI, the `insta` skill, and the MCP server for every coding agent on this machine. The skill is what knows how a Fly app maps onto services here.
+
+### 2. Create a project
+
+```bash
+insta project create mysite
+```
+
+Or click **Create Project** in the [console](https://console.instacloud.com). A new project starts empty.
+
+{/* screenshot: console, Create Project */}
+
+### 3. Ask your agent to migrate
+
+One thing first, because your agent cannot do it. **Fly does not let anyone read a secret back**: `fly secrets list` prints names and digests only. Either copy each value from wherever you set it, or read them off the running machine before you stop it:
+
+```bash
+fly ssh console -a mysite -C 'printenv SECRET_KEY' | insta secrets set SECRET_KEY
+```
+
+The pipe keeps the value out of your terminal. Repeat per secret, then hand over:
+
+```text title="Prompt" wrap
+Migrate my Fly app mysite and its Fly Postgres to InstaCloud. The code is in this directory, with its Dockerfile and fly.toml. Follow the insta skill's migration runbook, and stop before moving DNS.
+```
+
+Because the Dockerfile is already there, your agent deploys straight from the directory with `insta deploy .`, no GitHub connection needed. It will ask you to approve anything that touches production.
+
+{/* screenshot: console, project with a compute service and a postgres service deployed */}
+
+### 4. Move the domain
+
+```text title="Prompt" wrap
+Attach <your-domain> to the compute service and give me the DNS records to publish.
+```
+
+Publish the records at your DNS provider, then ask your agent to check the domain. Keep the Fly app running, and do not destroy it, until the old records have aged out of resolver caches.
+
+## Cron jobs
+
+Cron jobs are not supported for now.
+
+And that is it. Every InstaCloud action your agent took is a command you can run yourself, in the [CLI reference](/reference/cli/overview); the inspection on the other side used `flyctl`.
+
+Once you are settled in, [database branching](/postgres/branching) is the part most people came for: one command clones your database, storage and apps, data included, so work an agent does *on its branch* stays there. The branch boundary is separation, not authorization: any command taking `--branch` still reaches `main`, so set [policy](/governance/overview) for the actions that matter. Stuck anywhere? Come to [Discord](https://discord.com/invite/MPxwj5xVvW).

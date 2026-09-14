@@ -17,6 +17,7 @@ import { ActivitiesButton, ActivitiesPanel } from './console/ActivitiesButton'
 import { AccountMenu } from './console/AccountMenu'
 import { api } from '../api'
 import { usePoll } from '../hooks'
+import { pendingFor } from '../lib/activity'
 
 type NavItem = { label: string; segment: string; icon: LucideIcon }
 
@@ -54,8 +55,13 @@ function ProjectSidebar({ projectId, branch }: { projectId: string; branch: stri
 export function Layout() {
   const { projectId, branch } = useParams() as { projectId: string; branch: string }
   // Polled once here and handed to both the Activities icon and its panel, rather than once by each.
-  const { data: approvals } = usePoll(() => api.approvals(projectId), [projectId], 10_000)
-  const pending = approvals?.filter((a) => a.status === 'pending').length ?? 0
+  // Tagged with its project, so the previous project's queue never badges this one (lib/activity.ts).
+  const { data: approvals } = usePoll(
+    async () => ({ projectId, statuses: (await api.approvals(projectId)).map((a) => a.status) }),
+    [projectId],
+    10_000,
+  )
+  const pending = pendingFor(approvals, projectId)
   return (
     <div className="flex h-dvh overflow-hidden">
       <ProjectSidebar projectId={projectId} branch={branch} />

@@ -77,7 +77,9 @@ export function loadPositions(key: string): Record<string, Point> {
     if (!parsed || typeof parsed !== 'object') return {}
     const out: Record<string, Point> = {}
     for (const [id, p] of Object.entries(parsed as Record<string, unknown>)) {
-      if (p && typeof p === 'object' && typeof (p as Point).x === 'number' && typeof (p as Point).y === 'number') {
+      // Finite, not just numbers: JSON.parse reads an overflowing literal (1e999) as Infinity, which
+      // would put the card, and the camera fitted to it, nowhere.
+      if (p && typeof p === 'object' && Number.isFinite((p as Point).x) && Number.isFinite((p as Point).y)) {
         out[id] = { x: (p as Point).x, y: (p as Point).y }
       }
     }

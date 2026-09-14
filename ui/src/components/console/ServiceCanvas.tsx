@@ -52,13 +52,6 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
   // Only dragged cards are stored; everything else sits at its layout slot, so a new service slots in
   // without any migration of saved layouts.
   const [positions, setPositions] = useState<Record<string, Point>>(() => loadPositions(storageKey))
-  // Another environment's saved layout belongs to that environment.
-  const keyRef = useRef(storageKey)
-  useEffect(() => {
-    if (keyRef.current === storageKey) return
-    keyRef.current = storageKey
-    setPositions(loadPositions(storageKey))
-  }, [storageKey])
 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const panRef = useRef<{ pointerId: number; startX: number; startY: number; cam: Camera } | null>(null)
@@ -150,6 +143,17 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
   // `autoFit` for what stops that from overruling the user or firing on every render.
   const cameraClaimedRef = useRef(false)
   const fittedRef = useRef<string | null>(null)
+  // Another environment's saved layout, and its camera, belong to that environment: switching opens the
+  // new one fitted, even after the user panned or zoomed the last. Before the fit below, which then sees
+  // an unclaimed camera.
+  const keyRef = useRef(storageKey)
+  useLayoutEffect(() => {
+    if (keyRef.current === storageKey) return
+    keyRef.current = storageKey
+    cameraClaimedRef.current = false
+    fittedRef.current = null
+    setPositions(loadPositions(storageKey))
+  }, [storageKey])
   useLayoutEffect(() => {
     const { fit, animate } = autoFit(cameraClaimedRef.current, fittedRef.current, nodeSignature)
     if (!fit) return
@@ -244,6 +248,14 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
       onOpen(drag.service)
     }
   }
+  // The browser took the pointer back (a scroll gesture, a lost capture): not a click, so never an open.
+  // A drag already under way keeps where it had got to.
+  const onCardPointerCancel = (e: PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    dragRef.current = null
+    if (drag.moved) savePositions(storageKey, positionsRef.current)
+  }
 
   return (
     <div
@@ -302,6 +314,7 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
               onPointerDown={(e) => onCardPointerDown(e, service, point)}
               onPointerMove={onCardPointerMove}
               onPointerUp={onCardPointerUp}
+              onPointerCancel={onCardPointerCancel}
             />
           )
         })}
@@ -327,7 +340,7 @@ function CanvasControl({ label, onClick, children }: { label: string; onClick: (
   )
 }
 
-function ServiceCard({ point, service, mark, status, actions, onOpen, onPointerDown, onPointerMove, onPointerUp }: {
+function ServiceCard({ point, service, mark, status, actions, onOpen, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: {
   point: Point
   service: Service
   mark: ReactNode
@@ -337,6 +350,7 @@ function ServiceCard({ point, service, mark, status, actions, onOpen, onPointerD
   onPointerDown: (e: PointerEvent<HTMLDivElement>) => void
   onPointerMove: (e: PointerEvent<HTMLDivElement>) => void
   onPointerUp: (e: PointerEvent<HTMLDivElement>) => void
+  onPointerCancel: (e: PointerEvent<HTMLDivElement>) => void
 }) {
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     // Keys from the nested actions menu are not an open: Enter on "Delete Service" must not also open the card.
@@ -365,7 +379,7 @@ function ServiceCard({ point, service, mark, status, actions, onOpen, onPointerD
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerCancel={onPointerCancel}
       >
         {/* 100px header + 40px footer, fixed rather than flexed: the card body is exactly 140px. */}
         <div className="flex h-25 items-start justify-between p-3">

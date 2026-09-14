@@ -63,6 +63,14 @@ describe('dragged card positions', () => {
     expect(loadPositions(key)).toEqual({})
   })
 
+  it('drops an overflowing coordinate, which JSON reads as Infinity', () => {
+    const storage = memoryStorage()
+    vi.stubGlobal('window', { localStorage: storage })
+    const key = positionsKey('p-overflow', 'main')
+    storage.setItem(key, '{"good":{"x":24,"y":48},"far":{"x":1e999,"y":0},"low":{"x":0,"y":-1e999}}')
+    expect(loadPositions(key)).toEqual({ good: { x: 24, y: 48 } })
+  })
+
   it('keeps working when site data is blocked', () => {
     vi.stubGlobal('window', { localStorage: { getItem() { throw new Error('blocked') }, setItem() { throw new Error('blocked') }, removeItem() { throw new Error('blocked') } } })
     const key = positionsKey('p-blocked', 'main')

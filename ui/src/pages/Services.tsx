@@ -79,14 +79,15 @@ export function Services() {
   const interval = waking.anyWaking ? 2000 : 5000
   const { data: services, error, reload } = usePoll(() => api.services(projectId, branch), [projectId, branch], interval)
   const { data: health } = usePoll(() => api.runtimeHealth(projectId, branch), [projectId, branch], interval)
-  // The canvas's edges. Polled on the console's cadence for bindings; a member without secrets.read
-  // gets an approval instead of a tree, which is honestly a canvas with no edges, not an error.
-  const { data: secretTree } = usePoll(() => api.secretTree(projectId), [projectId], 30_000)
+  const [storedMode, setStoredMode] = useLocalPref(VIEW_MODE_KEY)
+  const mode: 'canvas' | 'list' = storedMode === 'list' ? 'list' : 'canvas'
+  // The canvas's edges, so only the canvas polls for them. Polled on the console's cadence for bindings;
+  // a member without secrets.read gets an approval instead of a tree, which is honestly a canvas with no
+  // edges, not an error.
+  const { data: secretTree } = usePoll(() => api.secretTree(projectId), [projectId], { intervalMs: 30_000, enabled: mode === 'canvas' })
   const [approval, setApproval] = useState<PendingApproval>(null)
   const [actionError, setActionError] = useState<string>()
   const [addFirstOpen, setAddFirstOpen] = useState(false)
-  const [storedMode, setStoredMode] = useLocalPref(VIEW_MODE_KEY)
-  const mode: 'canvas' | 'list' = storedMode === 'list' ? 'list' : 'canvas'
 
   useEffect(() => { waking.reconcile(health, healthFor) }, [health, waking])
 
@@ -101,7 +102,7 @@ export function Services() {
     <div className="grid grid-cols-2 border border-border bg-card">
       {([{ value: 'canvas', label: 'Canvas', icon: Workflow }, { value: 'list', label: 'List', icon: Rows3 }] as const).map(({ value, label, icon: Icon }) => (
         <button key={value} type="button" title={`${label} view`} aria-pressed={mode === value}
-          onClick={() => setStoredMode(value)}
+          onClick={() => setStoredMode(value === 'list' ? 'list' : null)}
           className={cn('group flex h-9 w-28 cursor-pointer items-center justify-center px-0.5', mode === value ? 'text-foreground' : 'text-muted-foreground')}>
           <span className={cn('flex w-full items-center justify-center gap-1 p-1.5 text-[13px] leading-[18px] transition-colors', mode === value ? 'bg-page' : 'group-hover:bg-alpha-4')}>
             <Icon className="size-5" />

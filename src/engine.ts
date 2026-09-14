@@ -12,6 +12,7 @@ import { docker } from './docker'
 import { BRANCH_NAME_RE, SERVICE_NAME_RE } from './names'
 import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseServiceId, pgContainerName, pgServiceId, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
 import * as observe from './observe'
+import { DEFAULT_STEP_SEC, DEFAULT_WINDOW_SEC, liveSeries, MetricsHistory, statsToSamples, type MetricsTarget, type MetricsWindow } from './metrics-history'
 import { loadState, mutate } from './state'
 import type { Branch, Project, DatabaseAdapter, ComputeAdapter, StorageAdapter, ManagedDbAdapter, ManagedDbType, ObservedComponent, ObjectListing, AuditEvent, UserSecret, DataDirOps, PgTarget, ServiceKey, ServiceLimits, ServiceSettings } from './types'
 // ---- region WP2 (router): the router's pure modules feed the seams at the end of this class ----
@@ -260,6 +261,9 @@ export interface EngineOptions {
 
 export class Engine {
   readonly cfg: Config
+  /** CPU, memory and network samples behind `runtimeMetrics`. main.ts's MetricsSampler fills it; a
+   *  daemon or test without one answers a live reading instead. */
+  readonly metricsHistory = new MetricsHistory()
   /** How the four custom-domain routes look a hostname up (WP2). Injected by the fake-adapter
    *  suite so no test ever reaches a real nameserver. */
   private readonly resolver: Resolver
@@ -1065,7 +1069,10 @@ export class Engine {
       // `updatedAt` is the only record of when the group was last deployed, and it is exactly what
       // the Created column has been showing for it.
       const priorUpdatedAt = s.branches[b.id].apps[group]?.updatedAt
-      s.branches[b.id].apps[group] = { ...s.branches[b.id].apps[group], image: opts.image, port, hostPort, url, ...(host !== undefined ? { host } : {}), updatedAt: Date.now() }
+      // addedAt: stamped when this branch first carries the group, and kept by every redeploy after. A group
+      // removed from this branch drops its row, so a later deploy here is a new incarnation whose metrics
+      // history must not include the removed one's samples (observedTargets' `since`).
+      s.branches[b.id].apps[group] = { ...s.branches[b.id].apps[group], image: opts.image, port, hostPort, url, ...(host !== undefined ? { host } : {}), updatedAt: Date.now(), addedAt: s.branches[b.id].apps[group]?.addedAt ?? Date.now() }
       // A group materialised BY this deploy (`insta deploy --group <name>`, no prior add) never got
       // a createdAt, so the service row fell back to `updatedAt` — which every redeploy rewrites,
       // making the dashboard's Created column walk forward on each deploy. Stamp it once; an
@@ -1289,7 +1296,7 @@ export class Engine {
   /** The project's registered managed databases (empty when none). `dataId` is WP4's immutable
    *  directory key (decision 16); rows from before the data dir carry none until the boot migration
    *  backfills one. */
-  private managedList(projectId: string): Array<{ id: string; type: ManagedDbType; name: string; createdAt: number; dataId?: string }> {
+  private managedList(projectId: string): Array<{ id: string; type: ManagedDbType; name: string; createdAt: number; renamedAt?: number; dataId?: string }> {
     return this.getProject(projectId)?.managedServices ?? []
   }
 
@@ -2014,10 +2021,11 @@ export class Engine {
         }
         // always-on, limits, the recorded port and the template provenance are keyed by service id,
         // and the id embeds the name: without this the rename silently reset them to the defaults.
-        if (pr.serviceSettings?.[`cp-${oldName}`]) {
-          pr.serviceSettings[`cp-${newName}`] = pr.serviceSettings[`cp-${oldName}`]
-          delete pr.serviceSettings[`cp-${oldName}`]
-        }
+        // renamedAt: the container is keyed by the NEW name, whose metrics history may still hold a deleted
+        // service's samples; this service's history under it starts now (observedTargets' `since`).
+        pr.serviceSettings = pr.serviceSettings ?? {}
+        pr.serviceSettings[`cp-${newName}`] = { ...pr.serviceSettings[`cp-${oldName}`], renamedAt: Date.now() }
+        delete pr.serviceSettings[`cp-${oldName}`]
         for (const b of branches) {
           const app = st.branches[b.id].apps[oldName]
           if (!app) continue
@@ -2214,7 +2222,8 @@ export class Engine {
           // Record the minted hostname on the row, like `provisionBranch` does: the row is what the
           // route table and the credentials bundle read, and it retires the reservation.
           const label = this.labelFor(type, name, this.ref(project, p.branch))
-          ;(st.branches[p.branch.id].managed ??= {})[entry.id] = { password: p.password, host: `${label}.${this.cfg.domain}` }
+          // addedAt: see addDbService. A kept registration keeps its createdAt; this row marks the new incarnation.
+          ;(st.branches[p.branch.id].managed ??= {})[entry.id] = { password: p.password, host: `${label}.${this.cfg.domain}`, addedAt: Date.now() }
           if (st.hostReservations?.[label] === owner) delete st.hostReservations[label]
         }
       })
@@ -2315,7 +2324,8 @@ export class Engine {
     }
     mutate((st) => {
       const pr = st.projects[projectId]
-      pr.managedServices = (pr.managedServices ?? []).map((x) => (x.id === serviceId ? { ...x, id: newId, name: newName } : x))
+      // renamedAt: metrics history under the new name starts now, not at creation (observedTargets' `since`).
+      pr.managedServices = (pr.managedServices ?? []).map((x) => (x.id === serviceId ? { ...x, id: newId, name: newName, renamedAt: Date.now() } : x))
       for (const b of Object.values(st.branches)) {
         if (b.projectId !== projectId || !b.managed?.[serviceId]) continue
         const label = newLabel.get(b.id)
@@ -2936,26 +2946,41 @@ export class Engine {
     return { project, branch }
   }
 
-  /** The containers an observability request targets: the branch's pg, its compute group(s), or
-   *  its managed databases of one type. Each managed type is its OWN component, never folded into
-   *  'compute' (cloud parity: names are unique per type, so `group` resolves inside a type, and
-   *  the compute fan-out must not absorb database containers). */
-  private observedContainers(project: Project, branch: Branch, component: ObservedComponent, group?: string): string[] {
+  /** The containers an observability request targets, each with the service it is drawn as: the
+   *  branch's postgres services, its compute group(s), or its managed databases of one type. Each
+   *  managed type is its OWN component, never folded into 'compute' (cloud parity: names are unique
+   *  per type, so `group` resolves inside a type, and the compute fan-out must not absorb database
+   *  containers). */
+  private observedTargets(project: Project, branch: Branch, component: ObservedComponent, group?: string): MetricsTarget[] {
     const ref = this.ref(project, branch)
+    // Container names reuse project, branch and service NAMES, so a name's metrics history can predate
+    // the resource now carrying it (delete a project and recreate it under the same name, rename a service
+    // into a name a deleted one gave up, or remove a service from one branch while another keeps its
+    // registration and add it back). `since` is the first whole second after the newest of those moments:
+    // the project's and branch's creation, the service's creation or rename, and its addition to THIS
+    // branch (the branch row's `addedAt`). Samples
+    // are stamped in whole seconds, so one stamped in that second may predate the resource, and none
+    // stamped at or after `since` can.
+    const since = (...serviceTimes: Array<number | undefined>): number =>
+      Math.floor(Math.max(project.createdAt, branch.createdAt, ...serviceTimes.map((t) => t ?? 0)) / 1000) + 1
     // 'db' fans out over the project's postgres services; `group` narrows it to one by NAME, the
     // same `?group=` the database routes take.
     if (component === 'db') {
       return this.dbList(project.id)
         .filter((d) => (!group || d.name === group) && this.carries(project, branch, d, 'postgres'))
-        .map((d) => this.pgContainer(project, branch, d.id))
+        .map((d) => ({ container: this.pgContainer(project, branch, d.id), group: d.name, since: since(d.createdAt, d.renamedAt, branch.databases?.[d.id]?.addedAt) }))
     }
     if (component !== 'compute') {
       return this.managedList(project.id)
         .filter((m) => m.type === component && (!group || m.name === group) && branch.managed?.[m.id])
-        .map((m) => managedContainerName(ref, m.type, m.name))
+        .map((m) => ({ container: managedContainerName(ref, m.type, m.name), group: m.name, since: since(m.createdAt, m.renamedAt, branch.managed?.[m.id]?.addedAt) }))
     }
     const groups = group ? [group] : Object.keys(branch.apps).sort()
-    return groups.filter((g) => branch.apps[g]).map((g) => appContainerName(ref, g))
+    return groups.filter((g) => branch.apps[g])
+      .map((g) => {
+        const settings = project.serviceSettings?.[`cp-${g}`]
+        return { container: appContainerName(ref, g), group: g, since: since(settings?.createdAt, settings?.renamedAt, branch.apps[g]?.addedAt) }
+      })
   }
 
   /** Runtime logs via `docker logs --tail` — same LogsResult shape as the cloud (which serves
@@ -2964,7 +2989,7 @@ export class Engine {
     const { project, branch } = this.branchOrThrow(projectId, opts.branchName)
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 1000)
     const lines: observe.LogLine[] = []
-    for (const name of this.observedContainers(project, branch, opts.component, opts.group)) {
+    for (const { container: name } of this.observedTargets(project, branch, opts.component, opts.group)) {
       try {
         const raw = (await docker(['logs', '--tail', String(limit), '--timestamps', name], { mergeStderr: true })).toString()
         lines.push(...observe.parseDockerLogs(raw, name))
@@ -2974,19 +2999,27 @@ export class Engine {
     return { source: 'docker-logs', lines: lines.slice(-limit) }
   }
 
-  /** Point-in-time resource metrics via `docker stats --no-stream` — MetricsResult shape. */
-  async runtimeMetrics(projectId: string, opts: { component: ObservedComponent; branchName?: string; group?: string }): Promise<observe.MetricsResult> {
+  /** CPU, memory and network over a window, in the cloud's MetricsResult shape and series names, from
+   *  the history the sampler keeps (metrics-sampler.ts). Before any of these containers has a sample —
+   *  a daemon that just started — it answers one live `docker stats` reading rather than an empty
+   *  chart. The window defaults to the cloud's: the last hour at 60 s. */
+  async runtimeMetrics(projectId: string, opts: { component: ObservedComponent; branchName?: string; group?: string; window?: MetricsWindow }): Promise<observe.MetricsResult> {
     const { project, branch } = this.branchOrThrow(projectId, opts.branchName)
-    const names = this.observedContainers(project, branch, opts.component, opts.group)
-    if (!names.length) return { source: 'docker-stats', series: [], note: 'nothing deployed on this branch' }
-    let raw = ''
-    try { raw = (await docker(['stats', '--no-stream', '--format', '{{json .}}', ...names])).toString() }
-    catch { return { source: 'docker-stats', series: [], note: 'containers are not running' } }
-    return {
-      source: 'docker-stats',
-      series: observe.statsToSeries(raw, Math.floor(Date.now() / 1000)),
-      note: 'point-in-time snapshot from docker stats — from/to/step are ignored locally',
+    const targets = this.observedTargets(project, branch, opts.component, opts.group)
+    if (!targets.length) return { source: 'docker-stats', series: [], note: 'nothing deployed on this branch' }
+    const now = Math.floor(Date.now() / 1000)
+    const win = opts.window ?? { from: now - DEFAULT_WINDOW_SEC, to: now, step: DEFAULT_STEP_SEC }
+    const containers = targets.map((t) => t.container)
+    // A live reading is stamped now, so it answers only a window that contains now: a historical window
+    // with no history is empty, not a point outside the range asked for.
+    if (this.metricsHistory.sampled(targets) || now < win.from || now > win.to) {
+      return { source: 'docker-stats', series: this.metricsHistory.query(targets, win.from, win.to, win.step) }
     }
+    let raw = ''
+    // Not running (asleep, stopped): no reading, which the dashboard draws as zero usage, like the cloud.
+    try { raw = (await docker(['stats', '--no-stream', '--format', '{{json .}}', ...containers])).toString() }
+    catch { return { source: 'docker-stats', series: [] } }
+    return { source: 'docker-stats', series: liveSeries(statsToSamples(raw), targets, now) }
   }
 
   /** Control-plane operation log (cloud: Neon operations) — here, the resource-event timeline. */
@@ -4630,7 +4663,9 @@ export class Engine {
       try {
         const { url } = await this.db.provision({ container, network: b.network, dataDir }, { publishLoopback: this.cfg.mode === 'local', limits: this.limitsFor(project, entry.id) })
         const host = this.hostFor('postgres', name, ref)
-        mutate((st) => { (st.branches[b.id].databases ??= {})[entry.id] = { url, container, dataId: entry.dataId, host } })
+        // addedAt: a registration another branch kept is reused with its old createdAt, so this branch's
+        // own row is what marks the new incarnation for its metrics history (observedTargets' `since`).
+        mutate((st) => { (st.branches[b.id].databases ??= {})[entry.id] = { url, container, dataId: entry.dataId, host, addedAt: Date.now() } })
         this.scheduler.register([this.serviceKey(b, entry.id)])                                     // WP3
       } catch (e) {
         await this.db.destroy(container).catch(() => {})
@@ -4737,7 +4772,8 @@ export class Engine {
       }
       mutate((st) => {
         const pr = st.projects[projectId]
-        pr.dbServices = (pr.dbServices ?? []).map((d) => (d.id === serviceId ? { ...d, id: newId, name: newName } : d))
+        // renamedAt: metrics history under the new name starts now, not at creation (observedTargets' `since`).
+        pr.dbServices = (pr.dbServices ?? []).map((d) => (d.id === serviceId ? { ...d, id: newId, name: newName, renamedAt: Date.now() } : d))
         for (const u of st.userSecrets[projectId] ?? []) if (u.service === `postgres/${reg.name}`) u.service = `postgres/${newName}`
       })
       this.router.invalidate()

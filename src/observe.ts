@@ -43,18 +43,6 @@ export function parseSize(s: string): number {
   return Number(m[1]) * (mult[(m[2] ?? 'b').toLowerCase()] ?? 1)
 }
 
-/** `docker stats --no-stream --format '{{json .}}'` rows → cpu/memory series (one point each). */
-export function statsToSeries(raw: string, nowSec: number): MetricSeries[] {
-  const series: MetricSeries[] = []
-  for (const line of raw.split('\n').filter(Boolean)) {
-    let row: { Name?: string; CPUPerc?: string; MemUsage?: string }
-    try { row = JSON.parse(line) } catch { continue }
-    const labels = { instance: row.Name ?? '' }
-    series.push({ name: 'cpu', unit: '%', labels, points: [[nowSec, Number((row.CPUPerc ?? '0').replace('%', '')) || 0]] })
-    series.push({ name: 'memory', unit: 'bytes', labels, points: [[nowSec, parseSize((row.MemUsage ?? '0B').split('/')[0] ?? '')]] })
-  }
-  return series
-}
 
 // ---- SQL over the branch database (mirrors the platform's neon-sql.ts queries + keys) ----
 

@@ -1,0 +1,162 @@
+// Container names come from project, branch and service NAMES, so a project deleted and recreated under
+// the same name runs its containers under the same names, and the metrics history (keyed by container)
+// still holds the deleted project's samples for up to three days. The recreated project must not be
+// shown them as its own.
+import { test, expect, beforeEach, afterEach, vi } from 'vitest'
+import { makeEngine, resetFakes, runtime, testConfig } from './fakes'
+import type { Engine } from '../src/engine'
+
+// Service removal runs `docker rm`, then proves the container gone before it drops the row. As in
+// server.test.ts, a faked `docker rm` really removes the container from `FakeRuntime`, the one fake
+// container store that proof reads; a `docker ps` answers an empty listing. Every other docker call goes
+// to the real function.
+function fakeRemoval(args: string[]): Promise<Buffer> {
+  if (args[0] === 'rm') for (const a of args.slice(1)) if (!a.startsWith('-')) runtime.drop(a)
+  return Promise.resolve(Buffer.from(''))
+}
+vi.mock('../src/docker', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('../src/docker')>()
+  return {
+    ...orig,
+    docker: (args: string[], opts?: { input?: Buffer; mergeStderr?: boolean }) =>
+      args[0] === 'rm' || args[0] === 'ps' ? fakeRemoval(args) : orig.docker(args, opts),
+  }
+})
+
+let engine: Engine
+// Only Date is faked: creation times come from Date.now(), and the engine's own awaits must still run.
+const T0 = 1_800_000_000
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(T0 * 1000)
+  resetFakes()
+  engine = makeEngine(testConfig())
+})
+
+afterEach(() => { vi.useRealTimers() })
+
+const CONTAINER = 'io-demo-main-app-default'
+const pointTimes = (series: Array<{ points: Array<[number, number]> }>): number[] => series.flatMap((s) => s.points.map(([t]) => t))
+
+test("delete, recreate under the same name: the new project's metrics carry none of the old project's samples", async () => {
+  const first = (await engine.createProject('demo')).project
+  await engine.deploy(first.id, 'main', { image: 'nginx', port: 80 })
+  const old = [T0 + 10, T0 + 40]
+  for (const t of old) engine.metricsHistory.record(t, [{ name: CONTAINER, cpuCores: 0.9, memBytes: 900, rxBytes: 0, txBytes: 0 }])
+  vi.setSystemTime((T0 + 600) * 1000)
+  const window = { from: T0, to: T0 + 3_600, step: 60 }
+
+  // Control: the samples are the first project's, under the container name its service runs as.
+  const before = await engine.runtimeMetrics(first.id, { component: 'compute', window })
+  expect(pointTimes(before.series).length).toBeGreaterThan(0)
+
+  await engine.destroyProject(first.id)
+  const second = (await engine.createProject('demo')).project
+  await engine.deploy(second.id, 'main', { image: 'nginx', port: 80 })
+
+  const after = await engine.runtimeMetrics(second.id, { component: 'compute', window })
+  expect(pointTimes(after.series).filter((t) => t <= old[1]!)).toEqual([])
+  expect(after.series.flatMap((s) => s.points.map(([, v]) => v))).not.toContain(0.9)
+})
+
+// A rename moves a service's name, and so its container's name, without moving its creation time. Renamed
+// into a name a deleted service gave up, it must not be shown the deleted service's samples.
+const valuesOf = (series: Array<{ points: Array<[number, number]> }>): number[] => series.flatMap((s) => s.points.map(([, v]) => v))
+
+test('compute: delete web, rename api to web: the renamed service carries none of the deleted web\'s samples', async () => {
+  const { project } = await engine.createProject('demo')
+  await engine.deploy(project.id, 'main', { image: 'nginx', port: 80, group: 'web' })
+  await engine.deploy(project.id, 'main', { image: 'nginx', port: 80, group: 'api' })
+  vi.setSystemTime((T0 + 60) * 1000)
+  engine.metricsHistory.record(T0 + 60, [{ name: 'io-demo-main-app-web', cpuCores: 0.77, memBytes: 777, rxBytes: 0, txBytes: 0 }])
+  const window = { from: T0, to: T0 + 3_600, step: 60 }
+
+  // Control: the samples are web's, under the container name it runs as.
+  expect(valuesOf((await engine.runtimeMetrics(project.id, { component: 'compute', group: 'web', window })).series)).toContain(0.77)
+
+  vi.setSystemTime((T0 + 600) * 1000)
+  expect((await engine.removeComputeService(project.id, 'cp-web')).failed).toBe(0)
+  await engine.renameComputeService(project.id, 'api', 'web')
+
+  const after = await engine.runtimeMetrics(project.id, { component: 'compute', group: 'web', window })
+  expect(valuesOf(after.series)).not.toContain(0.77)
+})
+
+test('postgres: delete store, rename events to store: the renamed database carries none of the deleted store\'s samples', async () => {
+  const { project } = await engine.createProject('demo')
+  await engine.addDbService(project.id, 'store')
+  await engine.addDbService(project.id, 'events')
+  vi.setSystemTime((T0 + 60) * 1000)
+  engine.metricsHistory.record(T0 + 60, [{ name: 'io-demo-main-pg-store', cpuCores: 0.77, memBytes: 777, rxBytes: 0, txBytes: 0 }])
+  const window = { from: T0, to: T0 + 3_600, step: 60 }
+
+  expect(valuesOf((await engine.runtimeMetrics(project.id, { component: 'db', group: 'store', window })).series)).toContain(0.77)
+
+  vi.setSystemTime((T0 + 600) * 1000)
+  expect((await engine.removeDbService(project.id, 'pg-store')).failed).toBe(0)
+  await engine.renameDbService(project.id, 'pg-events', 'store')
+
+  const after = await engine.runtimeMetrics(project.id, { component: 'db', group: 'store', window })
+  expect(valuesOf(after.series)).not.toContain(0.77)
+})
+
+// A service is branch-scoped. Removed from one branch while another still carries its registration, then
+// added back, it keeps that registration (and its createdAt) and runs under the same container name again.
+test('compute: removed from main while feat keeps it, then redeployed on main: none of the earlier samples', async () => {
+  const { project } = await engine.createProject('demo')
+  await engine.deploy(project.id, 'main', { image: 'nginx', port: 80, group: 'web' })
+  await engine.createBranch(project.id, 'feat', 'main')
+  await engine.deploy(project.id, 'feat', { image: 'nginx', port: 80, group: 'web' })
+  vi.setSystemTime((T0 + 60) * 1000)
+  engine.metricsHistory.record(T0 + 60, [{ name: 'io-demo-main-app-web', cpuCores: 0.77, memBytes: 777, rxBytes: 0, txBytes: 0 }])
+  const window = { from: T0, to: T0 + 3_600, step: 60 }
+
+  // Control: the samples are main's web.
+  expect(valuesOf((await engine.runtimeMetrics(project.id, { component: 'compute', group: 'web', branchName: 'main', window })).series)).toContain(0.77)
+
+  vi.setSystemTime((T0 + 600) * 1000)
+  expect((await engine.removeComputeService(project.id, 'cp-web', { branch: 'main' })).failed).toBe(0)
+  await engine.deploy(project.id, 'main', { image: 'nginx', port: 80, group: 'web' })
+
+  const after = await engine.runtimeMetrics(project.id, { component: 'compute', group: 'web', branchName: 'main', window })
+  expect(valuesOf(after.series)).not.toContain(0.77)
+})
+
+test('postgres: removed from main while feat keeps it, then added back on main: none of the earlier samples', async () => {
+  const { project } = await engine.createProject('demo')
+  await engine.addDbService(project.id, 'store')
+  await engine.createBranch(project.id, 'feat', 'main')
+  vi.setSystemTime((T0 + 60) * 1000)
+  engine.metricsHistory.record(T0 + 60, [{ name: 'io-demo-main-pg-store', cpuCores: 0.77, memBytes: 777, rxBytes: 0, txBytes: 0 }])
+  const window = { from: T0, to: T0 + 3_600, step: 60 }
+
+  expect(valuesOf((await engine.runtimeMetrics(project.id, { component: 'db', group: 'store', branchName: 'main', window })).series)).toContain(0.77)
+
+  vi.setSystemTime((T0 + 600) * 1000)
+  expect((await engine.removeDbService(project.id, 'pg-store', { branch: 'main' })).failed).toBe(0)
+  await engine.addDbService(project.id, 'store', { branch: 'main' })
+
+  const after = await engine.runtimeMetrics(project.id, { component: 'db', group: 'store', branchName: 'main', window })
+  expect(valuesOf(after.series)).not.toContain(0.77)
+})
+
+test('recreated within the same second: a sample stamped in that second is still not the new project\'s', async () => {
+  const first = (await engine.createProject('demo')).project
+  await engine.deploy(first.id, 'main', { image: 'nginx', port: 80 })
+  // Sampled at T0+5.2 (stamped T0+5), deleted, and recreated at T0+5.9: the same whole second.
+  vi.setSystemTime((T0 + 5) * 1000 + 200)
+  engine.metricsHistory.record(T0 + 5, [{ name: CONTAINER, cpuCores: 0.9, memBytes: 900, rxBytes: 0, txBytes: 0 }])
+  const window = { from: T0 - 60, to: T0 + 3_600, step: 60 }
+
+  // Control: the first project, created at T0, does see it.
+  expect(pointTimes((await engine.runtimeMetrics(first.id, { component: 'compute', window })).series)).toContain(T0)
+
+  await engine.destroyProject(first.id)
+  vi.setSystemTime((T0 + 5) * 1000 + 900)
+  const second = (await engine.createProject('demo')).project
+  await engine.deploy(second.id, 'main', { image: 'nginx', port: 80 })
+
+  const after = await engine.runtimeMetrics(second.id, { component: 'compute', window })
+  expect(after.series.flatMap((s) => s.points.map(([, v]) => v))).not.toContain(0.9)
+})

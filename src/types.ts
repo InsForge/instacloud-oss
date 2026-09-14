@@ -57,15 +57,17 @@ export interface Branch {
     url: string                   // router URL: https://<host> | http://<host>:<port>
     host?: string                 // WP2: bare minted hostname (bounded label, decision 55); recorded at deploy, never re-derived
     updatedAt?: number
+    addedAt?: number              // when this branch first carried the group: its metrics history here starts no earlier; a redeploy keeps it
     desiredState?: 'running' | 'stopped' | 'suspended'
     sleptAt?: number | null       // WP3: set when the scheduler stopped it (idle | memory | branch-create); cleared on wake/start/deploy
   }>
-  managed?: Record<string, { password: string; sleptAt?: number | null; host?: string /* WP2: minted lane hostname, recorded at provision */ }>
+  managed?: Record<string, { password: string; sleptAt?: number | null; host?: string /* WP2: minted lane hostname, recorded at provision */; addedAt?: number /* when this branch got it: its metrics history here starts no earlier */ }>
   // ---- region WP5 (templates/parity) ----
   databases?: Record<string, {    // keyed by service id (pg-<name>)
     url: string                   // container-host form: postgres://postgres:<pw>@<container>:5432/app (the engine rewrites host:port to the lane at read time)
     container: string             // io-<ref>-pg-<name> (legacy: io-<ref>-pg until migrated)
     dataId: string                // directory key under <dataDir>/pg/<ref>/
+    addedAt?: number              // when this branch got the database: its metrics history here starts no earlier
     host?: string                 // WP2: minted lane hostname (bounded label, decision 55), recorded at provision
     sleptAt?: number | null       // WP3
     scaleToZero?: boolean         // WP3: default true; PATCH database/settings {scaleToZero}

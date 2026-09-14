@@ -101,6 +101,46 @@ test('postgres: delete store, rename events to store: the renamed database carri
   expect(valuesOf(after.series)).not.toContain(0.77)
 })
 
+// A service is branch-scoped. Removed from one branch while another still carries its registration, then
+// added back, it keeps that registration (and its createdAt) and runs under the same container name again.
+test('compute: removed from main while feat keeps it, then redeployed on main: none of the earlier samples', async () => {
+  const { project } = await engine.createProject('demo')
+  await engine.deploy(project.id, 'main', { image: 'nginx', port: 80, group: 'web' })
+  await engine.createBranch(project.id, 'feat', 'main')
+  await engine.deploy(project.id, 'feat', { image: 'nginx', port: 80, group: 'web' })
+  vi.setSystemTime((T0 + 60) * 1000)
+  engine.metricsHistory.record(T0 + 60, [{ name: 'io-demo-main-app-web', cpuCores: 0.77, memBytes: 777, rxBytes: 0, txBytes: 0 }])
+  const window = { from: T0, to: T0 + 3_600, step: 60 }
+
+  // Control: the samples are main's web.
+  expect(valuesOf((await engine.runtimeMetrics(project.id, { component: 'compute', group: 'web', branchName: 'main', window })).series)).toContain(0.77)
+
+  vi.setSystemTime((T0 + 600) * 1000)
+  expect((await engine.removeComputeService(project.id, 'cp-web', { branch: 'main' })).failed).toBe(0)
+  await engine.deploy(project.id, 'main', { image: 'nginx', port: 80, group: 'web' })
+
+  const after = await engine.runtimeMetrics(project.id, { component: 'compute', group: 'web', branchName: 'main', window })
+  expect(valuesOf(after.series)).not.toContain(0.77)
+})
+
+test('postgres: removed from main while feat keeps it, then added back on main: none of the earlier samples', async () => {
+  const { project } = await engine.createProject('demo')
+  await engine.addDbService(project.id, 'store')
+  await engine.createBranch(project.id, 'feat', 'main')
+  vi.setSystemTime((T0 + 60) * 1000)
+  engine.metricsHistory.record(T0 + 60, [{ name: 'io-demo-main-pg-store', cpuCores: 0.77, memBytes: 777, rxBytes: 0, txBytes: 0 }])
+  const window = { from: T0, to: T0 + 3_600, step: 60 }
+
+  expect(valuesOf((await engine.runtimeMetrics(project.id, { component: 'db', group: 'store', branchName: 'main', window })).series)).toContain(0.77)
+
+  vi.setSystemTime((T0 + 600) * 1000)
+  expect((await engine.removeDbService(project.id, 'pg-store', { branch: 'main' })).failed).toBe(0)
+  await engine.addDbService(project.id, 'store', { branch: 'main' })
+
+  const after = await engine.runtimeMetrics(project.id, { component: 'db', group: 'store', branchName: 'main', window })
+  expect(valuesOf(after.series)).not.toContain(0.77)
+})
+
 test('recreated within the same second: a sample stamped in that second is still not the new project\'s', async () => {
   const first = (await engine.createProject('demo')).project
   await engine.deploy(first.id, 'main', { image: 'nginx', port: 80 })

@@ -1069,7 +1069,10 @@ export class Engine {
       // `updatedAt` is the only record of when the group was last deployed, and it is exactly what
       // the Created column has been showing for it.
       const priorUpdatedAt = s.branches[b.id].apps[group]?.updatedAt
-      s.branches[b.id].apps[group] = { ...s.branches[b.id].apps[group], image: opts.image, port, hostPort, url, ...(host !== undefined ? { host } : {}), updatedAt: Date.now() }
+      // addedAt: stamped when this branch first carries the group, and kept by every redeploy after. A group
+      // removed from this branch drops its row, so a later deploy here is a new incarnation whose metrics
+      // history must not include the removed one's samples (observedTargets' `since`).
+      s.branches[b.id].apps[group] = { ...s.branches[b.id].apps[group], image: opts.image, port, hostPort, url, ...(host !== undefined ? { host } : {}), updatedAt: Date.now(), addedAt: s.branches[b.id].apps[group]?.addedAt ?? Date.now() }
       // A group materialised BY this deploy (`insta deploy --group <name>`, no prior add) never got
       // a createdAt, so the service row fell back to `updatedAt` — which every redeploy rewrites,
       // making the dashboard's Created column walk forward on each deploy. Stamp it once; an
@@ -2219,7 +2222,8 @@ export class Engine {
           // Record the minted hostname on the row, like `provisionBranch` does: the row is what the
           // route table and the credentials bundle read, and it retires the reservation.
           const label = this.labelFor(type, name, this.ref(project, p.branch))
-          ;(st.branches[p.branch.id].managed ??= {})[entry.id] = { password: p.password, host: `${label}.${this.cfg.domain}` }
+          // addedAt: see addDbService. A kept registration keeps its createdAt; this row marks the new incarnation.
+          ;(st.branches[p.branch.id].managed ??= {})[entry.id] = { password: p.password, host: `${label}.${this.cfg.domain}`, addedAt: Date.now() }
           if (st.hostReservations?.[label] === owner) delete st.hostReservations[label]
         }
       })
@@ -2950,9 +2954,11 @@ export class Engine {
   private observedTargets(project: Project, branch: Branch, component: ObservedComponent, group?: string): MetricsTarget[] {
     const ref = this.ref(project, branch)
     // Container names reuse project, branch and service NAMES, so a name's metrics history can predate
-    // the resource now carrying it (delete a project and recreate it under the same name, or rename a
-    // service into a name a deleted one gave up). `since` is the first whole second after the newest of
-    // those moments: the project's and branch's creation, and the service's creation or rename. Samples
+    // the resource now carrying it (delete a project and recreate it under the same name, rename a service
+    // into a name a deleted one gave up, or remove a service from one branch while another keeps its
+    // registration and add it back). `since` is the first whole second after the newest of those moments:
+    // the project's and branch's creation, the service's creation or rename, and its addition to THIS
+    // branch (the branch row's `addedAt`). Samples
     // are stamped in whole seconds, so one stamped in that second may predate the resource, and none
     // stamped at or after `since` can.
     const since = (...serviceTimes: Array<number | undefined>): number =>
@@ -2962,18 +2968,18 @@ export class Engine {
     if (component === 'db') {
       return this.dbList(project.id)
         .filter((d) => (!group || d.name === group) && this.carries(project, branch, d, 'postgres'))
-        .map((d) => ({ container: this.pgContainer(project, branch, d.id), group: d.name, since: since(d.createdAt, d.renamedAt) }))
+        .map((d) => ({ container: this.pgContainer(project, branch, d.id), group: d.name, since: since(d.createdAt, d.renamedAt, branch.databases?.[d.id]?.addedAt) }))
     }
     if (component !== 'compute') {
       return this.managedList(project.id)
         .filter((m) => m.type === component && (!group || m.name === group) && branch.managed?.[m.id])
-        .map((m) => ({ container: managedContainerName(ref, m.type, m.name), group: m.name, since: since(m.createdAt, m.renamedAt) }))
+        .map((m) => ({ container: managedContainerName(ref, m.type, m.name), group: m.name, since: since(m.createdAt, m.renamedAt, branch.managed?.[m.id]?.addedAt) }))
     }
     const groups = group ? [group] : Object.keys(branch.apps).sort()
     return groups.filter((g) => branch.apps[g])
       .map((g) => {
         const settings = project.serviceSettings?.[`cp-${g}`]
-        return { container: appContainerName(ref, g), group: g, since: since(settings?.createdAt, settings?.renamedAt) }
+        return { container: appContainerName(ref, g), group: g, since: since(settings?.createdAt, settings?.renamedAt, branch.apps[g]?.addedAt) }
       })
   }
 
@@ -4657,7 +4663,9 @@ export class Engine {
       try {
         const { url } = await this.db.provision({ container, network: b.network, dataDir }, { publishLoopback: this.cfg.mode === 'local', limits: this.limitsFor(project, entry.id) })
         const host = this.hostFor('postgres', name, ref)
-        mutate((st) => { (st.branches[b.id].databases ??= {})[entry.id] = { url, container, dataId: entry.dataId, host } })
+        // addedAt: a registration another branch kept is reused with its old createdAt, so this branch's
+        // own row is what marks the new incarnation for its metrics history (observedTargets' `since`).
+        mutate((st) => { (st.branches[b.id].databases ??= {})[entry.id] = { url, container, dataId: entry.dataId, host, addedAt: Date.now() } })
         this.scheduler.register([this.serviceKey(b, entry.id)])                                     // WP3
       } catch (e) {
         await this.db.destroy(container).catch(() => {})

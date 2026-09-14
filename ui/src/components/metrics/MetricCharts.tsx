@@ -130,7 +130,8 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
         <div className={grid}>
           {cards.map((card) => (
             // The selected window, not the samples' extent: partial history shows where it sits in the range.
-            <MetricCard key={card.id} card={card} byService={byService} domain={{ from: data!.zeroWindow.from, to: data!.zeroWindow.to }} />
+            <MetricCard key={card.id} card={card} byService={byService}
+              domain={{ from: data!.zeroWindow.from, to: data!.zeroWindow.to, step: data!.zeroWindow.stepSeconds }} />
           ))}
         </div>
       )}

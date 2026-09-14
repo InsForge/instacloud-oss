@@ -35,8 +35,8 @@ export function MetricCard({ card, byService = false, domain }: {
   card: MetricCardData
   /** Lines are SERVICES, not metrics: the legend becomes identity, and no one line is "the" value. */
   byService?: boolean
-  /** The selected window, which the chart's time axis spans (see TimeSeriesChart). */
-  domain?: { from: number; to: number }
+  /** The selected window and its bucket width, which the chart's time axis spans (see TimeSeriesChart). */
+  domain?: { from: number; to: number; step?: number }
 }) {
   const Icon = cardIcons[card.id] ?? Gauge
   const { latest } = seriesStats(card)

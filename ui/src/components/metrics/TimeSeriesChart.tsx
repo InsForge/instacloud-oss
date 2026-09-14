@@ -1,9 +1,15 @@
 // The console's metric chart (insta-frontend components/metrics/time-series-chart.tsx): a
 // multi-series area chart over [unix seconds, value] points, gradient fill under each line, a
 // horizontal-only grid, round clock ticks, and a dashed crosshair with a timestamped tooltip.
+//
+// Self-host divergence: missing samples are drawn as gaps. The console joins each line across
+// whatever it skipped (`connectNulls`); here rows cover every slot of the selected window
+// (lib/chartRows.ts) and nothing is connected across a slot a line has no sample in, so daemon
+// downtime, and the network rates the daemon refuses to invent across it, read as missing.
 
 import { useId } from 'react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { chartRows, type ChartDomain } from '../../lib/chartRows'
 import { clockTicks, formatClock, formatMetricValue, formatTimestamp, type MetricCardData } from '../../lib/metrics'
 
 // The font size must arrive as CSS with a unit. recharts word-wraps a tick to the axis width and
@@ -13,19 +19,6 @@ import { clockTicks, formatClock, formatMetricValue, formatTimestamp, type Metri
 // The one sanctioned hex exception, as on the console: the chart axis, grid and series palette.
 const AXIS_TICK = { fill: '#525252', style: { fontSize: '12px' } } as const
 const GRID_STROKE = 'rgba(0,0,0,0.08)'
-
-/** Merge a card's series into recharts rows keyed by timestamp: { t, <lineKey>: value }. */
-function toRows(card: MetricCardData): Record<string, number>[] {
-  const byT = new Map<number, Record<string, number>>()
-  for (const line of card.lines) {
-    for (const p of line.points) {
-      const row = byT.get(p.t) ?? { t: p.t }
-      row[line.key] = p.value
-      byT.set(p.t, row)
-    }
-  }
-  return [...byT.values()].sort((a, b) => a.t! - b.t!)
-}
 
 export function ChartTooltip({ active, label, card }: { active?: boolean; label?: number; card: MetricCardData }) {
   if (!active || label == null) return null
@@ -51,14 +44,14 @@ export function ChartTooltip({ active, label, card }: { active?: boolean; label?
 }
 
 /** `height` may be "100%" when the parent sizes the chart. `domain` is the window the range picker
- *  asked for: the axis spans it whatever part of it has samples, so a daemon with five minutes of
- *  history draws five minutes at the right end of a "1h" chart, not five minutes stretched across it.
- *  Without one, the axis spans the samples (the console's behavior). */
-export function TimeSeriesChart({ card, height, domain }: { card: MetricCardData; height: number | '100%'; domain?: { from: number; to: number } }) {
+ *  asked for, with its bucket width: the axis spans it whatever part of it has samples, so a daemon
+ *  with five minutes of history draws five minutes at the right end of a "1h" chart, and a slot with
+ *  no sample is a gap. Without one, the axis spans the samples (the console's behavior). */
+export function TimeSeriesChart({ card, height, domain }: { card: MetricCardData; height: number | '100%'; domain?: ChartDomain }) {
   // Gradient ids must be unique per mounted chart — the same card can render on several views.
   // useId's colons are stripped: they're invalid inside SVG url(#…) references.
   const gradientId = useId().replace(/:/g, '')
-  const rows = toRows(card)
+  const rows = chartRows(card.lines, domain)
 
   // An all-zero series (idle service, or a zero-filled placeholder) would collapse an "auto" upper
   // bound to [0, 0]; pin a real scale so the flat line reads as 0 usage on a normal axis.
@@ -110,6 +103,7 @@ export function TimeSeriesChart({ card, height, domain }: { card: MetricCardData
         />
         <Tooltip content={<ChartTooltip card={card} />} cursor={{ stroke: '#525252', strokeWidth: 1, strokeDasharray: '3 3' }} />
         {card.lines.map((line) => (
+          // No connectNulls: a slot without a sample breaks the line (see the header).
           <Area
             key={line.key}
             type="linear"
@@ -119,7 +113,6 @@ export function TimeSeriesChart({ card, height, domain }: { card: MetricCardData
             fill={`url(#${gradientId}-${line.key})`}
             dot={false}
             isAnimationActive={false}
-            connectNulls
             activeDot={{ r: 3, fill: line.color, strokeWidth: 0 }}
           />
         ))}

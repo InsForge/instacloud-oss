@@ -3,7 +3,7 @@ title: "Migrate from self-hosted InsForge"
 description: "Move a self-hosted InsForge project, its database, users and files, onto InstaCloud."
 ---
 
-A self-hosted InsForge is four containers from `docker compose`. On InstaCloud, two of them run unchanged as **compute** services, its Postgres becomes a **postgres** service, and its files move to a **storage** service. Your app keeps its keys and your users keep their sessions; only the `baseUrl` in your code changes. Your coding agent does most of it.
+A self-hosted InsForge is four containers from `docker compose`. On InstaCloud two of them run unchanged as **compute** services, its Postgres becomes a **postgres** service, and its files move to a **storage** service. Your app keeps its keys, your users keep their sessions, and only the `baseUrl` in your code changes. Your coding agent does most of it.
 
 InstaCloud offers:
 
@@ -32,8 +32,11 @@ POSTGRES_DB=insforge
 | `postgres`, InsForge's own image | a **postgres** service |
 | the `storage-data` volume | a **storage** service |
 | the values in `.env` | project secrets, same values |
+| `deno`, the edge functions host | **not migrated yet**, see below |
 
-**Keep your keys.** `JWT_SECRET`, `ENCRYPTION_KEY`, `ACCESS_API_KEY` and `ACCESS_ANON_KEY` travel with the data. They are what keeps every user logged in, every stored secret readable, and every app pointing at the same anon key. Fresh ones would log everyone out and lock the encrypted rows.
+**Edge functions do not come along yet.** The `deno` container runs a stock image with your functions mounted in, so there is no image to move. Everything else migrates. If your app calls edge functions, wait for this guide to grow that step.
+
+**Keep your keys.** `JWT_SECRET`, `ENCRYPTION_KEY`, `ACCESS_API_KEY` and `ACCESS_ANON_KEY` travel with the data. They keep every user logged in, every stored secret readable, and every app on the same anon key. Fresh ones would log everyone out and lock the encrypted rows.
 
 ### 1. Set up your coding agent
 
@@ -55,11 +58,13 @@ Or click **Create Project** in the [console](https://console.instacloud.com). A 
 
 ### 3. Ask your agent to migrate
 
-Stop the containers that write, and leave Postgres running for the copy:
+Stop everything that writes, and leave Postgres running for the copy:
 
 ```bash
 docker compose stop insforge postgrest deno
 ```
+
+Files and database are two halves of one state, and nothing may write to either while they are copied.
 
 If it runs on another machine, bring the `.env`, the `deploy/` folder, a `deploy/backup.sh` dump and the `storage-data` volume here first. Then hand over:
 
@@ -74,10 +79,10 @@ It will ask you to approve anything that touches production. Expect the files to
 ### 4. Switch your app over
 
 ```text title="Prompt" wrap
-Give me the new InsForge URL, and confirm the anon key and API key are the ones from my .env.
+Give me the new InsForge URL, and confirm the anon key and API key match the ones in my .env without printing either value.
 ```
 
-Change `baseUrl` in your `createClient` call to that URL. Nothing else in the app changes. If your app reached InsForge through your own domain, ask your agent to attach it to the backend's compute service and publish the DNS records it gives you. Keep the old stack stopped, not deleted, until the new one has served you for a while.
+Change `baseUrl` in your `createClient` call to that URL. Unless your app calls edge functions, nothing else in it changes. If your app reached InsForge through your own domain, ask your agent to attach it to the backend's compute service and publish the DNS records it gives you. Keep the old stack stopped, not deleted, until the new one has served you for a while.
 
 ## Cron jobs
 
@@ -85,4 +90,4 @@ Cron jobs are not supported for now. InsForge schedules are not affected: they r
 
 And that is it. Every InstaCloud action your agent took is a command you can run yourself, in the [CLI reference](/reference/cli/overview); the inspection on the other side used `docker compose` and `pg_dump`.
 
-Once you are settled in, [database branching](/postgres/branching) is the part most people came for: one command clones your database, storage and apps, data included, so work an agent does *on its branch* stays there. The branch boundary is separation, not authorization: any command taking `--branch` still reaches `main`, so set [policy](/governance/overview) for the actions that matter. Stuck anywhere? Come to [Discord](https://discord.com/invite/MPxwj5xVvW).
+Once you are settled in, [database branching](/postgres/branching) is the part most people came for: one command clones your database, storage and apps, data included, so work an agent does *on its branch* stays there. The branch boundary is separation, not authorization: any command taking `--branch` still reaches `main`, so set policy for the actions that matter. Stuck anywhere? Come to [Discord](https://discord.com/invite/MPxwj5xVvW).

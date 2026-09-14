@@ -88,7 +88,7 @@ export function LogsPanel({ projectId, branch, component, service }: {
         <div className="rounded-lg border border-border bg-card py-12">
           <EmptyState icon={ScrollText} title="No logs yet."
             description={component === 'compute'
-              ? 'Deploy an app to this environment and its container output lands here.'
+              ? 'Deploy an app to this branch and its container output lands here.'
               : 'The database has not written any log lines yet.'} />
         </div>
       )}
@@ -98,7 +98,7 @@ export function LogsPanel({ projectId, branch, component, service }: {
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        Tailed live from this environment&apos;s containers ({data?.source ?? 'docker-logs'}); refreshes every 5s.
+        Tailed live from this branch&apos;s containers ({data?.source ?? 'docker-logs'}); refreshes every 5s.
       </p>
     </div>
   )

@@ -120,7 +120,7 @@ export function DatabasePanel({ projectId, branch, group, footer }: {
             {stats && !stats.extensionReady ? (
               <tr><td colSpan={4} className="px-4 py-8 text-center text-sm text-muted-foreground">
                 Statement stats need pg_stat_statements — available on databases provisioned after the
-                observability update; recreate the environment to enable it.
+                observability update; recreate the branch to enable it.
               </td></tr>
             ) : !stats?.stats.length ? (
               <tr><td colSpan={4} className="px-4 py-8 text-center text-sm text-muted-foreground">No statements recorded yet.</td></tr>
@@ -136,7 +136,7 @@ export function DatabasePanel({ projectId, branch, group, footer }: {
         </table>
       </div>
       <p className="text-xs text-muted-foreground">
-        Reads run against this environment&apos;s database on each refresh and never wake it: a sleeping
+        Reads run against this branch&apos;s database on each refresh and never wake it: a sleeping
         Postgres answers with its sleeping state instead.
       </p>
     </div>
@@ -160,7 +160,7 @@ export function DatabaseInsight() {
       ) : error ? (
         <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-destructive">{error.message}</div>
       ) : services && !pg ? (
-        <EmptyState icon={Database} title="No Postgres in this environment"
+        <EmptyState icon={Database} title="No Postgres in this branch"
           description="Add a postgres service on the Service page and this page fills in." />
       ) : pg ? (
         <DatabasePanel projectId={projectId} branch={branch} group={pg.name}

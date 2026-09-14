@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { eventDetail, formatLocalDateTime, mapEvents } from './activity'
+import { eventDetail, formatLocalDateTime, mapEvents, panelState, type ActivityEvent } from './activity'
 
 describe('eventDetail', () => {
   it('summarizes primitive payload values on one line, as the console card does', () => {
@@ -48,11 +48,48 @@ describe('mapEvents', () => {
     expect(cards.map((c) => c.id)).toEqual(['deployed', 'added', 'created'])
   })
 
+  it('sorts before paging: the newest of a chronological page leads', () => {
+    const cards = mapEvents([
+      { id: 'a', created_at: '2026-09-14T20:00:00.000Z' },
+      { id: 'b', created_at: '2026-09-14T20:01:00.000Z' },
+    ])
+    expect(cards[0]!.id).toBe('b')
+  })
+
   it('puts the later-recorded of two events at the same instant first', () => {
     const cards = mapEvents([
       { id: 'first', kind: 'service.added', created_at: '2026-09-14T21:00:00.000Z' },
       { id: 'second', kind: 'service.added', created_at: '2026-09-14T21:00:00.000Z' },
     ], 'UTC')
     expect(cards.map((c) => c.id)).toEqual(['second', 'first'])
+  })
+})
+
+describe('panelState', () => {
+  const card = (id: string): ActivityEvent => ({ id, source: 'resource', kind: 'deploy', detail: null, created: '—' })
+  const page = (n: number) => Array.from({ length: n }, (_, i) => card(`e${i}`))
+
+  it("never shows another project's events: the poll hook keeps them across a project switch", () => {
+    const load = { projectId: 'A', limit: 50, events: page(3) }
+    expect(panelState(load, 'B', 50, false)).toEqual({ events: undefined, loadingMore: false, maybeMore: false })
+    expect(panelState(load, 'B', 50, true).events).toBeUndefined()
+    expect(panelState(load, 'A', 50, false).events).toHaveLength(3)
+  })
+
+  it('shows the skeleton before the first load', () => {
+    expect(panelState(undefined, 'A', 50, false).events).toBeUndefined()
+  })
+
+  it('offers Load more only when a full page came back', () => {
+    expect(panelState({ projectId: 'A', limit: 50, events: page(50) }, 'A', 50, false).maybeMore).toBe(true)
+    expect(panelState({ projectId: 'A', limit: 50, events: page(12) }, 'A', 50, false).maybeMore).toBe(false)
+  })
+
+  it('reads Loading… while a grown window is pending', () => {
+    expect(panelState({ projectId: 'A', limit: 50, events: page(50) }, 'A', 100, false)).toMatchObject({ loadingMore: true, maybeMore: true })
+  })
+
+  it('lets a failed Load more be retried instead of staying on Loading…', () => {
+    expect(panelState({ projectId: 'A', limit: 50, events: page(50) }, 'A', 100, true)).toMatchObject({ loadingMore: false, maybeMore: true })
   })
 })

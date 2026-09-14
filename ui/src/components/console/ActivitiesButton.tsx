@@ -14,7 +14,7 @@ import { X } from 'lucide-react'
 import { api } from '../../api'
 import { usePoll } from '../../hooks'
 import { useLocalPref } from '../../lib/localPref'
-import { ACTIVITY_PAGE_SIZE, mapEvents, type ActivityEvent } from '../../lib/activity'
+import { ACTIVITY_PAGE_SIZE, mapEvents, panelState, type ActivityEvent } from '../../lib/activity'
 
 /** The console's key; it also reads its older boolean "1" as open. */
 const PANEL_KEY = 'insta:activities-open'
@@ -93,15 +93,15 @@ function EventCard({ event }: { event: ActivityEvent }) {
 export function ActivitiesPanel({ projectId, branch, pending }: { projectId: string; branch: string; pending: number }) {
   const [open, setOpen] = useActivitiesOpen()
   const [limit, setLimit] = useState(ACTIVITY_PAGE_SIZE)
+  // Another project starts from one page again.
+  useEffect(() => { setLimit(ACTIVITY_PAGE_SIZE) }, [projectId])
   const { data, error } = usePoll(
-    async () => ({ limit, events: mapEvents(await api.events(projectId, limit)) }),
+    async () => ({ projectId, limit, events: mapEvents(await api.events(projectId, limit)) }),
     [projectId, limit],
     { intervalMs: 10_000, enabled: open },
   )
-  const events = data?.events
-  // A grown window that has not answered yet: the button stays, reading Loading…, until it does.
-  const loadingMore = data !== undefined && data.limit !== limit
-  const maybeMore = loadingMore || (events?.length ?? 0) >= limit
+  // Tagged loads, so the previous project's cards never show under this one (lib/activity.ts).
+  const { events, loadingMore, maybeMore } = panelState(data, projectId, limit, Boolean(error))
 
   return (
     <FeedPanelShell open={open} label="Activities">

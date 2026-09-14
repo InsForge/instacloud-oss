@@ -168,7 +168,7 @@ export function AddServiceDialog({ projectId, branch, onClose, onDone, onApprova
 
         {(type === 'postgres' || type === 'redis' || type === 'mysql' || type === 'mongodb') && (
           <p className="text-xs text-muted-foreground">
-            A private instance per environment with fresh credentials, bound into apps as env vars.{' '}
+            A private instance per branch with fresh credentials, bound into apps as env vars.{' '}
             {type !== 'postgres' && boot.alwaysOnDefault && isDefaultBranch === true
               ? 'It stays up on this branch.'
               : 'It sleeps when idle and wakes on the next connection.'}

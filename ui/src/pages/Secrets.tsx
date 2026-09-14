@@ -233,7 +233,7 @@ function SecretDialog({ projectId, branch, services, editing, onClose, onDone, o
               </div>
             )}
             <p className="text-sm text-muted-foreground">
-              An environment-scoped value overrides an all-environments value with the same name.
+              A branch-scoped value overrides an all-branches value with the same name.
               {editing && ' The current value is never shown; this replaces it.'}
             </p>
             {error && <p className="text-sm text-destructive">{error}</p>}
@@ -353,7 +353,7 @@ export function Secrets() {
               <p className="text-sm font-medium">{query ? 'No matches' : all.services.length === 0 ? 'No services yet' : 'No service secrets yet'}</p>
               <p className="text-[13px] text-muted-foreground">
                 {query ? 'No variables match your search.'
-                  : all.services.length === 0 ? 'Service credentials appear here once a service is added to this environment.'
+                  : all.services.length === 0 ? 'Service credentials appear here once a service is added to this branch.'
                     : 'Services appear here once they mint credentials or you bind a secret to one.'}
               </p>
             </div>

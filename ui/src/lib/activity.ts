@@ -5,6 +5,27 @@
 /** Events per fetch; "Load more" grows the window by another page. */
 export const ACTIVITY_PAGE_SIZE = 50
 
+/** One answered poll, tagged with what it was asked for: the poll hook keeps its last data across a
+ *  project change, so an untagged window would go on showing one project's events under another. */
+export type EventsLoad = { projectId: string; limit: number; events: ActivityEvent[] }
+
+/** What the panel draws for `projectId` at page size `limit`:
+ *  - `events`: only a load for THIS project; undefined (the skeleton) while its first one is pending;
+ *  - `loadingMore`: a grown window that has not answered yet and has not failed;
+ *  - `maybeMore`: whether to offer Load more, kept while more is loading or after a failed attempt so it
+ *    can be retried. */
+export function panelState(load: EventsLoad | undefined, projectId: string, limit: number, failed: boolean): {
+  events: ActivityEvent[] | undefined; loadingMore: boolean; maybeMore: boolean
+} {
+  if (!load || load.projectId !== projectId) return { events: undefined, loadingMore: false, maybeMore: false }
+  const grown = load.limit !== limit
+  return {
+    events: load.events,
+    loadingMore: grown && !failed,
+    maybeMore: grown || load.events.length >= limit,
+  }
+}
+
 export type ActivityEvent = { id: string; source: string; kind: string; detail: string | null; created: string }
 
 /** A compact one-line payload summary, "key: value · key: value": primitive values only, the first four. */

@@ -25,14 +25,6 @@ ACCESS_ANON_KEY=anon_...
 POSTGRES_DB=insforge
 ```
 
-| In docker compose | On InstaCloud |
-|---|---|
-| `insforge`, the backend | a **compute** service, same image |
-| `postgrest` | a **compute** service, same image |
-| `postgres`, InsForge's own image | a **postgres** service |
-| the `storage-data` volume | a **storage** service |
-| the values in `.env` | project secrets, same values |
-| `deno`, the edge functions host | **not migrated yet**, see below |
 
 **Edge functions do not come along yet.** The `deno` container runs a stock image with your functions mounted in, so there is no image to move. If your app calls them, wait for this guide to grow that step. Everything else migrates.
 
@@ -85,7 +77,7 @@ It will ask you to approve anything that touches production, and it moves the fi
 Give me the new InsForge URL, and confirm the anon key and API key match the ones in my .env without printing either value.
 ```
 
-Change `baseUrl` in your `createClient` call to that URL. Unless your app calls edge functions, nothing else in it changes. If your app reached InsForge through your own domain, ask your agent to attach it to the backend's compute service and publish the DNS records it gives you. Keep the old stack stopped, not deleted, until the new one has served you for a while.
+Change `baseUrl` in your `createClient` call to that URL. Unless your app calls edge functions, nothing else in it changes. Leave the old stack stopped rather than deleted, so you can go back to it.
 
 ## Cron jobs
 

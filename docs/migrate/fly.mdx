@@ -30,13 +30,6 @@ primary_region = "ams"
   internal_port = 8000
 ```
 
-| On Fly | On InstaCloud |
-|---|---|
-| The app | a **compute** service |
-| Fly Postgres | a **postgres** service |
-| `[env]` and `fly secrets` | project secrets |
-| `internal_port` | the `--port` your service is created with |
-| `DATABASE_URL` attached by `fly pg attach` | a binding, not a copied string |
 
 ### 1. Point a coding agent at your Fly app
 
@@ -70,20 +63,14 @@ fly ssh console -a hello-django -C 'printenv SECRET_KEY' | insta secrets set SEC
 The pipe keeps the value out of your terminal. Repeat per secret, but skip the `DATABASE_URL` that `fly pg attach` installed: your agent binds the new database under that name, and a copied string there would block the binding. Then hand over:
 
 ```text title="Prompt" wrap
-Migrate my Fly app hello-django and its Fly Postgres to InstaCloud. The code is in this directory, with its Dockerfile and fly.toml. Follow the insta skill's migration runbook, and stop before moving DNS.
+Migrate my Fly app hello-django and its Fly Postgres to InstaCloud. The code is in this directory, with its Dockerfile and fly.toml. Follow the insta skill's migration runbook, and stop before sending traffic to it.
 ```
 
 Because the Dockerfile is already there, your agent deploys straight from the directory with `insta deploy .`, no GitHub connection needed. It will ask you to approve anything that touches production, and expect it to scale the Fly app to zero before it copies the database, so nothing is still writing.
 
+Leave the Fly app stopped rather than destroyed, so you can go back to it. A machine left running would keep serving clients and writing to the old database.
+
 {/* screenshot: console, project with a compute service and a postgres service deployed */}
-
-### 4. Move the domain
-
-```text title="Prompt" wrap
-Attach <your-domain> to the compute service and give me the DNS records to publish.
-```
-
-Publish the records at your DNS provider, then ask your agent to check the domain. Keep the Fly app stopped, and do not destroy it, until the old records have aged out of resolver caches. A machine left running would serve anyone on cached DNS and write to the old database.
 
 ## Cron jobs
 

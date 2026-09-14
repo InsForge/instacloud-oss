@@ -31,10 +31,12 @@ function Legend({ card }: { card: MetricCardData }) {
 }
 
 /** History (per-point readings) lives in the chart's hover tooltip; there is no AVG/MAX/LATEST row. */
-export function MetricCard({ card, byService = false }: {
+export function MetricCard({ card, byService = false, domain }: {
   card: MetricCardData
   /** Lines are SERVICES, not metrics: the legend becomes identity, and no one line is "the" value. */
   byService?: boolean
+  /** The selected window, which the chart's time axis spans (see TimeSeriesChart). */
+  domain?: { from: number; to: number }
 }) {
   const Icon = cardIcons[card.id] ?? Gauge
   const { latest } = seriesStats(card)
@@ -56,7 +58,7 @@ export function MetricCard({ card, byService = false }: {
         )}
       </div>
       <div className="min-h-0 flex-1 px-2 pt-4">
-        <TimeSeriesChart card={card} height="100%" />
+        <TimeSeriesChart card={card} height="100%" domain={domain} />
       </div>
       {/* One series is named by its title already; a project-scoped card always shows it. */}
       {(byService || card.lines.length > 1) && (

@@ -16,6 +16,10 @@ export const DEFAULT_WINDOW_SEC = 3_600
 export const DEFAULT_STEP_SEC = 60
 /** No series is answered with more points than this; a step that would exceed it is coarsened. */
 export const MAX_POINTS = 2_000
+/** The widest gap a network rate is differenced across: one 30 s tick, plus one missed to a failed
+ *  `docker stats`, with room to spare. Wider than this the daemon was not watching, and the chart
+ *  shows a gap rather than a rate averaged over the outage. */
+export const MAX_RATE_GAP_SEC = 120
 
 /** One container's reading at one instant. Network counters are CUMULATIVE since the container
  *  started, as `docker stats` reports them; rates are derived between consecutive samples. */
@@ -88,7 +92,10 @@ export class MetricsHistory {
           const rx = arr[i + 3]! - arr[i - FIELDS + 3]!
           const tx = arr[i + 4]! - arr[i - FIELDS + 4]!
           // Counters restart with the container: a negative delta is a new container, not negative traffic.
-          if (dt > 0 && rx >= 0 && tx >= 0) { b[3]! += rx / dt; b[4]! += tx / dt; b[5]! += 1 }
+          // A gap wider than MAX_RATE_GAP_SEC is a daemon that was not watching (down, or restarted onto a
+          // saved history): averaging hours of counter movement into one bucket after it would invent a
+          // rate, where the truth is a gap.
+          if (dt > 0 && dt <= MAX_RATE_GAP_SEC && rx >= 0 && tx >= 0) { b[3]! += rx / dt; b[4]! += tx / dt; b[5]! += 1 }
         }
       }
       if (buckets.size === 0) continue
@@ -144,13 +151,19 @@ export function parseStep(v: string): number | null {
 
 /** The window a metrics request covers, from its query string. Absent values take the cloud's
  *  defaults (the last hour at 60 s); a step that would exceed MAX_POINTS is coarsened. */
-export function metricsWindow(q: { from?: string; to?: string; step?: string }, nowSec: number): MetricsWindow | { error: string } {
+export function metricsWindow(q: { from?: unknown; to?: unknown; step?: unknown }, nowSec: number): MetricsWindow | { error: string } {
+  // A query string can repeat a key (`?step=60s&step=5m`), which the parser hands over as an array:
+  // malformed input, and a 400, not something to call .trim() on.
+  if ([q.from, q.to, q.step].some((v) => v !== undefined && typeof v !== 'string')) {
+    return { error: 'from, to and step may each be given once' }
+  }
+  const [fromQ, toQ, stepQ] = [q.from, q.to, q.step] as Array<string | undefined>
   const seconds = (v: string | undefined, fallback: number): number | null =>
     v === undefined || v === '' ? fallback : /^\d+$/.test(v) && Number.isSafeInteger(Number(v)) ? Number(v) : null
-  const to = seconds(q.to, nowSec)
-  const from = to === null ? null : seconds(q.from, to - DEFAULT_WINDOW_SEC)
+  const to = seconds(toQ, nowSec)
+  const from = to === null ? null : seconds(fromQ, to - DEFAULT_WINDOW_SEC)
   if (to === null || from === null) return { error: 'from and to must be unix seconds' }
-  let step = q.step === undefined || q.step === '' ? DEFAULT_STEP_SEC : parseStep(q.step)
+  let step = stepQ === undefined || stepQ === '' ? DEFAULT_STEP_SEC : parseStep(stepQ)
   if (step === null) return { error: 'step must be seconds, or a number with s, m or h (60s, 5m, 1h)' }
   if (from >= to) return { error: 'from must be before to' }
   // Both ends are inclusive and samples floor onto bucket starts, so a window holds up to

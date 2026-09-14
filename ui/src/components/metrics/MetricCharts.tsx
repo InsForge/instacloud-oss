@@ -50,8 +50,12 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
   const [range, setRange] = useState<RangeKey>('1h')
   // Compare by VALUE: callers rebuild these arrays each render, so identity would refetch always.
   const sourcesKey = JSON.stringify([services ?? null, also ?? null])
+  // What the data is OF. The range is deliberately not part of it: another range of the same services
+  // stays on screen dimmed while the new one loads, as on the console, and names nobody wrongly.
+  const scope = JSON.stringify([projectId, branch, component, group ?? null, lineName ?? null, sourcesKey])
 
   const { data, error, reload } = usePoll(async () => {
+    const fetchedFor = scope
     // Computed now, on every poll, and shared by every source this poll asks: a window fixed when the
     // range was picked would never take in a new sample.
     const current = activeRange(range, Date.now())
@@ -59,7 +63,7 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
     const settle = (c: MetricComponent, g?: string) => api.metrics(projectId, c, branch, g, current.window).catch(() => undefined)
     const [primary, ...rest] = await Promise.all([settle(component, group), ...(also ?? []).map((s) => settle(s.component))])
     if (!primary && rest.every((r) => !r)) throw new Error("The daemon couldn't return metrics right now.")
-    return { range: current.range, zeroWindow: current.zeroWindow, primary, rest }
+    return { fetchedFor, range: current.range, zeroWindow: current.zeroWindow, primary, rest }
   }, [projectId, component, branch, group, range, sourcesKey], REFRESH_MS)
 
   const { cards, note, byService } = useMemo(() => {
@@ -78,7 +82,7 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
 
   // The picked range has not answered yet: the previous range's cards stay, dimmed like the console's refetch.
   const fetching = Boolean(data) && data!.range !== range
-  const view = metricChartsView({ hasData: Boolean(data), error, note })
+  const view = metricChartsView({ hasData: Boolean(data), error, note, fetchedFor: data?.fetchedFor, scope })
   const grid = 'grid grid-cols-1 gap-3 lg:grid-cols-2'
 
   return (
@@ -124,7 +128,10 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
         </div>
       ) : (
         <div className={grid}>
-          {cards.map((card) => <MetricCard key={card.id} card={card} byService={byService} />)}
+          {cards.map((card) => (
+            // The selected window, not the samples' extent: partial history shows where it sits in the range.
+            <MetricCard key={card.id} card={card} byService={byService} domain={{ from: data!.zeroWindow.from, to: data!.zeroWindow.to }} />
+          ))}
         </div>
       )}
     </div>

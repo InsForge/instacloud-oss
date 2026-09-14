@@ -50,8 +50,11 @@ export function ChartTooltip({ active, label, card }: { active?: boolean; label?
   )
 }
 
-/** `height` may be "100%" when the parent sizes the chart. */
-export function TimeSeriesChart({ card, height }: { card: MetricCardData; height: number | '100%' }) {
+/** `height` may be "100%" when the parent sizes the chart. `domain` is the window the range picker
+ *  asked for: the axis spans it whatever part of it has samples, so a daemon with five minutes of
+ *  history draws five minutes at the right end of a "1h" chart, not five minutes stretched across it.
+ *  Without one, the axis spans the samples (the console's behavior). */
+export function TimeSeriesChart({ card, height, domain }: { card: MetricCardData; height: number | '100%'; domain?: { from: number; to: number } }) {
   // Gradient ids must be unique per mounted chart — the same card can render on several views.
   // useId's colons are stripped: they're invalid inside SVG url(#…) references.
   const gradientId = useId().replace(/:/g, '')
@@ -64,7 +67,10 @@ export function TimeSeriesChart({ card, height }: { card: MetricCardData; height
 
   // Label the round clock times inside the window rather than letting recharts subdivide it from
   // whatever second the first sample landed on. Undefined for a single point.
-  const ticks = rows.length > 1 ? clockTicks(rows[0]!.t!, rows[rows.length - 1]!.t!) : undefined
+  const ticks = domain
+    ? clockTicks(domain.from, domain.to)
+    : rows.length > 1 ? clockTicks(rows[0]!.t!, rows[rows.length - 1]!.t!) : undefined
+  const xDomain: [number | string, number | string] = domain ? [domain.from, domain.to] : ['dataMin', 'dataMax']
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -94,7 +100,7 @@ export function TimeSeriesChart({ card, height }: { card: MetricCardData; height
           dataKey="t"
           type="number"
           scale="time"
-          domain={['dataMin', 'dataMax']}
+          domain={xDomain}
           ticks={ticks}
           tickFormatter={formatClock}
           axisLine={false}

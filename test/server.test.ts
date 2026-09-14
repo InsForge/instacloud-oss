@@ -1559,6 +1559,18 @@ test('metrics endpoint rejects a window that is not unix seconds and a step', as
   }
 })
 
+// Fastify parses a repeated key into an array; that is malformed input and a 400, not a 500 from
+// calling string methods on it.
+test('metrics endpoint answers a repeated window parameter with 400, not 500', async () => {
+  const id = await createProject()
+  await post(`/projects/${id}/deploy`, { image: 'app:1', branch: 'main', port: 3000 })
+  for (const q of ['step=60s&step=5m', 'from=100&from=200', 'to=100&to=200']) {
+    const res = await get(`/projects/${id}/metrics?component=compute&branch=main&${q}`)
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/once/)
+  }
+})
+
 test('operations lists the resource timeline newest-first (control-plane shape)', async () => {
   const id = await createProject()
   await post(`/projects/${id}/deploy`, { image: 'app:1', branch: 'main', port: 3000 })

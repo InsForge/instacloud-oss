@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import {
-  liveSeries, MAX_POINTS, MetricsHistory, metricsWindow, parseStep, RETENTION_SEC, statsToSamples,
+  liveSeries, MAX_POINTS, MAX_RATE_GAP_SEC, MetricsHistory, metricsWindow, parseStep, RETENTION_SEC, statsToSamples,
   type ContainerSample,
 } from '../src/metrics-history'
 import { MetricsSampler, PERSIST_INTERVAL_SEC } from '../src/metrics-sampler'
@@ -170,6 +170,27 @@ describe('metricsWindow past safe integers (regression: Infinity became NaN buck
   test('the widest valid window still answers a finite, safe step', () => {
     const w = metricsWindow({ from: '0', to: String(Number.MAX_SAFE_INTEGER), step: '1s' }, 0)
     expect('step' in w && Number.isSafeInteger(w.step) && w.step > 0).toBe(true)
+  })
+})
+
+describe('network rates across a daemon outage (regression: hours of counter movement pinned on one bucket)', () => {
+  test('a sample after a long gap, reloaded from a saved history, starts a new chain: no rate across the outage', () => {
+    const before = new MetricsHistory()
+    before.record(0, [sample(APP.container, 0, 0, 1_000, 1_000)])
+    before.record(30, [sample(APP.container, 0, 0, 2_000, 2_000)])
+    const after = new MetricsHistory()
+    after.load(JSON.parse(JSON.stringify(before.toJSON())), 60)
+    after.record(7_230, [sample(APP.container, 0, 0, 9_000_000, 9_000_000)]) // the daemon was down for two hours
+    const egress = named(after.query([APP], 0, 8_000, 60), 'egress_bytes_rate')[0]!
+    expect(egress.points.map(([t]) => t)).toEqual([0]) // the pre-outage bucket only; nothing at 7200
+  })
+
+  test('a missed tick (one failed docker stats) still differences, within MAX_RATE_GAP_SEC', () => {
+    const h = new MetricsHistory()
+    h.record(0, [sample(APP.container, 0, 0, 0, 0)])
+    h.record(60, [sample(APP.container, 0, 0, 6_000, 0)])
+    expect(MAX_RATE_GAP_SEC).toBeGreaterThanOrEqual(60)
+    expect(named(h.query([APP], 0, 120, 120), 'ingress_bytes_rate')[0]!.points).toEqual([[0, 100]])
   })
 })
 

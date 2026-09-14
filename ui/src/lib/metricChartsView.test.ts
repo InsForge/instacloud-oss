@@ -31,6 +31,15 @@ describe('metricChartsView (regression: stale charts shown as current after a to
     expect(metricChartsView({ hasData: true, error: undefined, note: 'nothing deployed on this branch' })).toBe('note')
   })
 
+  it('shows loading, never the previous service, while a switch from service A to B loads', () => {
+    const A = JSON.stringify(['p', 'main', 'compute', 'web'])
+    const B = JSON.stringify(['p', 'main', 'compute', 'worker'])
+    // A's data is still held (usePoll keeps it across the dependency change, and a late A request can land after B began).
+    expect(metricChartsView({ hasData: true, error: undefined, fetchedFor: A, scope: B })).toBe('loading')
+    // B's own answer arrives.
+    expect(metricChartsView({ hasData: true, error: undefined, fetchedFor: B, scope: B })).toBe('cards')
+  })
+
   it('does not let an old note hide a failed latest poll', () => {
     expect(metricChartsView({ hasData: true, error: new Error('x'), note: 'nothing deployed on this branch' })).toBe('unavailable')
   })

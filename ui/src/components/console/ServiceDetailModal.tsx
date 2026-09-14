@@ -198,7 +198,9 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
               {active === 'database' && <DatabasePanel projectId={projectId} branch={branch} group={service.name} />}
               {/* The console's Metrics tab: compute omits the range picker, databases keep it. */}
               {active === 'metrics' && obsComponentFor(service.type) && (
-                <MetricCharts projectId={projectId} component={obsComponentFor(service.type)!} branch={branch}
+                // Keyed by service: the overlay stays mounted when another service is opened, and a
+                // fresh chart state is what keeps one service's samples from wearing the next's name.
+                <MetricCharts key={service.id} projectId={projectId} component={obsComponentFor(service.type)!} branch={branch}
                   group={service.name} lineName={service.name} showRangePicker={service.type !== 'compute'} />
               )}
               {active === 'variables' && <VariablesTab projectId={projectId} branch={branch} service={service} />}

@@ -146,7 +146,8 @@ export function buildServer(
 
   app.get('/projects/:id/metrics', async (req, reply) => {
     const { id } = req.params as { id: string }
-    const q = req.query as { component?: string; branch?: string; group?: string; from?: string; to?: string; step?: string }
+    // from/to/step stay `unknown`: a repeated key arrives as an array, and metricsWindow answers that 400.
+    const q = req.query as { component?: string; branch?: string; group?: string; from?: unknown; to?: unknown; step?: unknown }
     const c = component(q)
     if (!c) return badComponent(reply)
     // The cloud's window: from/to in unix seconds and a step like 60s, 5m or 1h; the last hour at 60 s

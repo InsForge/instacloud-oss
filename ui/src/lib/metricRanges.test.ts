@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { activeRange, RANGES, type RangeKey } from './metricRanges'
+import {
+  activeRange, customRange, formatLocalInput, localZoneAbbr, parseLocalInput, PRESET_KEYS, RANGES, rangeLabel,
+  stepForSpan, tickedRange, withPickedDay, withPickedTime, type RangeKey,
+} from './metricRanges'
 
 const T0 = Date.UTC(2026, 8, 14, 19, 0, 7) // a poll that lands mid-minute
 
@@ -36,5 +39,81 @@ describe('activeRange — the window a poll asks for (regression: longer ranges 
     const polled = activeRange('6h', T0 + 60_000)
     expect(sampleAt).toBeLessThanOrEqual(polled.window.to) // …inside the one the next poll asks for
     expect(sampleAt).toBeGreaterThanOrEqual(polled.window.from)
+  })
+})
+
+describe('the presets', () => {
+  it("carry the console's labels, stop at the daemon's three-day retention, and step no finer than its 30 s samples", () => {
+    expect(PRESET_KEYS.map((key) => RANGES[key].label)).toEqual(['5 min', '15 min', '30 min', '1 hour', '3 hour', '6 hour', '1 day', '3 day'])
+    for (const key of PRESET_KEYS) {
+      expect(RANGES[key].seconds).toBeLessThanOrEqual(3 * 86_400)
+      expect(RANGES[key].stepSeconds).toBeGreaterThanOrEqual(30)
+      expect(RANGES[key].seconds % RANGES[key].stepSeconds).toBe(0)
+    }
+  })
+})
+
+describe('tickedRange', () => {
+  it('rolls a preset forward and leaves a custom range pinned', () => {
+    const preset = activeRange('1h', T0)
+    expect(tickedRange(preset, T0 + 60_000).window.to).toBe(preset.window.to + 60)
+    const now = Math.floor(T0 / 1000)
+    const pinned = customRange(now - 7_200, now - 3_600, T0)!
+    expect(tickedRange(pinned, T0 + 60_000)).toBe(pinned)
+  })
+})
+
+describe('customRange', () => {
+  const now = Math.floor(T0 / 1000)
+
+  it('takes the finest step within the point budget and snaps the grid to bucket starts', () => {
+    const r = customRange(now - 7_193, now - 13, T0)! // 7,180 s: 60 s would be 120 points, 2 m is 60
+    expect(r.range).toBe('custom')
+    expect(r.window.step).toBe('2m')
+    expect(r.zeroWindow.from % 120).toBe(0)
+    expect(r.zeroWindow.to % 120).toBe(0)
+    expect(r.zeroWindow.from).toBeLessThanOrEqual(r.window.from)
+    expect(r.zeroWindow.to).toBeLessThanOrEqual(r.window.to)
+  })
+
+  it('refuses a range reaching past the three days the daemon keeps, and an empty or reversed one', () => {
+    expect(customRange(now - 3 * 86_400 - 60, now, T0)).toBeNull()
+    expect(customRange(now, now, T0)).toBeNull()
+    expect(customRange(now, now - 60, T0)).toBeNull()
+  })
+
+  it('never steps finer than the daemon samples', () => {
+    expect(stepForSpan(60)!.step).toBe('30s')
+  })
+
+  it('labels the trigger with its two ends', () => {
+    expect(rangeLabel(customRange(now - 3_600, now, T0)!)).toMatch(/^\d{2}-\d{2} \d{2}:\d{2} → \d{2}-\d{2} \d{2}:\d{2}$/)
+    expect(rangeLabel(activeRange('1h', T0))).toBe('1 hour')
+  })
+})
+
+describe('the From / until fields', () => {
+  it('round-trip a local "YYYY-MM-DD HH:MM"', () => {
+    expect(formatLocalInput(parseLocalInput('2026-09-14 13:05')!)).toBe('2026-09-14 13:05')
+  })
+
+  it('reject a date that rolls over, and anything else unreadable', () => {
+    expect(parseLocalInput('2026-13-45 99:99')).toBeNull()
+    expect(parseLocalInput('soon')).toBeNull()
+    expect(parseLocalInput('')).toBeNull()
+  })
+
+  it('accept a full ISO instant with its own offset', () => {
+    expect(parseLocalInput('2026-09-14T21:19:00Z')).toBe(Date.UTC(2026, 8, 14, 21, 19) / 1000)
+  })
+
+  it('keep the time when a day is picked, and the date when a time is picked', () => {
+    expect(withPickedDay('2026-09-14 14:30', new Date(2026, 8, 12))).toBe('2026-09-12 14:30')
+    expect(withPickedTime('2026-09-14 14:30', '09:05', T0)).toBe('2026-09-14 09:05')
+    expect(withPickedTime('2026-09-14 14:30', 'nope', T0)).toBe('2026-09-14 14:30')
+  })
+
+  it("name the viewer's zone the way the trigger shows it", () => {
+    expect(localZoneAbbr(new Date(Date.UTC(2026, 8, 14)), 'America/Los_Angeles')).toBe('PDT')
   })
 })

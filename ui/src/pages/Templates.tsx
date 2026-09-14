@@ -25,6 +25,9 @@ export function Templates() {
   const [openCode, setOpenCode] = useState<string | undefined>(() => params.get('template') || undefined)
   useEffect(() => {
     if (!params.has('template')) return
+    // Also when the parameter arrives while this page is already mounted, not only at first render.
+    const code = params.get('template')
+    if (code) setOpenCode(code)
     setParams((prev) => { const next = new URLSearchParams(prev); next.delete('template'); return next }, { replace: true })
   }, [params, setParams])
   const [deployCode, setDeployCode] = useState<string>()

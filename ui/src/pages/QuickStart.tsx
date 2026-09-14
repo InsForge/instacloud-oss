@@ -9,10 +9,13 @@ import { Link, useParams } from 'react-router-dom'
 import { Button, cn } from '@insforge/ui'
 import { Check, Copy, ExternalLink } from 'lucide-react'
 import { useAuth } from '../components/AuthGate'
+import { copyText } from '../lib/clipboard'
 import { cliLine, DOCS_URL, quickStartCards, setupPrompt, type QuickStartCard } from '../lib/quickStart'
 
 const ASSET = '/quick-start/'
 
+/** One pill segment that copies. Through `copyText`, which falls back to execCommand where the page has no
+ *  Clipboard API (a self-hosted dashboard on plain HTTP), and shows "Copied" only when the copy took. */
 function CopyChip({ text, label, className }: { text: string; label: string; className?: string }) {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -29,14 +32,7 @@ function CopyChip({ text, label, className }: { text: string; label: string; cla
         label === 'CLI' ? 'w-[65px]' : 'w-[95px]',
         className,
       )}
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(text)
-          setCopied(true)
-        } catch {
-          // Clipboard access can fail outside a focused browser context.
-        }
-      }}>
+      onClick={async () => { if (await copyText(text)) setCopied(true) }}>
       <span>{label}</span>
       {copied
         ? <Check className="size-5 shrink-0 text-theme" aria-hidden="true" />

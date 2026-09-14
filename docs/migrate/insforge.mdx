@@ -26,11 +26,9 @@ POSTGRES_DB=insforge
 ```
 
 
-**Edge functions do not come along yet.** The `deno` container runs a stock image with your functions mounted in, so there is no image to move. If your app calls them, wait for this guide to grow that step. Everything else migrates.
+**Edge functions do not migrate yet.** If your app calls them, wait for this guide to grow that step. Everything else comes over.
 
-**One privilege changes.** InsForge keeps the role behind its SQL endpoint unprivileged through an extension built into its own Postgres image, which a managed database cannot load. Your agent makes that role a superuser instead. You can tell it not to, and the one thing that then stops working is `CREATE EXTENSION` through InsForge's SQL endpoint.
-
-**Keep your keys.** `JWT_SECRET`, `ENCRYPTION_KEY`, `ACCESS_API_KEY` and `ACCESS_ANON_KEY` travel with the data: they keep every user logged in, every stored secret readable, and every app on the same anon key. Fresh ones would log everyone out and lock the encrypted rows.
+**Keep your keys.** Your agent carries `JWT_SECRET`, `ENCRYPTION_KEY`, `ACCESS_API_KEY` and `ACCESS_ANON_KEY` over unchanged, which is what keeps your users logged in and your stored secrets readable. Fresh ones would log everyone out.
 
 ### 1. Point a coding agent at your InsForge
 

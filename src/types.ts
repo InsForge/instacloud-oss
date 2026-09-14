@@ -18,6 +18,7 @@ export interface ServiceSettings {
   alwaysOn?: boolean            // undefined = the default: cfg.sleep.alwaysOnDefault on the default branch, scale-to-zero elsewhere
   limits?: ServiceLimits        // undefined = no cgroup ceiling
   createdAt?: number
+  renamedAt?: number            // when the service took its current name: its metrics history starts no earlier
   port?: number                 // WP5: default listen port recorded by services add / template deploy
   templateDeploymentId?: string // WP5
   templateCode?: string         // WP5
@@ -29,9 +30,9 @@ export interface Project {
   id: string; name: string; status: string; createdAt: number; computeGroups?: string[]
   refSlug?: string
   computeVolumes?: Record<string, { id: string; sizeGib: number }>
-  managedServices?: Array<{ id: string; type: ManagedDbType; name: string; createdAt: number; dataId?: string }>   // dataId: WP4 (8 hex, minted at add, backfilled by migration)
+  managedServices?: Array<{ id: string; type: ManagedDbType; name: string; createdAt: number; renamedAt?: number; dataId?: string }>   // dataId: WP4 (8 hex, minted at add, backfilled by migration); renamedAt: when it took its current name
   // ---- region WP5 (templates/parity) ----
-  dbServices?: Array<{ id: string; name: string; dataId: string; createdAt: number; templateDeploymentId?: string }>        // id = `pg-${name}`; oldest gets the canonical DATABASE_URL alias
+  dbServices?: Array<{ id: string; name: string; dataId: string; createdAt: number; renamedAt?: number; templateDeploymentId?: string }>        // id = `pg-${name}`; oldest gets the canonical DATABASE_URL alias
   storageServices?: Array<{ id: string; name: string; createdAt: number; public?: boolean }>                             // id = `st-${name}`
   // ---- end region WP5 ----
   // ---- region WP3 (scheduler) ----

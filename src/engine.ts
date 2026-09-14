@@ -1293,7 +1293,7 @@ export class Engine {
   /** The project's registered managed databases (empty when none). `dataId` is WP4's immutable
    *  directory key (decision 16); rows from before the data dir carry none until the boot migration
    *  backfills one. */
-  private managedList(projectId: string): Array<{ id: string; type: ManagedDbType; name: string; createdAt: number; dataId?: string }> {
+  private managedList(projectId: string): Array<{ id: string; type: ManagedDbType; name: string; createdAt: number; renamedAt?: number; dataId?: string }> {
     return this.getProject(projectId)?.managedServices ?? []
   }
 
@@ -2018,10 +2018,11 @@ export class Engine {
         }
         // always-on, limits, the recorded port and the template provenance are keyed by service id,
         // and the id embeds the name: without this the rename silently reset them to the defaults.
-        if (pr.serviceSettings?.[`cp-${oldName}`]) {
-          pr.serviceSettings[`cp-${newName}`] = pr.serviceSettings[`cp-${oldName}`]
-          delete pr.serviceSettings[`cp-${oldName}`]
-        }
+        // renamedAt: the container is keyed by the NEW name, whose metrics history may still hold a deleted
+        // service's samples; this service's history under it starts now (observedTargets' `since`).
+        pr.serviceSettings = pr.serviceSettings ?? {}
+        pr.serviceSettings[`cp-${newName}`] = { ...pr.serviceSettings[`cp-${oldName}`], renamedAt: Date.now() }
+        delete pr.serviceSettings[`cp-${oldName}`]
         for (const b of branches) {
           const app = st.branches[b.id].apps[oldName]
           if (!app) continue
@@ -2319,7 +2320,8 @@ export class Engine {
     }
     mutate((st) => {
       const pr = st.projects[projectId]
-      pr.managedServices = (pr.managedServices ?? []).map((x) => (x.id === serviceId ? { ...x, id: newId, name: newName } : x))
+      // renamedAt: metrics history under the new name starts now, not at creation (observedTargets' `since`).
+      pr.managedServices = (pr.managedServices ?? []).map((x) => (x.id === serviceId ? { ...x, id: newId, name: newName, renamedAt: Date.now() } : x))
       for (const b of Object.values(st.branches)) {
         if (b.projectId !== projectId || !b.managed?.[serviceId]) continue
         const label = newLabel.get(b.id)
@@ -2948,27 +2950,31 @@ export class Engine {
   private observedTargets(project: Project, branch: Branch, component: ObservedComponent, group?: string): MetricsTarget[] {
     const ref = this.ref(project, branch)
     // Container names reuse project, branch and service NAMES, so a name's metrics history can predate
-    // the resource now carrying it (delete a project, recreate it under the same name). `since` is the
-    // first whole second after the newest of the three creation times: samples are stamped in whole
-    // seconds, so one stamped in the creation second may predate the resource, and none stamped at or
-    // after `since` can.
-    const since = (serviceCreatedAt?: number): number =>
-      Math.floor(Math.max(project.createdAt, branch.createdAt, serviceCreatedAt ?? 0) / 1000) + 1
+    // the resource now carrying it (delete a project and recreate it under the same name, or rename a
+    // service into a name a deleted one gave up). `since` is the first whole second after the newest of
+    // those moments: the project's and branch's creation, and the service's creation or rename. Samples
+    // are stamped in whole seconds, so one stamped in that second may predate the resource, and none
+    // stamped at or after `since` can.
+    const since = (...serviceTimes: Array<number | undefined>): number =>
+      Math.floor(Math.max(project.createdAt, branch.createdAt, ...serviceTimes.map((t) => t ?? 0)) / 1000) + 1
     // 'db' fans out over the project's postgres services; `group` narrows it to one by NAME, the
     // same `?group=` the database routes take.
     if (component === 'db') {
       return this.dbList(project.id)
         .filter((d) => (!group || d.name === group) && this.carries(project, branch, d, 'postgres'))
-        .map((d) => ({ container: this.pgContainer(project, branch, d.id), group: d.name, since: since(d.createdAt) }))
+        .map((d) => ({ container: this.pgContainer(project, branch, d.id), group: d.name, since: since(d.createdAt, d.renamedAt) }))
     }
     if (component !== 'compute') {
       return this.managedList(project.id)
         .filter((m) => m.type === component && (!group || m.name === group) && branch.managed?.[m.id])
-        .map((m) => ({ container: managedContainerName(ref, m.type, m.name), group: m.name, since: since(m.createdAt) }))
+        .map((m) => ({ container: managedContainerName(ref, m.type, m.name), group: m.name, since: since(m.createdAt, m.renamedAt) }))
     }
     const groups = group ? [group] : Object.keys(branch.apps).sort()
     return groups.filter((g) => branch.apps[g])
-      .map((g) => ({ container: appContainerName(ref, g), group: g, since: since(project.serviceSettings?.[`cp-${g}`]?.createdAt) }))
+      .map((g) => {
+        const settings = project.serviceSettings?.[`cp-${g}`]
+        return { container: appContainerName(ref, g), group: g, since: since(settings?.createdAt, settings?.renamedAt) }
+      })
   }
 
   /** Runtime logs via `docker logs --tail` — same LogsResult shape as the cloud (which serves
@@ -4758,7 +4764,8 @@ export class Engine {
       }
       mutate((st) => {
         const pr = st.projects[projectId]
-        pr.dbServices = (pr.dbServices ?? []).map((d) => (d.id === serviceId ? { ...d, id: newId, name: newName } : d))
+        // renamedAt: metrics history under the new name starts now, not at creation (observedTargets' `since`).
+        pr.dbServices = (pr.dbServices ?? []).map((d) => (d.id === serviceId ? { ...d, id: newId, name: newName, renamedAt: Date.now() } : d))
         for (const u of st.userSecrets[projectId] ?? []) if (u.service === `postgres/${reg.name}`) u.service = `postgres/${newName}`
       })
       this.router.invalidate()

@@ -132,19 +132,21 @@ export class MetricsHistory {
   }
 }
 
-/** A step as the cloud spells it: "60s", "5m", "1h", or bare seconds. */
+/** A step as the cloud spells it: "60s", "5m", "1h", or bare seconds. Safe integers only: a long
+ *  enough digit string is `Infinity` to Number(), which is "greater than zero" and would coarsen
+ *  every bucket timestamp into NaN. */
 export function parseStep(v: string): number | null {
   const m = /^(\d+)(s|m|h)?$/.exec(v.trim())
   if (!m) return null
   const seconds = Number(m[1]) * { s: 1, m: 60, h: 3_600 }[(m[2] ?? 's') as 's' | 'm' | 'h']
-  return seconds > 0 ? seconds : null
+  return Number.isSafeInteger(seconds) && seconds > 0 ? seconds : null
 }
 
 /** The window a metrics request covers, from its query string. Absent values take the cloud's
  *  defaults (the last hour at 60 s); a step that would exceed MAX_POINTS is coarsened. */
 export function metricsWindow(q: { from?: string; to?: string; step?: string }, nowSec: number): MetricsWindow | { error: string } {
   const seconds = (v: string | undefined, fallback: number): number | null =>
-    v === undefined || v === '' ? fallback : /^\d+$/.test(v) ? Number(v) : null
+    v === undefined || v === '' ? fallback : /^\d+$/.test(v) && Number.isSafeInteger(Number(v)) ? Number(v) : null
   const to = seconds(q.to, nowSec)
   const from = to === null ? null : seconds(q.from, to - DEFAULT_WINDOW_SEC)
   if (to === null || from === null) return { error: 'from and to must be unix seconds' }

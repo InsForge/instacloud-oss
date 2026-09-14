@@ -242,6 +242,7 @@ export interface ServiceRoster {
 
 /** One metrics payload paired with the component and service roster it came from. */
 export interface MetricSourceResult {
+  /** Undefined means the request FAILED — not that it answered with nothing, which is `{ series: [] }`. */
   result?: { series?: MetricSeries[]; note?: string }
   component: MetricComponent
   services?: string[]
@@ -249,7 +250,11 @@ export interface MetricSourceResult {
 
 /** Merge components into one series set so databases draw beside compute on the same cards. Names are
  *  unique per TYPE only, so a name used by two components is suffixed with its component. `note`
- *  survives only when nothing at all is chartable. */
+ *  survives only when nothing at all is chartable.
+ *
+ *  A source whose request failed is left out entirely, its roster included. Keeping the roster made
+ *  zero-fill draw every one of its services as a flat zero line, so a failed compute request beside a
+ *  working database read as every app being idle: "unavailable" must never be drawn as "idle". */
 export function mergeMetricSources(sources: Array<MetricSourceResult | undefined>): {
   series: MetricSeries[]
   roster: string[]
@@ -260,7 +265,7 @@ export function mergeMetricSources(sources: Array<MetricSourceResult | undefined
   rosters: ServiceRoster[]
   note?: string
 } {
-  const present = sources.filter((s): s is MetricSourceResult => Boolean(s))
+  const present = sources.filter((s): s is MetricSourceResult => s !== undefined && s.result !== undefined)
   const seenIn = new Map<string, number>()
   for (const s of present) {
     for (const name of s.services ?? []) seenIn.set(name, (seenIn.get(name) ?? 0) + 1)

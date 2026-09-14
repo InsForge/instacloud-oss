@@ -153,6 +153,26 @@ describe('metricsWindow', () => {
   })
 })
 
+describe('metricsWindow past safe integers (regression: Infinity became NaN bucket timestamps)', () => {
+  const huge = '9'.repeat(400) // Number() of this is Infinity
+  test.each([
+    { to: huge },
+    { from: '0', to: huge },
+    { from: huge },
+    { step: huge },
+    { step: `${huge}s` },
+    { step: '9007199254740993' }, // one past MAX_SAFE_INTEGER, rounded by Number()
+    { step: '2501999792983609h' }, // safe as a number, not once multiplied into seconds
+  ])('rejects %o with a 400-style error', (q) => {
+    expect(metricsWindow(q, 10_000)).toHaveProperty('error')
+  })
+
+  test('the widest valid window still answers a finite, safe step', () => {
+    const w = metricsWindow({ from: '0', to: String(Number.MAX_SAFE_INTEGER), step: '1s' }, 0)
+    expect('step' in w && Number.isSafeInteger(w.step) && w.step > 0).toBe(true)
+  })
+})
+
 test('liveSeries answers one reading per target that docker reported', () => {
   const series = liveSeries([sample(APP.container, 0.0125, 12)], [APP, { container: 'io-gone', group: 'gone' }], 99)
   expect(series).toEqual([

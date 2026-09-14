@@ -3,7 +3,8 @@
 // like the scheduler's sweep. A container that exists but is not running is recorded as zero, which
 // is how the cloud draws a stopped service: an asleep database reads as a flat line at 0, not a gap.
 
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
+import { rename, writeFile } from 'node:fs/promises'
 import { dockerCall } from './docker'
 import { statsToSamples, type ContainerSample, type MetricsHistory } from './metrics-history'
 
@@ -51,7 +52,8 @@ export class MetricsSampler {
   }
 
   /** Restore the saved history. A missing file is a first boot; an unreadable one is logged and
-   *  started over, never fatal: history is for charts, not state the daemon runs on. */
+   *  started over, never fatal: history is for charts, not state the daemon runs on. Synchronous on
+   *  purpose — it runs once, at boot, before the daemon serves anything. */
   load(): void {
     let text: string
     try {
@@ -88,7 +90,7 @@ export class MetricsSampler {
     }
     this.history.record(t, rows)
     this.history.prune(t)
-    if (t - this.lastPersist >= PERSIST_INTERVAL_SEC) this.persist(t)
+    if (t - this.lastPersist >= PERSIST_INTERVAL_SEC) await this.persist(t)
   }
 
   start(): void {
@@ -108,23 +110,26 @@ export class MetricsSampler {
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
     await this.inFlight
-    this.persist(this.now())
+    await this.persist(this.now())
     this.started = false
   }
 
   private tick(): void {
-    if (this.inFlight) return // the previous tick is still waiting on docker
+    if (this.inFlight) return // the previous tick is still waiting on docker, or on its save
     this.inFlight = this.sampleOnce()
       .catch((e) => this.log(`metrics history: sample failed: ${String(e)}`))
       .finally(() => { this.inFlight = undefined })
   }
 
-  /** Write-then-rename, owner-only, like state.json: a crash mid-write leaves the previous file. */
-  private persist(t: number): void {
+  /** Write-then-rename, owner-only, like state.json: a crash mid-write leaves the previous file. The
+   *  file I/O is asynchronous so a multi-megabyte write does not hold the event loop the API and the
+   *  router share; only the in-memory serialization is synchronous. Saves never overlap: every
+   *  caller is either a tick (one at a time) or stop(), which waits for the tick first. */
+  private async persist(t: number): Promise<void> {
     const tmp = `${this.opts.file}.${process.pid}.tmp`
     try {
-      writeFileSync(tmp, JSON.stringify(this.history.toJSON()), { mode: 0o600 })
-      renameSync(tmp, this.opts.file)
+      await writeFile(tmp, JSON.stringify(this.history.toJSON()), { mode: 0o600 })
+      await rename(tmp, this.opts.file)
       this.lastPersist = t
     } catch (e) {
       this.log(`metrics history: could not save ${this.opts.file}: ${String(e)}`)

@@ -359,6 +359,29 @@ describe('self-host divergences', () => {
   })
 })
 
+describe('a failed source (regression: unavailable drawn as idle)', () => {
+  // A failed compute request beside a working database used to keep compute's roster, and zero-fill
+  // then drew every compute service as a flat zero: idle, when the truth was unknown.
+  it('draws no zero line for the services of a source whose request failed', () => {
+    const out = cardsForSources([
+      { result: undefined, component: 'compute', services: ['app', 'worker'] },
+      { result: { series: [owned('db', 'cpu_cores', 'vCPU', 0.2)] }, component: 'db', services: ['db'] },
+    ], WIN, undefined, 'compute')
+    const names = out.cards.flatMap((c) => c.lines.map((l) => l.name))
+    expect(names).not.toContain('app')
+    expect(names).not.toContain('worker')
+    expect(out.cards.find((c) => c.title === 'CPU Usage')?.lines.map((l) => l.name)).toEqual(['db'])
+  })
+
+  it('still zero-fills a source that answered with no samples', () => {
+    const out = cardsForSources([
+      { result: { series: [] }, component: 'compute', services: ['app', 'worker'] },
+      { result: { series: [owned('db', 'cpu_cores', 'vCPU', 0.2)] }, component: 'db', services: ['db'] },
+    ], WIN, undefined, 'compute')
+    expect(out.cards.find((c) => c.title === 'CPU Usage')?.lines.map((l) => l.name)).toEqual(['app', 'worker', 'db'])
+  })
+})
+
 describe('cardsForSources (regression: the page went blank in production)', () => {
   it('zero-fills when every source is empty but none carries a note', () => {
     const out = cardsForSources([

@@ -6,53 +6,21 @@
 // doesn't exist.
 //
 // Self-host divergences: fetched with usePoll every 30 s — the daemon samples every 30 s — instead of
-// React Query; and `also` is a list, since a box can run Redis, MySQL and MongoDB beside Postgres.
+// React Query, with the window recomputed on every poll (lib/metricRanges.ts); `also` is a list, since
+// a box can run Redis, MySQL and MongoDB beside Postgres; and a source whose request fails draws no
+// lines at all rather than zero lines (lib/metrics.ts, mergeMetricSources).
 
 import { useMemo, useState } from 'react'
 import { Button, cn, EmptyState, Skeleton } from '@insforge/ui'
 import { Gauge } from 'lucide-react'
 import { api } from '../../api'
 import { usePoll } from '../../hooks'
-import { cardsForSources, type MetricComponent, type ZeroFillWindow } from '../../lib/metrics'
+import { cardsForSources, type MetricComponent } from '../../lib/metrics'
+import { activeRange, RANGES, type RangeKey } from '../../lib/metricRanges'
 import { MetricCard } from './MetricCard'
-
-const RANGES = {
-  '1h': { seconds: 3_600, step: '60s', stepSeconds: 60 },
-  '6h': { seconds: 21_600, step: '5m', stepSeconds: 300 },
-  '24h': { seconds: 86_400, step: '15m', stepSeconds: 900 },
-  '3d': { seconds: 259_200, step: '1h', stepSeconds: 3_600 },
-} as const
-
-type RangeKey = keyof typeof RANGES
-
-/** The window part of a query, shared by every component the view merges. */
-type MetricsWindow = { from?: number; to?: number; step?: string }
-
-interface ActiveRange {
-  range: RangeKey
-  /** Empty for 1h — see activeRange(). */
-  window: MetricsWindow
-  /** The zero-fill time grid matching `window`'s (possibly implicit) span. */
-  zeroWindow: ZeroFillWindow
-}
 
 /** How often the charts refresh: the daemon samples every 30 s, so a faster poll redraws the same points. */
 const REFRESH_MS = 30_000
-
-/**
- * The 1h window omits from/to so it follows the daemon's default "last hour ending now"; other ranges
- * get an explicit window computed at click time. Every component the view merges is asked for the
- * SAME span, or the lines would not be comparable.
- */
-function activeRange(range: RangeKey): ActiveRange {
-  const now = Math.floor(Date.now() / 60_000) * 60
-  const window: MetricsWindow = range === '1h' ? {} : { from: now - RANGES[range].seconds, to: now, step: RANGES[range].step }
-  return {
-    range,
-    window,
-    zeroWindow: { from: window.from ?? now - RANGES[range].seconds, to: window.to ?? now, stepSeconds: RANGES[range].stepSeconds },
-  }
-}
 
 /** One metrics source a view draws from: a component and the services it should account for. */
 export interface MetricSource {
@@ -78,20 +46,20 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
   /** The compute service-detail tab omits the range picker, as on the console. */
   showRangePicker?: boolean
 }) {
-  const [active, setActive] = useState<ActiveRange>(() => activeRange('1h'))
+  const [range, setRange] = useState<RangeKey>('1h')
   // Compare by VALUE: callers rebuild these arrays each render, so identity would refetch always.
   const sourcesKey = JSON.stringify([services ?? null, also ?? null])
 
   const { data, error, reload } = usePoll(async () => {
-    // 1h follows the clock on every refresh, as the default query does; a longer range stays on the
-    // window it was picked with.
-    const current = active.range === '1h' ? activeRange('1h') : active
-    // One failing source costs its lines, not the page.
+    // Computed now, on every poll, and shared by every source this poll asks: a window fixed when the
+    // range was picked would never take in a new sample.
+    const current = activeRange(range, Date.now())
+    // One failing source costs its lines, not the page; `undefined` is how its failure is carried.
     const settle = (c: MetricComponent, g?: string) => api.metrics(projectId, c, branch, g, current.window).catch(() => undefined)
     const [primary, ...rest] = await Promise.all([settle(component, group), ...(also ?? []).map((s) => settle(s.component))])
     if (!primary && rest.every((r) => !r)) throw new Error("The daemon couldn't return metrics right now.")
     return { range: current.range, zeroWindow: current.zeroWindow, primary, rest }
-  }, [projectId, component, branch, group, active, sourcesKey], REFRESH_MS)
+  }, [projectId, component, branch, group, range, sourcesKey], REFRESH_MS)
 
   const { cards, note, byService } = useMemo(() => {
     if (!data) return { cards: [], note: undefined, byService: false }
@@ -108,7 +76,7 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
   }, [data, lineName, component, sourcesKey])
 
   // The picked range has not answered yet: the previous range's cards stay, dimmed like the console's refetch.
-  const fetching = Boolean(data) && data!.range !== active.range
+  const fetching = Boolean(data) && data!.range !== range
   const grid = 'grid grid-cols-1 gap-3 lg:grid-cols-2'
 
   return (
@@ -122,10 +90,10 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
                 <button
                   key={option}
                   type="button"
-                  onClick={() => setActive(activeRange(option))}
+                  onClick={() => setRange(option)}
                   className={cn(
                     'rounded px-3 py-1 text-sm transition-colors',
-                    active.range === option ? 'bg-alpha-8 font-medium text-foreground' : 'text-muted-foreground hover:text-foreground',
+                    range === option ? 'bg-alpha-8 font-medium text-foreground' : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
                   {option}

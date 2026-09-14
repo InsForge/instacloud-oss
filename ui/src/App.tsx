@@ -14,6 +14,7 @@ import { Operations } from './pages/Operations'
 import { Usage } from './pages/Usage'
 import { Approvals } from './pages/Approvals'
 import { Settings } from './pages/Settings'
+import { QuickStart } from './pages/QuickStart'
 import { Setup } from './pages/Setup'
 import { Login } from './pages/Login'
 import { Tokens } from './pages/Tokens'
@@ -107,6 +108,7 @@ export default function App() {
           <Route path="observability" element={<Usage />} />
           <Route path="usage" element={<Navigate to="../observability" replace />} />
           <Route path="approvals" element={<Approvals />} />
+          <Route path="quick-start" element={<QuickStart />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

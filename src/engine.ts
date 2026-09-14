@@ -2947,20 +2947,26 @@ export class Engine {
    *  containers). */
   private observedTargets(project: Project, branch: Branch, component: ObservedComponent, group?: string): MetricsTarget[] {
     const ref = this.ref(project, branch)
+    // Container names reuse project, branch and service NAMES, so a name's metrics history can predate
+    // the resource now carrying it (delete a project, recreate it under the same name). `since` is the
+    // newest of the three creation times: nothing sampled before it is this resource's.
+    const since = (serviceCreatedAt?: number): number =>
+      Math.floor(Math.max(project.createdAt, branch.createdAt, serviceCreatedAt ?? 0) / 1000)
     // 'db' fans out over the project's postgres services; `group` narrows it to one by NAME, the
     // same `?group=` the database routes take.
     if (component === 'db') {
       return this.dbList(project.id)
         .filter((d) => (!group || d.name === group) && this.carries(project, branch, d, 'postgres'))
-        .map((d) => ({ container: this.pgContainer(project, branch, d.id), group: d.name }))
+        .map((d) => ({ container: this.pgContainer(project, branch, d.id), group: d.name, since: since(d.createdAt) }))
     }
     if (component !== 'compute') {
       return this.managedList(project.id)
         .filter((m) => m.type === component && (!group || m.name === group) && branch.managed?.[m.id])
-        .map((m) => ({ container: managedContainerName(ref, m.type, m.name), group: m.name }))
+        .map((m) => ({ container: managedContainerName(ref, m.type, m.name), group: m.name, since: since(m.createdAt) }))
     }
     const groups = group ? [group] : Object.keys(branch.apps).sort()
-    return groups.filter((g) => branch.apps[g]).map((g) => ({ container: appContainerName(ref, g), group: g }))
+    return groups.filter((g) => branch.apps[g])
+      .map((g) => ({ container: appContainerName(ref, g), group: g, since: since(project.serviceSettings?.[`cp-${g}`]?.createdAt) }))
   }
 
   /** Runtime logs via `docker logs --tail` — same LogsResult shape as the cloud (which serves
@@ -2990,7 +2996,7 @@ export class Engine {
     const now = Math.floor(Date.now() / 1000)
     const win = opts.window ?? { from: now - DEFAULT_WINDOW_SEC, to: now, step: DEFAULT_STEP_SEC }
     const containers = targets.map((t) => t.container)
-    if (this.metricsHistory.sampled(containers)) {
+    if (this.metricsHistory.sampled(targets)) {
       return { source: 'docker-stats', series: this.metricsHistory.query(targets, win.from, win.to, win.step) }
     }
     let raw = ''

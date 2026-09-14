@@ -26,8 +26,11 @@ export const MAX_RATE_GAP_SEC = 120
  *  `generation` — the container instance, which a redeploy replaces under the same name. */
 export interface ContainerSample { name: string; cpuCores: number; memBytes: number; rxBytes: number; txBytes: number; generation?: number }
 
-/** A container a request covers, and the service it is drawn as. */
-export interface MetricsTarget { container: string; group: string }
+/** A container a request covers, and the service it is drawn as. Container names come from the
+ *  project slug, branch and service NAMES, which a deleted project's successor can reuse, so `since`
+ *  (unix seconds) marks when this incarnation began: samples before it belong to whatever carried the
+ *  name earlier and are never answered for this target. */
+export interface MetricsTarget { container: string; group: string; since?: number }
 
 /** Version 2 stores a generation per sample; a version-1 file (no generation) loads as generation 0. */
 export interface PersistedHistory { version: 2; samples: Record<string, number[]> }
@@ -69,30 +72,35 @@ export class MetricsHistory {
     }
   }
 
-  /** Whether any of these containers has ever been sampled. */
-  sampled(containers: readonly string[]): boolean {
-    return containers.some((c) => this.samples.has(c))
+  /** Whether any of these targets has been sampled since it began (its `since`). Samples of an earlier
+   *  resource under the same container name do not count. */
+  sampled(targets: readonly MetricsTarget[]): boolean {
+    return targets.some(({ container, since = 0 }) => {
+      const arr = this.samples.get(container)
+      return arr !== undefined && arr.length >= FIELDS && arr[arr.length - FIELDS]! >= since
+    })
   }
 
   /** Series for `targets` over [from, to], averaged into `step`-second buckets labelled by their start.
-   *  A target with no samples in the window reports no series: the console zero-fills it. */
+   *  A target with no samples in the window reports no series: the console zero-fills it. Samples from
+   *  before a target's `since` are skipped, and never differenced against. */
   query(targets: readonly MetricsTarget[], from: number, to: number, step: number): MetricSeries[] {
     const out: MetricSeries[] = []
-    for (const { container, group } of targets) {
+    for (const { container, group, since = 0 } of targets) {
       const arr = this.samples.get(container)
       if (!arr) continue
       // bucket start -> [cpu sum, memory sum, samples, rx rate sum, tx rate sum, rates]
       const buckets = new Map<number, number[]>()
       for (let i = 0; i < arr.length; i += FIELDS) {
         const t = arr[i]!
-        if (t < from || t > to) continue
+        if (t < from || t > to || t < since) continue
         const key = Math.floor(t / step) * step
         let b = buckets.get(key)
         if (!b) { b = [0, 0, 0, 0, 0, 0]; buckets.set(key, b) }
         b[0]! += arr[i + 1]!
         b[1]! += arr[i + 2]!
         b[2]! += 1
-        if (i >= FIELDS && this.differenceable(arr, i)) {
+        if (i >= FIELDS && arr[i - FIELDS]! >= since && this.differenceable(arr, i)) {
           const dt = t - arr[i - FIELDS]!
           const rx = arr[i + 3]! - arr[i - FIELDS + 3]!
           const tx = arr[i + 4]! - arr[i - FIELDS + 4]!

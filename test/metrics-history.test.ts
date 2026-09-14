@@ -12,6 +12,7 @@ const sample = (name: string, cpuCores: number, memBytes: number, rxBytes = 0, t
   ({ name, cpuCores, memBytes, rxBytes, txBytes })
 const APP = { container: 'io-demo-main-app-web', group: 'web' }
 const named = (series: ReturnType<MetricsHistory['query']>, name: string) => series.filter((s) => s.name === name)
+const on = (...containers: string[]) => containers.map((container) => ({ container, group: '' }))
 
 describe('statsToSamples', () => {
   test('reads cores from a per-core percentage, and memory and network in docker units', () => {
@@ -90,6 +91,40 @@ describe('MetricsHistory.query', () => {
   })
 })
 
+describe('a reused container name (delete a project, recreate it under the same name)', () => {
+  // The old project's container sampled until t=90; the new one began at t=120 under the same name.
+  const reused = () => {
+    const h = new MetricsHistory()
+    h.record(0, [sample(APP.container, 0.9, 900, 1_000, 1_000)])
+    h.record(60, [sample(APP.container, 0.9, 900, 9_000, 9_000)])
+    h.record(90, [sample(APP.container, 0.9, 900, 9_500, 9_500)])
+    h.record(120, [sample(APP.container, 0.1, 100, 20_000, 20_000)])
+    h.record(150, [sample(APP.container, 0.1, 100, 20_300, 20_300)])
+    return h
+  }
+
+  test("the new resource is answered none of the old one's samples", () => {
+    const series = reused().query([{ ...APP, since: 120 }], 0, 200, 60)
+    expect(named(series, 'cpu_cores')[0]!.points).toEqual([[120, 0.1]])
+    expect(named(series, 'memory_used_bytes')[0]!.points).toEqual([[120, 100]])
+  })
+
+  test('no rate is differenced across the boundary, only within the new resource', () => {
+    const series = reused().query([{ ...APP, since: 120 }], 0, 200, 60)
+    // 120 against 90 would be (20000 - 9500) / 30 = 350; only 150 against 120 is the new traffic
+    expect(named(series, 'egress_bytes_rate')[0]!.points).toEqual([[120, 10]])
+  })
+
+  test("the old resource's samples do not count as sampled, so the live reading answers instead", () => {
+    const h = new MetricsHistory()
+    h.record(0, [sample(APP.container, 0.9, 900)])
+    expect(h.sampled([{ ...APP, since: 120 }])).toBe(false)
+    expect(h.query([{ ...APP, since: 120 }], 0, 200, 60)).toEqual([])
+    h.record(130, [sample(APP.container, 0.1, 100)])
+    expect(h.sampled([{ ...APP, since: 120 }])).toBe(true)
+  })
+})
+
 describe('retention and persistence', () => {
   test('prune drops samples past retention and containers left empty', () => {
     const h = new MetricsHistory()
@@ -97,7 +132,7 @@ describe('retention and persistence', () => {
     h.record(10, [sample(APP.container, 1, 1)])
     h.record(RETENTION_SEC + 20, [sample(APP.container, 1, 1)])
     h.prune(RETENTION_SEC + 20) // cutoff t=20: both earlier samples are past retention
-    expect(h.sampled(['io-old'])).toBe(false)
+    expect(h.sampled(on('io-old'))).toBe(false)
     expect(named(h.query([APP], 0, RETENTION_SEC + 60, 60), 'cpu_cores')[0]!.points).toHaveLength(1)
   })
 
@@ -118,12 +153,12 @@ describe('retention and persistence', () => {
       'io-expired': [0, 1, 1, 0, 0],
       [APP.container]: [RETENTION_SEC, 0.1, 10, 0, 0, RETENTION_SEC - 1, 0.9, 90, 0, 0],
     } }, RETENTION_SEC + 60)
-    expect(h.sampled(['io-bad-length', 'io-bad-value', 'io-expired'])).toBe(false)
+    expect(h.sampled(on('io-bad-length', 'io-bad-value', 'io-expired'))).toBe(false)
     // the out-of-order second sample is dropped, not sorted in
     expect(named(h.query([APP], 0, RETENTION_SEC + 60, 60), 'cpu_cores')[0]!.points).toHaveLength(1)
     h.load({ version: 2 }, 0)
     h.load(null, 0)
-    expect(h.sampled([APP.container])).toBe(false)
+    expect(h.sampled(on(APP.container))).toBe(false)
   })
 })
 
@@ -310,7 +345,7 @@ describe('MetricsSampler', () => {
     const targets = [APP, { container: 'io-demo-main-pg-db', group: 'db' }]
     const cpu = named(history.query(targets, 0, 2_000, 60), 'cpu_cores')
     expect(cpu.map((s) => [s.labels!.group, s.points[0]![1]])).toEqual([['web', 0.02], ['db', 0]])
-    expect(history.sampled(['something-else'])).toBe(false)
+    expect(history.sampled(on('something-else'))).toBe(false)
   })
 
   test('a failed docker stats still records the stopped containers', async () => {
@@ -319,8 +354,8 @@ describe('MetricsSampler', () => {
       file: file(), docker: fakeDocker([], async () => { throw new Error('No such container') }), now: () => 1_000, log: () => {},
     })
     await sampler.sampleOnce()
-    expect(history.sampled(['io-demo-main-pg-db'])).toBe(true)
-    expect(history.sampled([APP.container])).toBe(false)
+    expect(history.sampled(on('io-demo-main-pg-db'))).toBe(true)
+    expect(history.sampled(on(APP.container))).toBe(false)
   })
 
   test('saves owner-only on stop, and a new sampler loads the history back', async () => {
@@ -334,7 +369,7 @@ describe('MetricsSampler', () => {
     const restored = new MetricsHistory()
     const second = new MetricsSampler(restored, { file: path, docker: fakeDocker([]), now: () => now, log: () => {} })
     second.load()
-    expect(restored.sampled([APP.container])).toBe(true)
+    expect(restored.sampled(on(APP.container))).toBe(true)
   })
 
   test('saves on its own every PERSIST_INTERVAL_SEC, not on every tick', async () => {
@@ -366,6 +401,6 @@ describe('MetricsSampler', () => {
     const history = new MetricsHistory()
     new MetricsSampler(history, { file: path, docker: fakeDocker([]), log: (m) => logs.push(m) }).load()
     expect(logs.join('\n')).toMatch(/ignoring unreadable/)
-    expect(history.sampled([APP.container])).toBe(false)
+    expect(history.sampled(on(APP.container))).toBe(false)
   })
 })

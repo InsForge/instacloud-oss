@@ -164,9 +164,10 @@ export const api = {
    *  fill the whole window and a quiet service looks like it has no logs at all. */
   logs: (p: string, component: ObsComponent, branch: string, limit = 200, group?: string) =>
     get<LogsResult>(`/projects/${p}/logs${qs({ component, branch, limit, group })}`),
-  /** `group` narrows to one service's container, as on the logs route. */
-  metrics: (p: string, component: ObsComponent, branch: string, group?: string) =>
-    get<MetricsResult>(`/projects/${p}/metrics${qs({ component, branch, group })}`),
+  /** `group` narrows to one service's container, as on the logs route. `window` is the cloud's
+   *  from/to (unix seconds) and step ("60s", "5m", "1h"); omitted, the daemon answers the last hour. */
+  metrics: (p: string, component: ObsComponent, branch: string, group?: string, window: { from?: number; to?: number; step?: string } = {}) =>
+    get<MetricsResult>(`/projects/${p}/metrics${qs({ component, branch, group, ...window })}`),
 
   // Names-only inventory: the dashboard never shows secret VALUES (plan v1 non-goal; values
   // stay behind `insta secrets`, secrets.read-gated). This route emits no audit event.

@@ -13,6 +13,7 @@ import { SuppliedCertWatch, suppliedFiles } from './router/certs'
 import type { Engine, Teardown } from './engine'
 import * as govern from './govern'
 import { isManagedDbType, parseServiceId } from './manageddb'
+import { metricsWindow } from './metrics-history'
 import { GateRefused, TemplateError } from './templates/executor'
 import { ManifestError, MissingTemplateVariablesError } from './templates/manifest'
 import { loadState } from './state'
@@ -145,10 +146,14 @@ export function buildServer(
 
   app.get('/projects/:id/metrics', async (req, reply) => {
     const { id } = req.params as { id: string }
-    const q = req.query as { component?: string; branch?: string; group?: string }
+    const q = req.query as { component?: string; branch?: string; group?: string; from?: string; to?: string; step?: string }
     const c = component(q)
     if (!c) return badComponent(reply)
-    try { return await engine.runtimeMetrics(id, { component: c, branchName: q.branch, group: q.group }) }
+    // The cloud's window: from/to in unix seconds and a step like 60s, 5m or 1h; the last hour at 60 s
+    // when absent. A malformed one is the cloud's 400, not a silently different chart.
+    const window = metricsWindow(q, Math.floor(Date.now() / 1000))
+    if ('error' in window) return reply.code(400).send({ error: window.error })
+    try { return await engine.runtimeMetrics(id, { component: c, branchName: q.branch, group: q.group, window }) }
     catch (e) { const m = e instanceof Error ? e.message : String(e); return reply.code(obsCode(m)).send({ error: m }) }
   })
 

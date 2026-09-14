@@ -15,6 +15,8 @@ import { resetAdmin } from './auth'
 import { loadConfig, type Config } from './config'
 import { mkdirSync } from 'node:fs'
 import { createServer } from 'node:net'
+import { join } from 'node:path'
+import { MetricsSampler } from './metrics-sampler'
 import { acquireLock, initStatePath, loadState, reclaimAbandonedReservations, releaseLock } from './state'
 // ---- region WP4 (data dir) ----
 import { capabilitiesLine, sharedDataDir } from './datadir'
@@ -191,6 +193,13 @@ async function main(): Promise<void> {
   // which `engine.booting` kept the sweep out of).
   engine.scheduler.start()
   // ---- end region WP3 (start) ----
+  // CPU, memory and network history for the dashboard's 1h / 6h / 24h / 3d charts: `docker stats`
+  // is a reading of now, so the daemon samples it every 30 s and keeps 3 days on disk.
+  const metricsSampler = new MetricsSampler(engine.metricsHistory, {
+    file: join(cfg.dataDir, 'metrics-history.json'),
+    log: (message) => console.warn(`warning: ${message}`),
+  })
+  metricsSampler.start()
 
   // A supplied certificate (`--tls custom`) is the one certificate in this stack that nothing
   // renews, so it is the one whose expiry would otherwise be announced by a browser. Said at
@@ -251,6 +260,8 @@ async function main(): Promise<void> {
     // stops it already started on its own.
     await Promise.race([engine.scheduler.stop(), sleep(5_000)])
     // ---- end region WP3 (stop) ----
+    // Save the metrics history, bounded like the scheduler: a tick in progress waits on docker.
+    await Promise.race([metricsSampler.stop(), sleep(5_000)])
     await Promise.race([app.close(), sleep(10_000)])
     releaseLock()
     process.exit(0)

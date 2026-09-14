@@ -1533,16 +1533,30 @@ test('group picks one postgres service out of several, for logs and for metrics'
   vi.mocked(dockerFn).mockImplementation(fakeDocker)
 })
 
-test('metrics endpoint returns docker-stats series (cpu %, memory bytes)', async () => {
+test('metrics endpoint answers in the cloud series names (cpu_cores in vCPU, memory_used_bytes), labelled by service', async () => {
   const id = await createProject()
   await post(`/projects/${id}/deploy`, { image: 'app:1', branch: 'main', port: 3000 })
   vi.mocked(dockerFn).mockImplementation(async (args: string[]) =>
-    Buffer.from(args[0] === 'stats' ? '{"Name":"io-demo-main-app-default","CPUPerc":"1.25%","MemUsage":"12MiB / 4GiB"}\n' : ''))
+    Buffer.from(args[0] === 'stats' ? '{"Name":"io-demo-main-app-default","CPUPerc":"1.25%","MemUsage":"12MiB / 4GiB","NetIO":"1kB / 2kB"}\n' : ''))
+  // Nothing sampled yet (the sampler is main.ts's), so this is the one live reading.
   const r = (await get(`/projects/${id}/metrics?component=compute&branch=main`)).json()
   expect(r.source).toBe('docker-stats')
-  expect(r.series.find((s: { name: string }) => s.name === 'cpu').points[0][1]).toBe(1.25)
-  expect(r.series.find((s: { name: string }) => s.name === 'memory').points[0][1]).toBe(12 * 1024 * 1024)
+  expect(r.note).toBeUndefined()
+  const cpu = r.series.find((s: { name: string }) => s.name === 'cpu_cores')
+  expect(cpu.unit).toBe('vCPU')
+  expect(cpu.labels.group).toBe('default')
+  expect(cpu.points[0][1]).toBe(0.0125)
+  expect(r.series.find((s: { name: string }) => s.name === 'memory_used_bytes').points[0][1]).toBe(12 * 1024 * 1024)
   vi.mocked(dockerFn).mockImplementation(fakeDocker)
+})
+
+test('metrics endpoint rejects a window that is not unix seconds and a step', async () => {
+  const id = await createProject()
+  await post(`/projects/${id}/deploy`, { image: 'app:1', branch: 'main', port: 3000 })
+  for (const q of ['step=fast', 'from=yesterday', 'from=200&to=100']) {
+    const res = await get(`/projects/${id}/metrics?component=compute&branch=main&${q}`)
+    expect(res.statusCode).toBe(400)
+  }
 })
 
 test('operations lists the resource timeline newest-first (control-plane shape)', async () => {

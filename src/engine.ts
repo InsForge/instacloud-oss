@@ -12,6 +12,7 @@ import { docker } from './docker'
 import { BRANCH_NAME_RE, SERVICE_NAME_RE } from './names'
 import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseServiceId, pgContainerName, pgServiceId, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
 import * as observe from './observe'
+import { DEFAULT_STEP_SEC, DEFAULT_WINDOW_SEC, liveSeries, MetricsHistory, statsToSamples, type MetricsTarget, type MetricsWindow } from './metrics-history'
 import { loadState, mutate } from './state'
 import type { Branch, Project, DatabaseAdapter, ComputeAdapter, StorageAdapter, ManagedDbAdapter, ManagedDbType, ObservedComponent, ObjectListing, AuditEvent, UserSecret, DataDirOps, PgTarget, ServiceKey, ServiceLimits, ServiceSettings } from './types'
 // ---- region WP2 (router): the router's pure modules feed the seams at the end of this class ----
@@ -260,6 +261,9 @@ export interface EngineOptions {
 
 export class Engine {
   readonly cfg: Config
+  /** CPU, memory and network samples behind `runtimeMetrics`. main.ts's MetricsSampler fills it; a
+   *  daemon or test without one answers a live reading instead. */
+  readonly metricsHistory = new MetricsHistory()
   /** How the four custom-domain routes look a hostname up (WP2). Injected by the fake-adapter
    *  suite so no test ever reaches a real nameserver. */
   private readonly resolver: Resolver
@@ -2936,26 +2940,27 @@ export class Engine {
     return { project, branch }
   }
 
-  /** The containers an observability request targets: the branch's pg, its compute group(s), or
-   *  its managed databases of one type. Each managed type is its OWN component, never folded into
-   *  'compute' (cloud parity: names are unique per type, so `group` resolves inside a type, and
-   *  the compute fan-out must not absorb database containers). */
-  private observedContainers(project: Project, branch: Branch, component: ObservedComponent, group?: string): string[] {
+  /** The containers an observability request targets, each with the service it is drawn as: the
+   *  branch's postgres services, its compute group(s), or its managed databases of one type. Each
+   *  managed type is its OWN component, never folded into 'compute' (cloud parity: names are unique
+   *  per type, so `group` resolves inside a type, and the compute fan-out must not absorb database
+   *  containers). */
+  private observedTargets(project: Project, branch: Branch, component: ObservedComponent, group?: string): MetricsTarget[] {
     const ref = this.ref(project, branch)
     // 'db' fans out over the project's postgres services; `group` narrows it to one by NAME, the
     // same `?group=` the database routes take.
     if (component === 'db') {
       return this.dbList(project.id)
         .filter((d) => (!group || d.name === group) && this.carries(project, branch, d, 'postgres'))
-        .map((d) => this.pgContainer(project, branch, d.id))
+        .map((d) => ({ container: this.pgContainer(project, branch, d.id), group: d.name }))
     }
     if (component !== 'compute') {
       return this.managedList(project.id)
         .filter((m) => m.type === component && (!group || m.name === group) && branch.managed?.[m.id])
-        .map((m) => managedContainerName(ref, m.type, m.name))
+        .map((m) => ({ container: managedContainerName(ref, m.type, m.name), group: m.name }))
     }
     const groups = group ? [group] : Object.keys(branch.apps).sort()
-    return groups.filter((g) => branch.apps[g]).map((g) => appContainerName(ref, g))
+    return groups.filter((g) => branch.apps[g]).map((g) => ({ container: appContainerName(ref, g), group: g }))
   }
 
   /** Runtime logs via `docker logs --tail` — same LogsResult shape as the cloud (which serves
@@ -2964,7 +2969,7 @@ export class Engine {
     const { project, branch } = this.branchOrThrow(projectId, opts.branchName)
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 1000)
     const lines: observe.LogLine[] = []
-    for (const name of this.observedContainers(project, branch, opts.component, opts.group)) {
+    for (const { container: name } of this.observedTargets(project, branch, opts.component, opts.group)) {
       try {
         const raw = (await docker(['logs', '--tail', String(limit), '--timestamps', name], { mergeStderr: true })).toString()
         lines.push(...observe.parseDockerLogs(raw, name))
@@ -2974,19 +2979,25 @@ export class Engine {
     return { source: 'docker-logs', lines: lines.slice(-limit) }
   }
 
-  /** Point-in-time resource metrics via `docker stats --no-stream` — MetricsResult shape. */
-  async runtimeMetrics(projectId: string, opts: { component: ObservedComponent; branchName?: string; group?: string }): Promise<observe.MetricsResult> {
+  /** CPU, memory and network over a window, in the cloud's MetricsResult shape and series names, from
+   *  the history the sampler keeps (metrics-sampler.ts). Before any of these containers has a sample —
+   *  a daemon that just started — it answers one live `docker stats` reading rather than an empty
+   *  chart. The window defaults to the cloud's: the last hour at 60 s. */
+  async runtimeMetrics(projectId: string, opts: { component: ObservedComponent; branchName?: string; group?: string; window?: MetricsWindow }): Promise<observe.MetricsResult> {
     const { project, branch } = this.branchOrThrow(projectId, opts.branchName)
-    const names = this.observedContainers(project, branch, opts.component, opts.group)
-    if (!names.length) return { source: 'docker-stats', series: [], note: 'nothing deployed on this branch' }
-    let raw = ''
-    try { raw = (await docker(['stats', '--no-stream', '--format', '{{json .}}', ...names])).toString() }
-    catch { return { source: 'docker-stats', series: [], note: 'containers are not running' } }
-    return {
-      source: 'docker-stats',
-      series: observe.statsToSeries(raw, Math.floor(Date.now() / 1000)),
-      note: 'point-in-time snapshot from docker stats — from/to/step are ignored locally',
+    const targets = this.observedTargets(project, branch, opts.component, opts.group)
+    if (!targets.length) return { source: 'docker-stats', series: [], note: 'nothing deployed on this branch' }
+    const now = Math.floor(Date.now() / 1000)
+    const win = opts.window ?? { from: now - DEFAULT_WINDOW_SEC, to: now, step: DEFAULT_STEP_SEC }
+    const containers = targets.map((t) => t.container)
+    if (this.metricsHistory.sampled(containers)) {
+      return { source: 'docker-stats', series: this.metricsHistory.query(targets, win.from, win.to, win.step) }
     }
+    let raw = ''
+    // Not running (asleep, stopped): no reading, which the dashboard draws as zero usage, like the cloud.
+    try { raw = (await docker(['stats', '--no-stream', '--format', '{{json .}}', ...containers])).toString() }
+    catch { return { source: 'docker-stats', series: [] } }
+    return { source: 'docker-stats', series: liveSeries(statsToSamples(raw), targets, now) }
   }
 
   /** Control-plane operation log (cloud: Neon operations) — here, the resource-event timeline. */

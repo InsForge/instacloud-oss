@@ -171,6 +171,8 @@ export const api = {
   // Names-only inventory: the dashboard never shows secret VALUES (plan v1 non-goal; values
   // stay behind `insta secrets`, secrets.read-gated). This route emits no audit event.
   secretTree: (p: string) => get<SecretTree>(`/projects/${p}/secrets/tree`),
+  /** The same read, returning an approval instead of throwing: the canvas stops polling a gated tree. */
+  secretTreeResult: (p: string) => call<SecretTree>('GET', `/projects/${p}/secrets/tree`),
   // Database reads answer 503 `database is sleeping` when the branch database is asleep and
   // never wake it (decision 48); `group` picks one of several postgres services (WP5).
   dbMetrics: (p: string, branch: string, group?: string) =>

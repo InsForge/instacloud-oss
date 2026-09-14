@@ -5,7 +5,7 @@
 //
 // Self-host divergence: the daemon ENFORCES approvals, which the console surfaces through a separate
 // Notifications bell. Until that bell exists here, a pending count rides the Activities icon and the
-// panel leads with a card that opens Approvals.
+// panel leads with a card that opens Approvals. The count is polled once, by the layout that mounts both.
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
@@ -24,15 +24,9 @@ function useActivitiesOpen(): [boolean, (open: boolean) => void] {
   return [saved === 'activities' || saved === '1', (open) => setSaved(open ? 'activities' : null)]
 }
 
-function usePendingApprovals(projectId: string): number {
-  const { data } = usePoll(() => api.approvals(projectId), [projectId], 10_000)
-  return data?.filter((a) => a.status === 'pending').length ?? 0
-}
-
 /** Icon-only header cell, matching the account control beside it. */
-export function ActivitiesButton({ projectId }: { projectId: string }) {
+export function ActivitiesButton({ pending }: { pending: number }) {
   const [open, setOpen] = useActivitiesOpen()
-  const pending = usePendingApprovals(projectId)
   return (
     <div className="flex h-full shrink-0 items-center justify-center border-l border-border p-2">
       <Button variant="ghost" size="icon"
@@ -96,9 +90,8 @@ function EventCard({ event }: { event: ActivityEvent }) {
   )
 }
 
-export function ActivitiesPanel({ projectId, branch }: { projectId: string; branch: string }) {
+export function ActivitiesPanel({ projectId, branch, pending }: { projectId: string; branch: string; pending: number }) {
   const [open, setOpen] = useActivitiesOpen()
-  const pending = usePendingApprovals(projectId)
   const [limit, setLimit] = useState(ACTIVITY_PAGE_SIZE)
   const { data, error } = usePoll(
     async () => ({ limit, events: mapEvents(await api.events(projectId, limit)) }),
@@ -106,8 +99,9 @@ export function ActivitiesPanel({ projectId, branch }: { projectId: string; bran
     { intervalMs: 10_000, enabled: open },
   )
   const events = data?.events
+  // A grown window that has not answered yet: the button stays, reading Loading…, until it does.
   const loadingMore = data !== undefined && data.limit !== limit
-  const maybeMore = (events?.length ?? 0) >= limit
+  const maybeMore = loadingMore || (events?.length ?? 0) >= limit
 
   return (
     <FeedPanelShell open={open} label="Activities">
@@ -141,6 +135,8 @@ export function ActivitiesPanel({ projectId, branch }: { projectId: string; bran
           <p className="text-sm text-muted-foreground">No activity yet. Audit logs will appear here.</p>
         ) : (
           <>
+            {/* Cards from an earlier poll stay; a failed refresh says so rather than passing them off as current. */}
+            {error && <p className="text-xs text-destructive">Couldn&apos;t refresh the timeline. Showing the last one loaded.</p>}
             {events.map((event) => <EventCard key={event.id} event={event} />)}
             {maybeMore && (
               <Button variant="secondary" size="sm" className="shrink-0" disabled={loadingMore}

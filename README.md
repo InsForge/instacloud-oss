@@ -164,8 +164,8 @@ The daemon serves a web UI at its own URL: one process, same origin. On a server
 `/setup` (one admin account), signs in at `/login`, and mints API tokens on the Account page. On a
 laptop there is no login at all.
 
-It matches the hosted InstaCloud console: a Service list of card rows with status and a Wake button
-for a sleeping one, Observability, Secrets, Environments and Settings, and a service's own detail
+It matches the hosted InstaCloud console: a Service canvas (or list) with status and a Wake button
+for a sleeping one, Observability, Secrets, Branches and Settings, an Activities side panel, and a service's own detail
 as an overlay with Metrics, Variables, Runtime Logs, Volume and Settings. Add Service covers a
 Docker image, an empty service, Postgres, Redis, MySQL, MongoDB, object storage and the Templates
 gallery. Variables lists the names a service actually receives, never the values, which stay behind

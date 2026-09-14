@@ -213,7 +213,7 @@ function SecretDialog({ projectId, branch, services, editing, onClose, onDone, o
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="env">This branch ({branch})</SelectItem>
-                    <SelectItem value="project">All environments</SelectItem>
+                    <SelectItem value="project">All branches</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

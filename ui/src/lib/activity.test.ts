@@ -38,4 +38,21 @@ describe('mapEvents', () => {
     expect(cards[0]).toMatchObject({ id: 'e2', source: 'agent', kind: 'deploy', detail: 'image: nginx' })
     expect(cards[1]).toEqual({ id: 'event-1', source: 'resource', kind: 'project.created', detail: null, created: '—' })
   })
+
+  it('shows the newest first when the daemon answers in the order the events happened', () => {
+    const cards = mapEvents([
+      { id: 'created', kind: 'project.created', created_at: '2026-09-14T21:00:00.000Z' },
+      { id: 'added', kind: 'service.added', created_at: '2026-09-14T21:05:00.000Z' },
+      { id: 'deployed', kind: 'deploy', created_at: '2026-09-14T21:10:00.000Z' },
+    ], 'UTC')
+    expect(cards.map((c) => c.id)).toEqual(['deployed', 'added', 'created'])
+  })
+
+  it('puts the later-recorded of two events at the same instant first', () => {
+    const cards = mapEvents([
+      { id: 'first', kind: 'service.added', created_at: '2026-09-14T21:00:00.000Z' },
+      { id: 'second', kind: 'service.added', created_at: '2026-09-14T21:00:00.000Z' },
+    ], 'UTC')
+    expect(cards.map((c) => c.id)).toEqual(['second', 'first'])
+  })
 })

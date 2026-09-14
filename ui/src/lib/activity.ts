@@ -1,6 +1,6 @@
 // The Activities panel's event cards (insta-frontend lib/api/mappers/activity.ts), pure so the root vitest
-// covers them: the daemon's events, already newest first, as a source badge, the kind, a one-line detail
-// and a local timestamp.
+// covers them: the daemon's events as a source badge, the kind, a one-line detail and a local timestamp,
+// newest first.
 
 /** Events per fetch; "Load more" grows the window by another page. */
 export const ACTIVITY_PAGE_SIZE = 50
@@ -29,16 +29,25 @@ export function formatLocalDateTime(iso: string | null | undefined, timeZone?: s
   }).format(date)
 }
 
-/** The daemon's audit events as cards. */
+/** The daemon's audit events as cards, newest first. The console's platform answers newest first; the
+ *  daemon answers its latest window in the order the events happened, so the cards are ordered here.
+ *  Events at the same instant keep the daemon's order, reversed: the later-recorded one comes first. */
 export function mapEvents(
   events: ReadonlyArray<{ id?: string; source?: string; kind?: string; payload?: unknown; created_at?: string }>,
   timeZone?: string,
 ): ActivityEvent[] {
-  return events.map((event, index) => ({
-    id: event.id ?? `event-${index}`,
-    source: event.source ?? 'resource',
-    kind: event.kind ?? '—',
-    detail: eventDetail(event.payload),
-    created: formatLocalDateTime(event.created_at, timeZone),
-  }))
+  const at = (iso: string | undefined) => {
+    const t = iso ? Date.parse(iso) : Number.NaN
+    return Number.isNaN(t) ? 0 : t
+  }
+  return events
+    .map((event, index) => ({ event, index }))
+    .sort((a, b) => at(b.event.created_at) - at(a.event.created_at) || b.index - a.index)
+    .map(({ event, index }) => ({
+      id: event.id ?? `event-${index}`,
+      source: event.source ?? 'resource',
+      kind: event.kind ?? '—',
+      detail: eventDetail(event.payload),
+      created: formatLocalDateTime(event.created_at, timeZone),
+    }))
 }

@@ -15,6 +15,8 @@ import { ProjectSwitcher, TopbarProjectSwitcher } from './console/ProjectSwitche
 import { EnvSwitcher } from './console/EnvSwitcher'
 import { ActivitiesButton, ActivitiesPanel } from './console/ActivitiesButton'
 import { AccountMenu } from './console/AccountMenu'
+import { api } from '../api'
+import { usePoll } from '../hooks'
 
 type NavItem = { label: string; segment: string; icon: LucideIcon }
 
@@ -51,6 +53,9 @@ function ProjectSidebar({ projectId, branch }: { projectId: string; branch: stri
 
 export function Layout() {
   const { projectId, branch } = useParams() as { projectId: string; branch: string }
+  // Polled once here and handed to both the Activities icon and its panel, rather than once by each.
+  const { data: approvals } = usePoll(() => api.approvals(projectId), [projectId], 10_000)
+  const pending = approvals?.filter((a) => a.status === 'pending').length ?? 0
   return (
     <div className="flex h-dvh overflow-hidden">
       <ProjectSidebar projectId={projectId} branch={branch} />
@@ -61,7 +66,7 @@ export function Layout() {
             <EnvSwitcher projectId={projectId} branch={branch} />
           </div>
           <div className="flex h-full shrink-0 items-center">
-            <ActivitiesButton projectId={projectId} />
+            <ActivitiesButton pending={pending} />
             <div className="flex h-full items-center justify-center border-l border-border p-2">
               <AccountMenu />
             </div>
@@ -74,7 +79,7 @@ export function Layout() {
               <Outlet />
             </div>
           </main>
-          <ActivitiesPanel projectId={projectId} branch={branch} />
+          <ActivitiesPanel projectId={projectId} branch={branch} pending={pending} />
         </div>
       </div>
     </div>

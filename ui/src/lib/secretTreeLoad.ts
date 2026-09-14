@@ -25,8 +25,21 @@ export function treeFor(load: TreeLoad | undefined, projectId: string): SecretTr
   return load && load.projectId === projectId && load.tree ? load.tree : undefined
 }
 
+/** The projects gated this visit, with `projectId` added. A set that only grows: reads finish out of
+ *  order, and a stale completion for another project must never un-gate the one shown now. The same set
+ *  when the project is already in it, so marking again does not re-render. */
+export function markGated(gated: ReadonlySet<string>, projectId: string): ReadonlySet<string> {
+  return gated.has(projectId) ? gated : new Set([...gated, projectId])
+}
+
+/** The gated set after a read finishes: a gated read marks the project IT was for (not whichever
+ *  project is current when it lands), and any other outcome changes nothing. */
+export function afterLoad(gated: ReadonlySet<string>, load: TreeLoad): ReadonlySet<string> {
+  return load.gated ? markGated(gated, load.projectId) : gated
+}
+
 /** Whether to keep polling: only the canvas draws edges, and a project whose read was gated is not
  *  asked again on this visit. */
-export function pollsTree(gatedFor: string | null, projectId: string, mode: 'canvas' | 'list'): boolean {
-  return mode === 'canvas' && gatedFor !== projectId
+export function pollsTree(gated: ReadonlySet<string>, projectId: string, mode: 'canvas' | 'list'): boolean {
+  return mode === 'canvas' && !gated.has(projectId)
 }

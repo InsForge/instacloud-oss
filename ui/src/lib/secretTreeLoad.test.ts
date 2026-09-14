@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ApiResult, SecretTree } from '../api'
-import { loadSecretTree, pollsTree, treeFor } from './secretTreeLoad'
+import { afterLoad, loadSecretTree, markGated, pollsTree, treeFor } from './secretTreeLoad'
 
 const tree = (name: string): SecretTree => ({ branches: [{ name, services: [] }] }) as unknown as SecretTree
 const answering = (r: ApiResult<SecretTree>) => async () => r
@@ -40,14 +40,35 @@ describe('treeFor', () => {
   })
 })
 
-describe('pollsTree', () => {
+describe('pollsTree, markGated and afterLoad', () => {
+  const none: ReadonlySet<string> = new Set()
+  const gatedLoad = (projectId: string) => ({ projectId, tree: null, gated: true })
+
   it('only the canvas polls', () => {
-    expect(pollsTree(null, 'A', 'list')).toBe(false)
-    expect(pollsTree(null, 'A', 'canvas')).toBe(true)
+    expect(pollsTree(none, 'A', 'list')).toBe(false)
+    expect(pollsTree(none, 'A', 'canvas')).toBe(true)
   })
 
   it('stops for a project whose read was gated, and not for another project', () => {
-    expect(pollsTree('A', 'A', 'canvas')).toBe(false)
-    expect(pollsTree('A', 'B', 'canvas')).toBe(true)
+    const gated = afterLoad(none, gatedLoad('A'))
+    expect(pollsTree(gated, 'A', 'canvas')).toBe(false)
+    expect(pollsTree(gated, 'B', 'canvas')).toBe(true)
+  })
+
+  it('out of order: B comes back gated, then a stale read for A comes back gated; B stays gated', () => {
+    const gated = afterLoad(afterLoad(none, gatedLoad('B')), gatedLoad('A'))
+    expect(pollsTree(gated, 'B', 'canvas')).toBe(false)
+    expect(pollsTree(gated, 'A', 'canvas')).toBe(false)
+  })
+
+  it('a stale read for A that came back authorized leaves B gated', () => {
+    const gated = afterLoad(none, gatedLoad('B'))
+    expect(afterLoad(gated, { projectId: 'A', tree: tree('main'), gated: false })).toBe(gated)
+    expect(pollsTree(gated, 'B', 'canvas')).toBe(false)
+  })
+
+  it('marking a project that is already gated returns the same set, so there is no extra render', () => {
+    const gated = markGated(none, 'B')
+    expect(markGated(gated, 'B')).toBe(gated)
   })
 })

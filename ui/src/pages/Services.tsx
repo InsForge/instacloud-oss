@@ -14,7 +14,7 @@ import { Rows3, Workflow } from 'lucide-react'
 import { api, type Service } from '../api'
 import { usePoll, useWaking } from '../hooks'
 import { useLocalPref } from '../lib/localPref'
-import { loadSecretTree, pollsTree, treeFor } from '../lib/secretTreeLoad'
+import { afterLoad, loadSecretTree, pollsTree, treeFor } from '../lib/secretTreeLoad'
 import { linksFromSecretTree } from '../lib/serviceLinks'
 import { healthFor } from '../lib/status'
 import { ApprovalPrompt, type PendingApproval } from '../components/ApprovalPrompt'
@@ -85,12 +85,14 @@ export function Services() {
   // The canvas's edges, so only the canvas polls for them, on the console's cadence for bindings. A
   // member without secrets.read gets an approval or a refusal instead of a tree: a canvas with no edges,
   // and no further asks this visit, since each governed read mints an approval (secretTreeLoad.ts).
-  const [gatedFor, setGatedFor] = useState<string | null>(null)
+  // Gated projects only accumulate: reads finish out of order, and a stale one must never un-gate the
+  // project shown now (secretTreeLoad.ts).
+  const [gated, setGated] = useState<ReadonlySet<string>>(() => new Set())
   const { data: treeLoad } = usePoll(async () => {
     const load = await loadSecretTree(api.secretTreeResult, projectId)
-    if (load.gated) setGatedFor(projectId)
+    setGated((prev) => afterLoad(prev, load))
     return load
-  }, [projectId], { intervalMs: 30_000, enabled: pollsTree(gatedFor, projectId, mode) })
+  }, [projectId], { intervalMs: 30_000, enabled: pollsTree(gated, projectId, mode) })
   const secretTree = treeFor(treeLoad, projectId)
   const [approval, setApproval] = useState<PendingApproval>(null)
   const [actionError, setActionError] = useState<string>()

@@ -72,6 +72,12 @@ Give me the new InsForge URL, and confirm the anon key and API key match the one
 
 Change `baseUrl` in your `createClient` call to that URL. Unless your app calls edge functions, nothing else in it changes. Leave the old stack stopped rather than deleted, so you can go back to it.
 
+If your app was running on the same machine as your InsForge, it is still there and that machine is now stopped. Bringing it along is optional and separate from the migration, and it is one command from the app's directory:
+
+```bash
+insta deploy . --port 3000
+```
+
 ## What does not come over
 
 Edge functions. The `deno` container is the one piece with no equivalent here yet, so wait if your app calls them.

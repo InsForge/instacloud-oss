@@ -18,7 +18,8 @@ import { afterLoad, loadSecretTree, pollsTree, treeFor } from '../lib/secretTree
 import { linksFromSecretTree } from '../lib/serviceLinks'
 import { healthFor } from '../lib/status'
 import { ApprovalPrompt, type PendingApproval } from '../components/ApprovalPrompt'
-import { AddFirstServiceDialog, AddServiceButton } from '../components/console/AddService'
+import { AddFirstServiceDialog, AddServiceButton, AddSourceDialog } from '../components/console/AddService'
+import { addIntent } from '../lib/quickStart'
 import { ServiceCanvas } from '../components/console/ServiceCanvas'
 import { ServiceTable } from '../components/console/ServiceTable'
 import { ServiceDetailModal } from '../components/console/ServiceDetailModal'
@@ -97,6 +98,17 @@ export function Services() {
   const [approval, setApproval] = useState<PendingApproval>(null)
   const [actionError, setActionError] = useState<string>()
   const [addFirstOpen, setAddFirstOpen] = useState(false)
+  // Quick Start's cards deep-link here, as on the console: `?add=postgres` opens the Postgres dialog and
+  // `?add=service` the full source picker. Read, then dropped from the URL so a refresh does not reopen it.
+  const [addSource, setAddSource] = useState<string | null>(null)
+  const intent = addIntent(params.get('add'))
+  useEffect(() => {
+    if (!intent) return
+    if (intent === 'picker') setAddFirstOpen(true)
+    else setAddSource(intent)
+    setParams((prev) => { const next = new URLSearchParams(prev); next.delete('add'); return next }, { replace: true })
+  }, [intent, setParams])
+  const closeAddSource = useCallback(() => setAddSource(null), [])
 
   useEffect(() => { waking.reconcile(health, healthFor) }, [health, waking])
 
@@ -130,6 +142,7 @@ export function Services() {
   const overlays = (
     <>
       <AddFirstServiceDialog {...flow} open={addFirstOpen} onOpenChange={setAddFirstOpen} />
+      {addSource && <AddSourceDialog {...flow} sourceKey={addSource} onClose={closeAddSource} />}
       {openId && (
         <ServiceDetailModal projectId={projectId} branch={branch} serviceId={openId} requestedTab={params.get('tab')}
           onClose={closeDetail} />

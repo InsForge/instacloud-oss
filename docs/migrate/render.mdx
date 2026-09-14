@@ -3,7 +3,7 @@ title: "Migrate from Render"
 description: "Move a Render web service and its Postgres onto InstaCloud."
 ---
 
-This guide takes you from a running Render service to the same app on InstaCloud, with its data. Your coding agent does most of it.
+A web service becomes an InstaCloud **compute** service, Render Postgres becomes a **postgres** service, and your environment variables become project secrets. A `DATABASE_URL` that `fromDatabase` filled in becomes a binding rather than a copied string. This guide takes you from a running Render service to the same app on InstaCloud, with its data. Your coding agent does most of it.
 
 InstaCloud offers:
 
@@ -15,7 +15,7 @@ InstaCloud offers:
 
 ## Migration steps
 
-We will migrate [Render's own Django example](https://github.com/render-examples/django), a Python web service with a Postgres database. The interesting part of its `render.yaml`. This is abridged; the full file also carries `plan`, `databaseName`, `user` and a `startCommand`:
+We will migrate [Render's own Django example](https://github.com/render-examples/django), a Python web service with a Postgres database. The interesting part of its `render.yaml`, abridged. The full file also carries `plan`, `databaseName`, `user` and a `startCommand`:
 
 ```yaml
 databases:
@@ -37,14 +37,10 @@ services:
         value: 4
 ```
 
-| On Render | On InstaCloud |
-|---|---|
-| Web service | a **compute** service |
-| Render Postgres | a **postgres** service |
-| Environment variables | project secrets |
-| `DATABASE_URL` via `fromDatabase` | a binding, not a copied string |
 
-### 1. Set up your coding agent
+### 1. Point a coding agent at your Render app
+
+Your agent reads the service straight from Render's API, so it needs your repo name and a Render API key, not a checkout. Give it the skill first:
 
 ```bash
 npx -y insta@latest setup agent
@@ -67,25 +63,19 @@ Or click **Create Project** in the [console](https://console.instacloud.com). A 
 Get a Render API key first, under **Account Settings → API Keys** in the Render dashboard. Your agent needs it to read your environment variables, which the Render CLI has no command for.
 
 ```text title="Prompt" wrap
-Migrate my Render service mysite and its Postgres database mysitedb to InstaCloud. The repo is render-examples/django, and my Render API key is in RENDER_API_KEY. Follow the insta skill's migration runbook, and stop before moving DNS.
+Migrate my Render service mysite and its Postgres database mysitedb to InstaCloud. The repo is render-examples/django, and my Render API key is in RENDER_API_KEY. Follow the insta skill's migration runbook, and stop before sending traffic to it.
 ```
 
 It will ask you to approve anything that touches production, and it will ask you to scale Render to zero at the right moment, since only you can do that.
 
+Leave the Render service suspended rather than deleted, so you can go back to it.
+
 {/* screenshot: console, project with a compute service and a postgres service deployed */}
-
-### 4. Move the domain
-
-```text title="Prompt" wrap
-Attach <your-domain> to the compute service and give me the DNS records to publish.
-```
-
-Publish the records at your DNS provider, then ask your agent to check the domain. Keep the Render service suspended, and do not delete it, until the old records have aged out of resolver caches.
 
 ## Cron jobs
 
 Cron jobs are not supported for now.
 
-And that is it. Every InstaCloud action your agent took is a command you can run yourself, in the [CLI reference](/reference/cli/overview); the inspection on the other side used that provider's own CLI and API.
+And that is it. Every InstaCloud action your agent took is a command you can run yourself, in the [CLI reference](/reference/cli/overview). The inspection on the other side used Render's own CLI and API.
 
 Once you are settled in, [database branching](/postgres/branching) is the part most people came for: one command clones your database, storage and apps, data included, so work an agent does *on its branch* stays there. The branch boundary is separation, not authorization: any command taking `--branch` still reaches `main`, so set policy for the actions that matter. Stuck anywhere? Come to [Discord](https://discord.com/invite/MPxwj5xVvW).

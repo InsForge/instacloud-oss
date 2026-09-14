@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { Badge, Button, cn, SearchInput } from '@insforge/ui'
 import { ExternalLink } from 'lucide-react'
 import { api, type TemplateDetail, type TemplateListItem } from '../api'
@@ -19,7 +19,17 @@ export function Templates() {
   const { data, error } = usePoll(api.templates, [], 60000)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState(ALL_CATEGORIES)
-  const [openCode, setOpenCode] = useState<string>()
+  // `?template=<code>` opens that template's detail, the target of Quick Start's "Deploy your agents"
+  // card. Read once, then dropped from the URL, so closing the dialog does not reopen it on refresh.
+  const [params, setParams] = useSearchParams()
+  const [openCode, setOpenCode] = useState<string | undefined>(() => params.get('template') || undefined)
+  useEffect(() => {
+    if (!params.has('template')) return
+    // Also when the parameter arrives while this page is already mounted, not only at first render.
+    const code = params.get('template')
+    if (code) setOpenCode(code)
+    setParams((prev) => { const next = new URLSearchParams(prev); next.delete('template'); return next }, { replace: true })
+  }, [params, setParams])
   const [deployCode, setDeployCode] = useState<string>()
   const [approval, setApproval] = useState<PendingApproval>(null)
 

@@ -4,12 +4,12 @@
 // on the left and the Activities and account cells on the right; and the Activities panel docked to
 // the right of the content, pushing it aside rather than covering it.
 //
-// Sidebar, as the console orders it: Service, Observability, Secrets | Branches | Settings.
-// Self-host divergences: no Usage (billing) or Quick Start entries; Observability opens the live
-// CPU/memory page. Logs and Database live in the service detail, as they do on the console.
+// Sidebar, as the console orders it: Service, Observability, Secrets | Branches | Quick Start,
+// Settings. Self-host divergences: no Usage (billing) entry; Observability opens the live CPU/memory
+// page. Logs and Database live in the service detail, as they do on the console.
 
 import { Outlet, useLocation, useParams } from 'react-router-dom'
-import { Activity, Box, KeyRound, Settings, Settings2, type LucideIcon } from 'lucide-react'
+import { Activity, Box, Download, KeyRound, Settings, Settings2, type LucideIcon } from 'lucide-react'
 import { AppSidebar, SidebarDivider, SidebarLink } from './console/AppSidebar'
 import { ProjectSwitcher, TopbarProjectSwitcher } from './console/ProjectSwitcher'
 import { EnvSwitcher } from './console/EnvSwitcher'
@@ -27,7 +27,10 @@ const primaryNav: NavItem[] = [
   { label: 'Secrets', segment: 'secrets', icon: KeyRound },
 ]
 const envNav: NavItem[] = [{ label: 'Branches', segment: 'branches', icon: Settings2 }]
-const bottomNav: NavItem[] = [{ label: 'Settings', segment: 'settings', icon: Settings }]
+const bottomNav: NavItem[] = [
+  { label: 'Quick Start', segment: 'quick-start', icon: Download },
+  { label: 'Settings', segment: 'settings', icon: Settings },
+]
 
 function ProjectSidebar({ projectId, branch }: { projectId: string; branch: string }) {
   const { pathname } = useLocation()

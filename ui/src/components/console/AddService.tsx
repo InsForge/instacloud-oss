@@ -62,10 +62,10 @@ type FlowProps = {
 }
 
 /** `pick` opens a source's dialog (or leaves for the templates gallery); render `dialogs`. */
-function useAddServiceFlow(props: FlowProps): { pick: (source: Source) => void; dialogs: ReactNode } {
+function useAddServiceFlow(props: FlowProps, onClosed?: () => void): { pick: (source: Source) => void; dialogs: ReactNode } {
   const nav = useNavigate()
   const [flow, setFlow] = useState<Flow | null>(null)
-  const close = (open: boolean) => { if (!open) setFlow(null) }
+  const close = (open: boolean) => { if (!open) { setFlow(null); onClosed?.() } }
   const pick = (source: Source) => {
     if (source.flow.kind === 'templates') nav(`/p/${props.projectId}/${props.branch}/templates`)
     else setFlow(source.flow)
@@ -150,6 +150,22 @@ export function AddFirstServiceDialog(props: FlowProps & { open: boolean; onOpen
       {dialogs}
     </>
   )
+}
+
+/** One source's dialog, opened straight away: a deep link's target (Quick Start's `?add=postgres`).
+ *  `onClose` fires when that dialog closes, so the caller can unmount it. */
+export function AddSourceDialog(props: FlowProps & { sourceKey: string; onClose: () => void }) {
+  const { sourceKey, onClose, ...flowProps } = props
+  const { pick, dialogs } = useAddServiceFlow(flowProps, onClose)
+  const opened = useRef(false)
+  useEffect(() => {
+    if (opened.current) return
+    opened.current = true
+    const source = SOURCES.find((s) => s.key === sourceKey)
+    if (source) pick(source)
+    else onClose()
+  }, [sourceKey, pick, onClose])
+  return <>{dialogs}</>
 }
 
 /** Whether the dialog's environment is the default branch, read once (it does not change while

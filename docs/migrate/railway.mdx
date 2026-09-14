@@ -3,7 +3,7 @@ title: "Migrate from Railway"
 description: "Move a Railway project, its variables, Postgres, and volumes onto InstaCloud."
 ---
 
-Railway and InstaCloud think about deployments the same way, so the concepts map almost one to one. This guide takes you from a running Railway project to the same app on InstaCloud, with its data. Your coding agent does most of it.
+Railway and InstaCloud think about deployments the same way, so the concepts map almost one to one. A service becomes a **compute** service, Railway Postgres becomes a **postgres** service, variables become project secrets, a `${{Postgres.DATABASE_URL}}` reference becomes a binding, and a volume becomes `insta compute volume` mounted at `/data`. This guide takes you from a running Railway project to the same app on InstaCloud, with its data. Your coding agent does most of it.
 
 InstaCloud offers:
 
@@ -24,17 +24,12 @@ We will migrate [Railway's own Django template](https://github.com/railwayapp-te
 }
 ```
 
-| On Railway | On InstaCloud |
-|---|---|
-| Service | a **compute** service |
-| Railway Postgres | a **postgres** service |
-| Variables | project secrets |
-| A `${{Postgres.DATABASE_URL}}` reference | a binding |
-| Volume | `insta compute volume`, mounted at `/data` |
 
 **One code change first.** InstaCloud hands Postgres to your app as a single `DATABASE_URL`. This template reads the five `PG*` variables Railway injects instead, so point it at the DSN before you start. In Django that is `dj-database-url`, and most other stacks take a DSN directly.
 
-### 1. Set up your coding agent
+### 1. Point a coding agent at your Railway project
+
+Your agent reads the project straight from Railway's API, so it needs your repo name and a project token, not a checkout. Give it the skill first:
 
 ```bash
 npx -y insta@latest setup agent
@@ -57,25 +52,19 @@ Or click **Create Project** in the [console](https://console.instacloud.com). A 
 Create a Railway project token first, under **Project Settings → Tokens**. Railway's CLI picks a project interactively otherwise, and your agent cannot answer a picker.
 
 ```text title="Prompt" wrap
-Migrate my Railway service mysite and its Postgres data to InstaCloud. The repo is railwayapp-templates/django, and my Railway project token is in RAILWAY_TOKEN. Follow the insta skill's migration runbook, and stop before moving DNS.
+Migrate my Railway service mysite and its Postgres data to InstaCloud. The repo is railwayapp-templates/django, and my Railway project token is in RAILWAY_TOKEN. Follow the insta skill's migration runbook, and stop before sending traffic to it.
 ```
 
 It will ask you to approve anything that touches production, and it will hand two jobs back to you, because Railway has no command for either. **Order matters.** If you have a volume, download it *first*, while its service is still running, because Railway refuses to read a volume whose service is stopped. Only then scale every service to zero, workers and cron services included, so nothing is still writing when the database is copied.
 
+Leave the Railway project frozen rather than deleted, so you can go back to it.
+
 {/* screenshot: console, project with a compute service and a postgres service deployed */}
-
-### 4. Move the domain
-
-```text title="Prompt" wrap
-Attach <your-domain> to the compute service and give me the DNS records to publish.
-```
-
-Publish the records at your DNS provider, then ask your agent to check the domain. Keep the Railway project frozen, and do not delete it, until the old records have aged out of resolver caches.
 
 ## Cron jobs
 
 Cron jobs are not supported for now.
 
-And that is it. Every InstaCloud action your agent took is a command you can run yourself, in the [CLI reference](/reference/cli/overview); the inspection on the other side used that provider's own CLI and API.
+And that is it. Every InstaCloud action your agent took is a command you can run yourself, in the [CLI reference](/reference/cli/overview). The inspection on the other side used Railway's own CLI and API.
 
 Once you are settled in, [database branching](/postgres/branching) is the part most people came for: one command clones your database, storage and apps, data included, so work an agent does *on its branch* stays there. The branch boundary is separation, not authorization: any command taking `--branch` still reaches `main`, so set policy for the actions that matter. Stuck anywhere? Come to [Discord](https://discord.com/invite/MPxwj5xVvW).

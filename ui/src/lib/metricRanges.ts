@@ -83,12 +83,20 @@ const STEP_LADDER = [
   { step: '1h', stepSeconds: 3_600 },
 ] as const
 
-/** Points per chart, as on the console: enough to read a spike, few enough to read at all. */
-const MAX_POINTS = 90
+/** Points a hand-entered range may chart: enough to read a spike, few enough to read at all. Presets carry
+ *  the console's own steps instead. */
+export const MAX_CUSTOM_POINTS = 90
 
-/** The coarsest step that keeps `seconds` within the point budget, or null for a span too long to chart. */
-export function stepForSpan(seconds: number): { step: string; stepSeconds: number } | null {
-  return STEP_LADDER.find((entry) => seconds / entry.stepSeconds <= MAX_POINTS) ?? null
+/** The points the zero-fill grid draws for `from`..`to` at `stepSeconds`: both ends snap down to a bucket
+ *  start and BOTH are drawn, so it is the bucket count plus one, not the span over the step. */
+export function gridPoints(from: number, to: number, stepSeconds: number): number {
+  return Math.floor(to / stepSeconds) - Math.floor(from / stepSeconds) + 1
+}
+
+/** The finest step whose grid for `from`..`to` stays within the point budget, or null for a range too long
+ *  to chart. */
+export function stepForRange(from: number, to: number): { step: string; stepSeconds: number } | null {
+  return STEP_LADDER.find((entry) => gridPoints(from, to, entry.stepSeconds) <= MAX_CUSTOM_POINTS) ?? null
 }
 
 /** A hand-entered window: pinned, with a step from the ladder, or null when it spans too long to chart or
@@ -96,7 +104,7 @@ export function stepForSpan(seconds: number): { step: string; stepSeconds: numbe
 export function customRange(from: number, to: number, nowMs: number): ActiveRange | null {
   if (to <= from) return null
   if (from < Math.floor(nowMs / 1000) - MAX_LOOKBACK_DAYS * 86_400) return null
-  const fit = stepForSpan(to - from)
+  const fit = stepForRange(from, to)
   if (!fit) return null
   return {
     range: 'custom',

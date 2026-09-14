@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  activeRange, customRange, formatLocalInput, localZoneAbbr, parseLocalInput, pickerFields, PRESET_KEYS, RANGES, rangeLabel,
-  stepForSpan, tickedRange, withPickedDay, withPickedTime, type RangeKey,
+  activeRange, customRange, formatLocalInput, gridPoints, localZoneAbbr, MAX_CUSTOM_POINTS, parseLocalInput, pickerFields,
+  PRESET_KEYS, RANGES, rangeLabel, stepForRange, tickedRange, withPickedDay, withPickedTime, type RangeKey,
 } from './metricRanges'
 
 const T0 = Date.UTC(2026, 8, 14, 19, 0, 7) // a poll that lands mid-minute
@@ -102,7 +102,40 @@ describe('customRange', () => {
   })
 
   it('never steps finer than the daemon samples', () => {
-    expect(stepForSpan(60)!.step).toBe('30s')
+    expect(stepForRange(now - 60, now)!.step).toBe('30s')
+  })
+
+  // The grid draws both ends, so a span of exactly 90 steps is 91 points (regression: 45 min at 30 s).
+  it.each([
+    ['45 min', 2_700, '60s'],
+    ['90 min', 5_400, '2m'],
+    ['3 hour', 10_800, '5m'],
+  ])('keeps an aligned %s range within the point budget at the ladder boundary', (_, span, step) => {
+    const to = Math.floor(now / 3_600) * 3_600
+    const r = customRange(to - span, to, T0)!
+    expect(r.window.step).toBe(step)
+    const { from, to: gridTo, stepSeconds } = r.zeroWindow
+    expect(gridPoints(from, gridTo, stepSeconds)).toBeLessThanOrEqual(MAX_CUSTOM_POINTS)
+  })
+
+  it('counts the points the zero-fill grid actually draws, both ends included', () => {
+    expect(gridPoints(0, 2_700, 30)).toBe(91)
+    // Off-boundary ends snap separately, so a span just over 90 steps can reach 92 points.
+    expect(gridPoints(29, 2_730, 30)).toBe(92)
+  })
+
+  it('never charts more points than the budget, for any range within retention', () => {
+    for (let span = 60; span <= 3 * 86_400; span += 97) {
+      for (const offset of [0, 13, 29]) {
+        const to = now - 61 - offset
+        const r = customRange(to - span, to, T0)
+        if (!r) continue
+        const { from, to: gridTo, stepSeconds } = r.zeroWindow
+        let points = 0
+        for (let t = from; t <= gridTo; t += stepSeconds) points++
+        expect(points, `${span}s +${offset}`).toBeLessThanOrEqual(MAX_CUSTOM_POINTS)
+      }
+    }
   })
 
   it('labels the trigger with its two ends', () => {

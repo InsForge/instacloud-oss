@@ -1,9 +1,9 @@
 ---
-title: "Migrate from self-hosted InsForge"
-description: "Move a self-hosted InsForge project, its database, users and files, onto InstaCloud."
+title: "Migrate from InsForge"
+description: "Move a self-hosted InsForge, its database, users and files, onto InstaCloud."
 ---
 
-A self-hosted InsForge is four containers from `docker compose`. On InstaCloud two of them run unchanged as **compute** services, its Postgres becomes a **postgres** service, and its files move to a **storage** service. Your app keeps its keys, your users keep their sessions, and only the `baseUrl` in your code changes. Your coding agent does most of it.
+This guide is for an InsForge you host yourself, the four containers `docker compose` brings up. On InstaCloud two of them run unchanged as **compute** services, its Postgres becomes a **postgres** service, and its files move to a **storage** service. Your app keeps its keys, your users keep their sessions, and only the `baseUrl` in your code changes. Your coding agent does most of it.
 
 InstaCloud offers:
 

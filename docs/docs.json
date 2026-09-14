@@ -94,7 +94,8 @@
             "pages": [
               "migrate/render",
               "migrate/railway",
-              "migrate/fly"
+              "migrate/fly",
+              "migrate/insforge"
             ]
           },
           {

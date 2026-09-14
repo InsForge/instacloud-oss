@@ -17,8 +17,10 @@
 import type { RunMode } from './mode'
 
 export const DOCS_URL = 'https://docs.instacloud.com/self-hosting/overview'
-/** Stands in for the token in the copied server-mode line: a key is shown only once, on creation. */
-export const API_KEY_PLACEHOLDER = '<your insta_ API token>'
+/** The variable the copied server-mode line reads the token from. A key is shown only once, on creation,
+ *  so the line cannot carry it; and a `<placeholder>` pasted unedited is a shell redirection, while an
+ *  unset variable is only an empty key the CLI rejects. */
+export const API_TOKEN_ENV = 'INSTA_API_TOKEN'
 
 const INSTALL = 'npm install -g insta'
 
@@ -26,14 +28,14 @@ const INSTALL = 'npm install -g insta'
 export function cliLine(projectId: string, mode: RunMode, apiUrl: string): string {
   const link = `insta project link ${projectId}`
   return mode === 'server'
-    ? `${INSTALL} && insta login --api-key ${API_KEY_PLACEHOLDER} --api-url ${apiUrl} && ${link}`
+    ? `${INSTALL} && insta login --api-key "$${API_TOKEN_ENV}" --api-url ${apiUrl} && ${link}`
     : `${INSTALL} && export INSTA_API_URL=${apiUrl} && ${link}`
 }
 
 /** The one prompt the "Prompt" chip copies, for a coding agent to run the same setup. */
 export function setupPrompt(projectId: string, mode: RunMode, apiUrl: string, consoleUrl: string): string {
   const signIn = mode === 'server'
-    ? `sign in with "insta login --api-key <token> --api-url ${apiUrl}", using an API token I create at ${consoleUrl}/account/tokens (ask me for it)`
+    ? `set ${API_TOKEN_ENV} to an API token I create at ${consoleUrl}/account/tokens (ask me for it) and sign in with "insta login --api-key $${API_TOKEN_ENV} --api-url ${apiUrl}"`
     : `point it at the daemon with "export INSTA_API_URL=${apiUrl}" and keep that set for later insta commands`
   return `Connect this repo to my self-hosted InstaCloud at ${apiUrl}: install the insta CLI with "${INSTALL}", ${signIn}, then run "insta project link ${projectId}". Do not run "insta setup agent" here: it registers the cloud MCP server, not this daemon.`
 }

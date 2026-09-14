@@ -146,7 +146,7 @@ export function QuickStart() {
             prompt={setupPrompt(projectId, boot.mode, boot.apiUrl, boot.consoleUrl)} />
           {boot.mode === 'server' && (
             <p className="text-sm leading-6 text-muted-foreground">
-              The CLI signs in with an API token.{' '}
+              The CLI line signs in with the API token in <code className="font-mono">$INSTA_API_TOKEN</code>.{' '}
               <Link to="/account/tokens" className="text-theme">Create one</Link>
             </p>
           )}

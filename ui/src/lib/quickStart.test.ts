@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addIntent, API_KEY_PLACEHOLDER, cliLine, DOCS_URL, quickStartCards, setupPrompt } from './quickStart'
+import { addIntent, API_TOKEN_ENV, cliLine, DOCS_URL, quickStartCards, setupPrompt } from './quickStart'
 
 const LOCAL = 'http://127.0.0.1:8080'
 const SERVER = 'https://api.example.test'
@@ -15,8 +15,12 @@ describe('cliLine', () => {
 
   it('server mode signs in with an API token against this daemon, then links', () => {
     const line = cliLine('pr_1', 'server', SERVER)
-    expect(line).toContain(`insta login --api-key ${API_KEY_PLACEHOLDER} --api-url ${SERVER}`)
+    expect(line).toContain(`insta login --api-key "$${API_TOKEN_ENV}" --api-url ${SERVER}`)
     expect(line).toContain('insta project link pr_1')
+  })
+
+  it('is safe to paste unedited: no <placeholder> for the shell to read as a redirection', () => {
+    for (const mode of ['local', 'server'] as const) expect(cliLine('pr_1', mode, SERVER)).not.toMatch(/[<>]/)
   })
 
   it('never uses `setup agent`, which wires the machine to the cloud', () => {

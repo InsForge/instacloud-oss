@@ -44,7 +44,9 @@ services:
 | Environment variables | project secrets |
 | `DATABASE_URL` via `fromDatabase` | a binding, not a copied string |
 
-### 1. Set up your coding agent
+### 1. Point a coding agent at your Render app
+
+Your agent reads the service straight from Render's API, so it needs your repo name and a Render API key, not a checkout. Give it the skill first:
 
 ```bash
 npx -y insta@latest setup agent

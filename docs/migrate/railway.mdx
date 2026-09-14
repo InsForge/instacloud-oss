@@ -34,7 +34,9 @@ We will migrate [Railway's own Django template](https://github.com/railwayapp-te
 
 **One code change first.** InstaCloud hands Postgres to your app as a single `DATABASE_URL`. This template reads the five `PG*` variables Railway injects instead, so point it at the DSN before you start. In Django that is `dj-database-url`, and most other stacks take a DSN directly.
 
-### 1. Set up your coding agent
+### 1. Point a coding agent at your Railway project
+
+Your agent reads the project straight from Railway's API, so it needs your repo name and a project token, not a checkout. Give it the skill first:
 
 ```bash
 npx -y insta@latest setup agent

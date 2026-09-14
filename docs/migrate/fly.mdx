@@ -15,20 +15,19 @@ InstaCloud offers:
 
 ## Migration steps
 
-Your `fly.toml` already holds most of what the migration needs. A typical one:
+We will migrate [Fly's own Django example](https://github.com/fly-apps/hello-django), a Python app with a Dockerfile. Its committed `fly.toml`, abridged, already holds most of what the migration needs:
 
 ```toml
-app = "mysite"
-primary_region = "iad"
+app = "hello-django"
+primary_region = "ams"
 
 [build]
-  dockerfile = "Dockerfile"
 
 [env]
-  LOG_LEVEL = "info"
+  PORT = "8000"
 
 [http_service]
-  internal_port = 8080
+  internal_port = 8000
 ```
 
 | On Fly | On InstaCloud |
@@ -39,9 +38,12 @@ primary_region = "iad"
 | `internal_port` | the `--port` your service is created with |
 | `DATABASE_URL` attached by `fly pg attach` | a binding, not a copied string |
 
-### 1. Set up your coding agent
+### 1. Point a coding agent at your Fly app
+
+Work in the app's own checkout: the `Dockerfile` and `fly.toml` it already holds are most of what the migration needs. Give your agent the skill there:
 
 ```bash
+cd hello-django          # your app
 npx -y insta@latest setup agent
 ```
 
@@ -50,7 +52,7 @@ That installs the `insta` CLI, the `insta` skill, and the MCP server for every c
 ### 2. Create a project
 
 ```bash
-insta project create mysite
+insta project create hello-django
 ```
 
 Or click **Create Project** in the [console](https://console.instacloud.com). A new project starts empty.
@@ -62,13 +64,13 @@ Or click **Create Project** in the [console](https://console.instacloud.com). A 
 One thing first, because your agent cannot do it. **Fly does not let anyone read a secret back**: `fly secrets list` prints names and digests only. Either copy each value from wherever you set it, or read them off the running machine before you stop it:
 
 ```bash
-fly ssh console -a mysite -C 'printenv SECRET_KEY' | insta secrets set SECRET_KEY
+fly ssh console -a hello-django -C 'printenv SECRET_KEY' | insta secrets set SECRET_KEY
 ```
 
 The pipe keeps the value out of your terminal. Repeat per secret, but skip the `DATABASE_URL` that `fly pg attach` installed: your agent binds the new database under that name, and a copied string there would block the binding. Then hand over:
 
 ```text title="Prompt" wrap
-Migrate my Fly app mysite and its Fly Postgres to InstaCloud. The code is in this directory, with its Dockerfile and fly.toml. Follow the insta skill's migration runbook, and stop before moving DNS.
+Migrate my Fly app hello-django and its Fly Postgres to InstaCloud. The code is in this directory, with its Dockerfile and fly.toml. Follow the insta skill's migration runbook, and stop before moving DNS.
 ```
 
 Because the Dockerfile is already there, your agent deploys straight from the directory with `insta deploy .`, no GitHub connection needed. It will ask you to approve anything that touches production, and expect it to scale the Fly app to zero before it copies the database, so nothing is still writing.

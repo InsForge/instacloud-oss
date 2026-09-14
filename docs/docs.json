@@ -93,7 +93,8 @@
             "icon": "right-left",
             "pages": [
               "migrate/render",
-              "migrate/railway"
+              "migrate/railway",
+              "migrate/fly"
             ]
           },
           {
@@ -465,7 +466,7 @@
     },
     {
       "source": "/platform/migrate/fly",
-      "destination": "/introduction"
+      "destination": "/migrate/fly"
     },
     {
       "source": "/platform/migrate/railway",

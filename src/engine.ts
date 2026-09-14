@@ -2949,9 +2949,11 @@ export class Engine {
     const ref = this.ref(project, branch)
     // Container names reuse project, branch and service NAMES, so a name's metrics history can predate
     // the resource now carrying it (delete a project, recreate it under the same name). `since` is the
-    // newest of the three creation times: nothing sampled before it is this resource's.
+    // first whole second after the newest of the three creation times: samples are stamped in whole
+    // seconds, so one stamped in the creation second may predate the resource, and none stamped at or
+    // after `since` can.
     const since = (serviceCreatedAt?: number): number =>
-      Math.floor(Math.max(project.createdAt, branch.createdAt, serviceCreatedAt ?? 0) / 1000)
+      Math.floor(Math.max(project.createdAt, branch.createdAt, serviceCreatedAt ?? 0) / 1000) + 1
     // 'db' fans out over the project's postgres services; `group` narrows it to one by NAME, the
     // same `?group=` the database routes take.
     if (component === 'db') {
@@ -2996,7 +2998,9 @@ export class Engine {
     const now = Math.floor(Date.now() / 1000)
     const win = opts.window ?? { from: now - DEFAULT_WINDOW_SEC, to: now, step: DEFAULT_STEP_SEC }
     const containers = targets.map((t) => t.container)
-    if (this.metricsHistory.sampled(targets)) {
+    // A live reading is stamped now, so it answers only a window that contains now: a historical window
+    // with no history is empty, not a point outside the range asked for.
+    if (this.metricsHistory.sampled(targets) || now < win.from || now > win.to) {
       return { source: 'docker-stats', series: this.metricsHistory.query(targets, win.from, win.to, win.step) }
     }
     let raw = ''

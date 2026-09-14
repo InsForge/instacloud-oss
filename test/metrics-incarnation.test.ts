@@ -42,3 +42,23 @@ test("delete, recreate under the same name: the new project's metrics carry none
   expect(pointTimes(after.series).filter((t) => t <= old[1]!)).toEqual([])
   expect(after.series.flatMap((s) => s.points.map(([, v]) => v))).not.toContain(0.9)
 })
+
+test('recreated within the same second: a sample stamped in that second is still not the new project\'s', async () => {
+  const first = (await engine.createProject('demo')).project
+  await engine.deploy(first.id, 'main', { image: 'nginx', port: 80 })
+  // Sampled at T0+5.2 (stamped T0+5), deleted, and recreated at T0+5.9: the same whole second.
+  vi.setSystemTime((T0 + 5) * 1000 + 200)
+  engine.metricsHistory.record(T0 + 5, [{ name: CONTAINER, cpuCores: 0.9, memBytes: 900, rxBytes: 0, txBytes: 0 }])
+  const window = { from: T0 - 60, to: T0 + 3_600, step: 60 }
+
+  // Control: the first project, created at T0, does see it.
+  expect(pointTimes((await engine.runtimeMetrics(first.id, { component: 'compute', window })).series)).toContain(T0)
+
+  await engine.destroyProject(first.id)
+  vi.setSystemTime((T0 + 5) * 1000 + 900)
+  const second = (await engine.createProject('demo')).project
+  await engine.deploy(second.id, 'main', { image: 'nginx', port: 80 })
+
+  const after = await engine.runtimeMetrics(second.id, { component: 'compute', window })
+  expect(after.series.flatMap((s) => s.points.map(([, v]) => v))).not.toContain(0.9)
+})

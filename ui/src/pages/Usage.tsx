@@ -1,6 +1,6 @@
 // The console's Observability page (insta-frontend components/project/observability/observability-view.tsx):
 // every service in the environment as a line on the same CPU, memory and network cards, with the
-// 1h / 6h / 24h / 3d range picker. The roster is what lets a service with no samples draw flat at
+// console's time range picker. The roster is what lets a service with no samples draw flat at
 // zero instead of vanishing. Self-host: Redis, MySQL and MongoDB services are drawn too, beside
 // compute and Postgres (the console has only those two).
 

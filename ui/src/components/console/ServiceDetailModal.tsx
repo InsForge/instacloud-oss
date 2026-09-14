@@ -38,7 +38,9 @@ import { ServiceTypeIcon } from './ServiceIcon'
 /** Is a nested dialog OPEN above this overlay?
  *
  *  Restart, Delete and the approval prompt are the kit's Radix Dialog, which PORTALS to
- *  document.body — outside the overlay's DOM root. Both the focus trap and the Escape handler have
+ *  document.body — outside the overlay's DOM root. So does a Radix Popover: the Metrics tab's time range
+ *  picker renders its panel as `role="dialog"` with `data-state="open"`, so it is covered too, and Tab
+ *  walks its quick ranges while one Escape closes only the picker. Both the focus trap and the Escape handler have
  *  to stand down for them: the trap because the nested dialog's own buttons look like "focus
  *  outside", and Escape because Radix dismisses on it without guaranteeing the native event is
  *  default-prevented, so one press would close the dialog AND the overlay behind it.
@@ -196,12 +198,12 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
               className="flex min-w-0 flex-1 flex-col gap-3">
               <ErrorNote error={error} />
               {active === 'database' && <DatabasePanel projectId={projectId} branch={branch} group={service.name} />}
-              {/* The console's Metrics tab: compute omits the range picker, databases keep it. */}
+              {/* The console's Metrics tab, with its time range picker for every service type. */}
               {active === 'metrics' && obsComponentFor(service.type) && (
                 // Keyed by service: the overlay stays mounted when another service is opened, and a
                 // fresh chart state is what keeps one service's samples from wearing the next's name.
                 <MetricCharts key={service.id} projectId={projectId} component={obsComponentFor(service.type)!} branch={branch}
-                  group={service.name} lineName={service.name} showRangePicker={service.type !== 'compute'} />
+                  group={service.name} lineName={service.name} />
               )}
               {active === 'variables' && <VariablesTab projectId={projectId} branch={branch} service={service} />}
               {active === 'runtime' && runtimeComponent && (

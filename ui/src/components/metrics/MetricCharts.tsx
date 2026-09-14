@@ -1,5 +1,5 @@
 // The console's metric charts (insta-frontend components/metrics/metric-charts.tsx), shared by the
-// environment Observability page and a service's Metrics tab: a 1h / 6h / 24h / 3d range picker over
+// branch Observability page and a service's Metrics tab: the console's time range picker over
 // a grid of cards, one request per component merged onto the same cards, and inline loading, error
 // and note states. Missing series draw as flat zero lines ("no data" reads as 0 usage); the empty
 // state appears only when the daemon sends a `note`, so nothing is fabricated for a source that
@@ -16,7 +16,8 @@ import { Gauge } from 'lucide-react'
 import { api } from '../../api'
 import { usePoll } from '../../hooks'
 import { cardsForSources, type MetricComponent } from '../../lib/metrics'
-import { activeRange, RANGES, type RangeKey } from '../../lib/metricRanges'
+import { activeRange, tickedRange, type ActiveRange } from '../../lib/metricRanges'
+import { TimeRangePicker } from './TimeRangePicker'
 import { metricChartsView } from '../../lib/metricChartsView'
 import { MetricCard } from './MetricCard'
 
@@ -44,10 +45,13 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
   also?: MetricSource[]
   /** Optional page title rendered inline with the range picker. */
   title?: string
-  /** The compute service-detail tab omits the range picker, as on the console. */
+  /** Whether to show the range picker; every current view does, as on the console. */
   showRangePicker?: boolean
 }) {
-  const [range, setRange] = useState<RangeKey>('1h')
+  const [active, setActive] = useState<ActiveRange>(() => activeRange('1h', Date.now()))
+  // What the picked range IS: a preset by its key (its window moves with the clock), a custom range by its
+  // two pinned ends.
+  const rangeKey = active.range === 'custom' ? `custom:${active.window.from}-${active.window.to}` : active.range
   // Compare by VALUE: callers rebuild these arrays each render, so identity would refetch always.
   const sourcesKey = JSON.stringify([services ?? null, also ?? null])
   // What the data is OF. The range is deliberately not part of it: another range of the same services
@@ -58,13 +62,13 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
     const fetchedFor = scope
     // Computed now, on every poll, and shared by every source this poll asks: a window fixed when the
     // range was picked would never take in a new sample.
-    const current = activeRange(range, Date.now())
+    const current = tickedRange(active, Date.now())
     // One failing source costs its lines, not the page; `undefined` is how its failure is carried.
     const settle = (c: MetricComponent, g?: string) => api.metrics(projectId, c, branch, g, current.window).catch(() => undefined)
     const [primary, ...rest] = await Promise.all([settle(component, group), ...(also ?? []).map((s) => settle(s.component))])
     if (!primary && rest.every((r) => !r)) throw new Error("The daemon couldn't return metrics right now.")
-    return { fetchedFor, range: current.range, zeroWindow: current.zeroWindow, primary, rest }
-  }, [projectId, component, branch, group, range, sourcesKey], REFRESH_MS)
+    return { fetchedFor, range: rangeKey, zeroWindow: current.zeroWindow, primary, rest }
+  }, [projectId, component, branch, group, rangeKey, sourcesKey], REFRESH_MS)
 
   const { cards, note, byService } = useMemo(() => {
     if (!data) return { cards: [], note: undefined, byService: false }
@@ -81,7 +85,7 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
   }, [data, lineName, component, sourcesKey])
 
   // The picked range has not answered yet: the previous range's cards stay, dimmed like the console's refetch.
-  const fetching = Boolean(data) && data!.range !== range
+  const fetching = Boolean(data) && data!.range !== rangeKey
   const view = metricChartsView({ hasData: Boolean(data), error, note, fetchedFor: data?.fetchedFor, scope })
   const grid = 'grid grid-cols-1 gap-3 lg:grid-cols-2'
 
@@ -91,21 +95,7 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
         <div className={cn('flex flex-wrap items-center gap-3', title ? 'justify-between' : 'justify-end')}>
           {title && <h1 className="text-[32px] leading-12 font-bold">{title}</h1>}
           {showRangePicker && (
-            <div className={cn('flex items-center gap-0.5 rounded-md border border-border p-0.5', fetching && 'opacity-70')}>
-              {(Object.keys(RANGES) as RangeKey[]).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => setRange(option)}
-                  className={cn(
-                    'rounded px-3 py-1 text-sm transition-colors',
-                    range === option ? 'bg-alpha-8 font-medium text-foreground' : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
+            <TimeRangePicker value={active} onChange={setActive} busy={fetching} align={title ? 'end' : 'start'} />
           )}
         </div>
       )}

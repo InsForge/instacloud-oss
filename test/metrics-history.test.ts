@@ -173,6 +173,26 @@ describe('metricsWindow past safe integers (regression: Infinity became NaN buck
   })
 })
 
+describe('MAX_POINTS counts the inclusive endpoint (regression: 2,001 buckets)', () => {
+  test('an aligned window exactly one bucket past the cap is coarsened', () => {
+    const w = metricsWindow({ from: '0', to: '120000', step: '60s' }, 0)
+    expect('step' in w && w.step).toBeGreaterThan(60)
+  })
+
+  test('no window ever answers more than MAX_POINTS buckets, sampled every second of it', () => {
+    const w = metricsWindow({ from: '0', to: '120000', step: '60s' }, 0)
+    if (!('step' in w)) throw new Error('expected a window')
+    const h = new MetricsHistory()
+    for (let t = w.from; t <= w.to; t += 30) h.record(t, [sample(APP.container, 0.1, 1)])
+    const cpu = named(h.query([APP], w.from, w.to, w.step), 'cpu_cores')[0]!
+    expect(cpu.points.length).toBeLessThanOrEqual(MAX_POINTS)
+  })
+
+  test('a window that fits is left at the step it asked for', () => {
+    expect(metricsWindow({ from: '0', to: '119940', step: '60s' }, 0)).toEqual({ from: 0, to: 119_940, step: 60 })
+  })
+})
+
 test('liveSeries answers one reading per target that docker reported', () => {
   const series = liveSeries([sample(APP.container, 0.0125, 12)], [APP, { container: 'io-gone', group: 'gone' }], 99)
   expect(series).toEqual([

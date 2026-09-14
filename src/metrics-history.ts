@@ -153,7 +153,9 @@ export function metricsWindow(q: { from?: string; to?: string; step?: string }, 
   let step = q.step === undefined || q.step === '' ? DEFAULT_STEP_SEC : parseStep(q.step)
   if (step === null) return { error: 'step must be seconds, or a number with s, m or h (60s, 5m, 1h)' }
   if (from >= to) return { error: 'from must be before to' }
-  if ((to - from) / step > MAX_POINTS) step = Math.ceil((to - from) / MAX_POINTS)
+  // Both ends are inclusive and samples floor onto bucket starts, so a window holds up to
+  // span / step + 1 buckets, not span / step: an aligned 0..120000 at 60 s is 2,001.
+  if ((to - from) / step + 1 > MAX_POINTS) step = Math.ceil((to - from) / (MAX_POINTS - 1))
   return { from, to, step }
 }
 

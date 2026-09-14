@@ -17,6 +17,7 @@ import { api } from '../../api'
 import { usePoll } from '../../hooks'
 import { cardsForSources, type MetricComponent } from '../../lib/metrics'
 import { activeRange, RANGES, type RangeKey } from '../../lib/metricRanges'
+import { metricChartsView } from '../../lib/metricChartsView'
 import { MetricCard } from './MetricCard'
 
 /** How often the charts refresh: the daemon samples every 30 s, so a faster poll redraws the same points. */
@@ -77,6 +78,7 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
 
   // The picked range has not answered yet: the previous range's cards stay, dimmed like the console's refetch.
   const fetching = Boolean(data) && data!.range !== range
+  const view = metricChartsView({ hasData: Boolean(data), error, note })
   const grid = 'grid grid-cols-1 gap-3 lg:grid-cols-2'
 
   return (
@@ -104,18 +106,19 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
         </div>
       )}
 
-      {!data && !error ? (
+      {view === 'loading' ? (
         <div className={grid}>
           {Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-[400px] rounded-lg" />)}
         </div>
-      ) : !data ? (
-        // Only when NO source answered; one failing source costs its lines, not the page.
+      ) : view === 'unavailable' ? (
+        // The LATEST poll had no source answer (one failing source costs only its lines). Shown even
+        // over data an earlier poll left behind: old observations must not read as current.
         <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card px-6 py-16 text-center">
           <p className="text-base font-medium">Metrics unavailable</p>
           <p className="text-sm text-muted-foreground">{error?.message}</p>
           <Button variant="secondary" onClick={reload}>Retry</Button>
         </div>
-      ) : note ? (
+      ) : view === 'note' ? (
         <div className="rounded-lg border border-border bg-card py-16">
           <EmptyState icon={Gauge} title="No metrics available" description={note} />
         </div>

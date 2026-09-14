@@ -65,6 +65,13 @@ export function tickedRange(active: ActiveRange, nowMs: number): ActiveRange {
   return active.range === 'custom' ? active : activeRange(active.range, nowMs)
 }
 
+/** The picker's From / until text when it opens: the window the charts show NOW. A preset's window rolls
+ *  with every poll, so the one stored when it was picked would pair a stale end with any one-sided edit. */
+export function pickerFields(active: ActiveRange, nowMs: number): { from: string; until: string } {
+  const { window } = tickedRange(active, nowMs)
+  return { from: formatLocalInput(window.from), until: formatLocalInput(window.to) }
+}
+
 /** Step ladder for a hand-entered span, finest first, never finer than the daemon samples. */
 const STEP_LADDER = [
   { step: '30s', stepSeconds: 30 },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  activeRange, customRange, formatLocalInput, localZoneAbbr, parseLocalInput, PRESET_KEYS, RANGES, rangeLabel,
+  activeRange, customRange, formatLocalInput, localZoneAbbr, parseLocalInput, pickerFields, PRESET_KEYS, RANGES, rangeLabel,
   stepForSpan, tickedRange, withPickedDay, withPickedTime, type RangeKey,
 } from './metricRanges'
 
@@ -60,6 +60,25 @@ describe('tickedRange', () => {
     const now = Math.floor(T0 / 1000)
     const pinned = customRange(now - 7_200, now - 3_600, T0)!
     expect(tickedRange(pinned, T0 + 60_000)).toBe(pinned)
+  })
+})
+
+describe('pickerFields', () => {
+  it("opens a preset on the window the charts show now, not the one from when it was picked", () => {
+    const preset = activeRange('1h', T0)
+    const later = T0 + 45 * 60_000
+    const fields = pickerFields(preset, later)
+    expect(fields.until).toBe(formatLocalInput(activeRange('1h', later).window.to))
+    expect(fields.from).toBe(formatLocalInput(activeRange('1h', later).window.from))
+    expect(fields.until).not.toBe(formatLocalInput(preset.window.to))
+  })
+
+  it('opens a custom range on its pinned ends', () => {
+    const now = Math.floor(T0 / 1000)
+    const pinned = customRange(now - 7_200, now - 3_600, T0)!
+    expect(pickerFields(pinned, T0 + 45 * 60_000)).toEqual({
+      from: formatLocalInput(pinned.window.from), until: formatLocalInput(pinned.window.to),
+    })
   })
 })
 

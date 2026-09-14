@@ -10,8 +10,8 @@ import { useRef, useState } from 'react'
 import { Calendar, ClockColumn, cn, Input, Popover, PopoverContent, PopoverTrigger } from '@insforge/ui'
 import { CalendarDays, ChevronDown, Clock } from 'lucide-react'
 import {
-  activeRange, customRange, formatLocalInput, HOUR_OPTIONS, localZoneAbbr, MAX_LOOKBACK_DAYS, MINUTE_OPTIONS,
-  parseLocalInput, PRESET_KEYS, RANGES, rangeLabel, timeOfDayText, withPickedDay, withPickedTime,
+  activeRange, customRange, HOUR_OPTIONS, localZoneAbbr, MAX_LOOKBACK_DAYS, MINUTE_OPTIONS,
+  parseLocalInput, pickerFields, PRESET_KEYS, RANGES, rangeLabel, timeOfDayText, withPickedDay, withPickedTime,
   type ActiveRange, type RangeKey,
 } from '../../lib/metricRanges'
 
@@ -97,9 +97,8 @@ export function TimeRangePicker({ value, onChange, busy = false, align = 'start'
   function onOpenChange(next: boolean) {
     setOpen(next)
     if (next) {
-      // Both ends mirror the window on screen, presets included, or the panel disagrees with itself.
-      const from = formatLocalInput(value.window.from)
-      const until = formatLocalInput(value.window.to)
+      // Both ends mirror the window on screen NOW: a preset has rolled since it was picked.
+      const { from, until } = pickerFields(value, Date.now())
       setFromText(from)
       setUntilText(until)
       applied.current = { from, until }

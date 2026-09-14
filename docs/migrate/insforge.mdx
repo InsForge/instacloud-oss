@@ -72,10 +72,10 @@ Give me the new InsForge URL, and confirm the anon key and API key match the one
 
 Change `baseUrl` in your `createClient` call to that URL. Unless your app calls edge functions, nothing else in it changes. Leave the old stack stopped rather than deleted, so you can go back to it.
 
-If your InsForge was also running your app, your agent carries the settings across so the new one keeps managing it. The exception is an app that ran on the same machine through Docker, which stops with everything else. Bringing it along is optional and separate from the migration, and it is one command from the app's directory:
+If your app ran on the same machine as your InsForge, it stopped along with it. Bringing it to InstaCloud is optional and separate from the migration. With a Dockerfile in its directory, it is [one command](/deploy/overview):
 
 ```bash
-insta deploy . --port 3000
+insta deploy .
 ```
 
 ## What does not come over

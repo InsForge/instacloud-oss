@@ -1,8 +1,8 @@
-// The console's Environments page (insta-frontend environments/environments-view.tsx,
-// environment-actions-menu.tsx): a title band with Add Environment, then a table of Environment,
-// Status, Service (type icons), Created. The default environment has no menu (it cannot be
-// deleted). Self-host divergences: no Rename Environment (the daemon has no branch rename), and no
-// GitHub deployments panel.
+// The console's Branches page (insta-frontend branches/branches-view.tsx, branch-actions-menu.tsx): a
+// title band with Add Branch, then a table of Branch, Status, Service (type icons), Created. The default
+// branch has no menu (it cannot be deleted). Self-host divergences: no Rename Branch (the daemon has no
+// branch rename), no GitHub deployments panel, and no Agent Governance column (the daemon's governance
+// policy is project-wide, so there is no per-branch protection to show).
 
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -24,12 +24,12 @@ function Th({ children }: { children?: string }) {
   return <th className="px-4 py-3 text-left text-[13px] font-normal text-muted-foreground">{children}</th>
 }
 
-/** One icon per service type the environment carries.
+/** One icon per service type the branch carries.
  *
  *  The types come from the ONE `GET /projects/:id` the page already makes, exactly as the console
- *  builds this table (`mapEnvironments` derives a branch's services by matching
- *  `resource.branchId`). This used to be a `GET /services` poll per row, so opening a project with
- *  N environments fired N requests of Docker-backed work, repeatedly, just to draw icons. */
+ *  builds this table (it derives a branch's services by matching `resource.branchId`). This used to be
+ *  a `GET /services` poll per row, so opening a project with N branches fired N requests of
+ *  Docker-backed work, repeatedly, just to draw icons. */
 function ServiceIcons({ types }: { types: string[] }) {
   if (types.length === 0) return <span className="text-sm text-muted-foreground">—</span>
   return (
@@ -43,7 +43,7 @@ function ServiceIcons({ types }: { types: string[] }) {
   )
 }
 
-function EnvironmentActionsMenu({ projectId, env, onDeleted, onError, onApproval }: {
+function BranchActionsMenu({ projectId, env, onDeleted, onError, onApproval }: {
   projectId: string; env: BranchInfo; onDeleted: () => void
   onError: (m: string) => void; onApproval: (p: NonNullable<PendingApproval>) => void
 }) {
@@ -68,11 +68,11 @@ function EnvironmentActionsMenu({ projectId, env, onDeleted, onError, onApproval
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setDeleteOpen(true)}>
-            Delete Environment
+            Delete Branch
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete Environment"
+      <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete Branch"
         description={
           <span>
             This permanently deletes <span className="font-medium">{env.name}</span> and tears down its database branch,
@@ -87,7 +87,7 @@ function EnvironmentActionsMenu({ projectId, env, onDeleted, onError, onApproval
 export function Environments() {
   const { projectId, branch } = useParams() as { projectId: string; branch: string }
   const nav = useNavigate()
-  // One call for the branches AND what each carries, like the console's Environments table.
+  // One call for the branches AND what each carries, like the console's Branches table.
   const { data: detail, reload } = usePoll(() => api.projectDetail(projectId), [projectId])
   const envs = detail?.branches
   const typesByBranch = useMemo(() => {
@@ -108,10 +108,10 @@ export function Environments() {
     <div className="-mx-8 -mt-8 flex w-auto flex-col gap-4">
       <div className="px-6">
         <div className="flex items-center justify-between gap-3 py-4.5">
-          <h1 className="text-[32px] leading-12 font-semibold">Environments</h1>
+          <h1 className="text-[32px] leading-12 font-semibold">Branches</h1>
           <Button variant="primary" className="h-9 gap-1.5" onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" />
-            Add Environment
+            Add Branch
           </Button>
         </div>
       </div>
@@ -121,7 +121,7 @@ export function Environments() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <Th>Environment</Th>
+                <Th>Branch</Th>
                 <Th>Status</Th>
                 <Th>Service</Th>
                 <Th>Created</Th>
@@ -150,7 +150,7 @@ export function Environments() {
                     <td className="px-4 py-3">
                       {failed ? (
                         <span className="flex items-center gap-2 text-sm text-destructive"
-                          title="This environment could not be torn down. Delete it again to retry.">
+                          title="This branch could not be torn down. Delete it again to retry.">
                           <CircleAlert className="size-4" />
                           Failed
                         </span>
@@ -164,11 +164,11 @@ export function Environments() {
                       <td className="w-12" />
                     ) : (
                       <td className="px-2 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                        <EnvironmentActionsMenu projectId={projectId} env={env} onError={setError} onApproval={setApproval}
+                        <BranchActionsMenu projectId={projectId} env={env} onError={setError} onApproval={setApproval}
                           onDeleted={() => {
                             reload()
-                            // The environment you were standing on is gone: land on the default one.
-                            if (env.name === branch) nav(`/p/${projectId}/${defaultEnv}/env`, { replace: true })
+                            // The branch you were standing on is gone: land on the default one.
+                            if (env.name === branch) nav(`/p/${projectId}/${defaultEnv}/branches`, { replace: true })
                           }} />
                       </td>
                     )}

@@ -1,7 +1,7 @@
-// The console's "Add Environment" dialog (insta-frontend create-environment-dialog.tsx): name and
-// the environment to branch from, in label-left rows. Self-host divergences: no "Exclude all
-// services" (the daemon always forks the parent), and the create is awaited here rather than
-// handed off, because a self-hosted fork takes seconds, not minutes.
+// The console's "Add Branch" dialog (insta-frontend branches/create-branch-dialog.tsx): name and the
+// branch to branch from, in label-left rows. Self-host divergences: no "Exclude all services" (the
+// daemon always forks the parent), and the create is awaited here rather than handed off, because a
+// self-hosted fork takes seconds, not minutes.
 
 import { useState, type FormEvent } from 'react'
 import {
@@ -18,7 +18,7 @@ export function CreateEnvironmentDialog({ projectId, environments, open, onOpenC
   onCreated: (name: string) => void
   onApproval: (p: NonNullable<PendingApproval>) => void
 }) {
-  // Only a usable environment can be forked.
+  // Only a usable branch can be forked.
   const parents = environments.filter((env) => env.status !== 'cleanup-failed' && env.status !== 'error')
   const defaultParent = parents.find((env) => env.is_default)?.name ?? parents[0]?.name ?? 'main'
   const [name, setName] = useState('')
@@ -45,11 +45,11 @@ export function CreateEnvironmentDialog({ projectId, environments, open, onOpenC
     setError(null)
     const next = name.trim()
     if (!next) return
-    // The name becomes part of every URL and hostname for the environment, so it carries the same
+    // The name becomes part of every URL and hostname for the branch, so it carries the same
     // lower-kebab rule the daemon enforces. Checked here too, for the error next to the field
     // rather than a round trip.
     if (!BRANCH_NAME_RE.test(next)) return setError(LOWER_KEBAB_BRANCH_ERROR)
-    if (environments.some((env) => env.name === next)) return setError('An environment with this name already exists.')
+    if (environments.some((env) => env.name === next)) return setError('A branch with this name already exists.')
     void create(next)
   }
 
@@ -57,13 +57,13 @@ export function CreateEnvironmentDialog({ projectId, environments, open, onOpenC
     <Dialog open={open} onOpenChange={(nextOpen) => { onOpenChange(nextOpen); if (!nextOpen) reset() }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add Environment</DialogTitle>
+          <DialogTitle>Add Branch</DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit}>
           <DialogBody className="flex flex-col gap-4">
             <div className="flex items-center gap-6">
-              <label htmlFor="environment-name" className="w-32 shrink-0 text-sm">Environment Name</label>
-              <Input id="environment-name" name="name" autoFocus placeholder="staging" value={name}
+              <label htmlFor="branch-name" className="w-32 shrink-0 text-sm">Branch Name</label>
+              <Input id="branch-name" name="name" autoFocus placeholder="staging" value={name}
                 onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="flex items-center gap-6">

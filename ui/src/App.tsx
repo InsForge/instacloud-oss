@@ -96,9 +96,9 @@ export default function App() {
           {/* Branch-scoped, opaque service id (decision 49); the `:` in it is path-safe. */}
           <Route path="services/:sid" element={<ServiceLink />} />
           <Route path="templates" element={<Templates />} />
-          <Route path="env" element={<Environments />} />
-          {/* pre-rename bookmarks */}
-          <Route path="branches" element={<Navigate to="../env" replace />} />
+          <Route path="branches" element={<Environments />} />
+          {/* Bookmarks from when this page was Environments, at env. */}
+          <Route path="env" element={<Navigate to="../branches" replace />} />
           <Route path="logs" element={<Logs />} />
           <Route path="secrets" element={<Secrets />} />
           <Route path="database" element={<DatabaseInsight />} />

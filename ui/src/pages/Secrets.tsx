@@ -212,7 +212,7 @@ function SecretDialog({ projectId, branch, services, editing, onClose, onDone, o
                 <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!!editing}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="env">This environment ({branch})</SelectItem>
+                    <SelectItem value="env">This branch ({branch})</SelectItem>
                     <SelectItem value="project">All environments</SelectItem>
                   </SelectContent>
                 </Select>
@@ -290,7 +290,7 @@ export function Secrets() {
         <div className="flex flex-col gap-1 py-4.5">
           <h1 className="text-[32px] leading-12 font-semibold">Secrets</h1>
           <p className="text-[13px] text-muted-foreground">
-            Environment variables for <span className="font-medium">{branch}</span> — managed service credentials plus your
+            Branch variables for <span className="font-medium">{branch}</span> — managed service credentials plus your
             user-defined secrets
           </p>
         </div>

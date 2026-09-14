@@ -65,13 +65,13 @@ One thing first, because your agent cannot do it. **Fly does not let anyone read
 fly ssh console -a mysite -C 'printenv SECRET_KEY' | insta secrets set SECRET_KEY
 ```
 
-The pipe keeps the value out of your terminal. Repeat per secret, then hand over:
+The pipe keeps the value out of your terminal. Repeat per secret, but skip the `DATABASE_URL` that `fly pg attach` installed: your agent binds the new database under that name, and a copied string there would block the binding. Then hand over:
 
 ```text title="Prompt" wrap
 Migrate my Fly app mysite and its Fly Postgres to InstaCloud. The code is in this directory, with its Dockerfile and fly.toml. Follow the insta skill's migration runbook, and stop before moving DNS.
 ```
 
-Because the Dockerfile is already there, your agent deploys straight from the directory with `insta deploy .`, no GitHub connection needed. It will ask you to approve anything that touches production.
+Because the Dockerfile is already there, your agent deploys straight from the directory with `insta deploy .`, no GitHub connection needed. It will ask you to approve anything that touches production, and expect it to scale the Fly app to zero before it copies the database, so nothing is still writing.
 
 {/* screenshot: console, project with a compute service and a postgres service deployed */}
 
@@ -81,7 +81,7 @@ Because the Dockerfile is already there, your agent deploys straight from the di
 Attach <your-domain> to the compute service and give me the DNS records to publish.
 ```
 
-Publish the records at your DNS provider, then ask your agent to check the domain. Keep the Fly app running, and do not destroy it, until the old records have aged out of resolver caches.
+Publish the records at your DNS provider, then ask your agent to check the domain. Keep the Fly app stopped, and do not destroy it, until the old records have aged out of resolver caches. A machine left running would serve anyone on cached DNS and write to the old database.
 
 ## Cron jobs
 

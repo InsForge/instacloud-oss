@@ -55,7 +55,7 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const panRef = useRef<{ pointerId: number; startX: number; startY: number; cam: Camera } | null>(null)
-  const dragRef = useRef<{ pointerId: number; service: Service; startX: number; startY: number; origin: Point; moved: boolean } | null>(null)
+  const dragRef = useRef<{ pointerId: number; service: Service; startX: number; startY: number; origin: Point; moved: boolean; last: Point | null } | null>(null)
 
   const nodeIds = useMemo(() => services.map((s) => s.id), [services])
   const layout = useMemo(() => layoutGraph(nodeIds, links, LAYOUT_METRICS), [nodeIds, links])
@@ -219,9 +219,9 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
   const onCardPointerDown = (e: PointerEvent<HTMLDivElement>, service: Service, origin: Point) => {
     if (e.button !== 0) return
     e.stopPropagation() // keep the background from panning
-    cameraClaimedRef.current = true
-    stopCameraAnimation()
-    dragRef.current = { pointerId: e.pointerId, service, startX: e.clientX, startY: e.clientY, origin, moved: false }
+    // The camera is claimed when a drag actually starts (below), not here: a plain click opens the
+    // service and must leave auto-fit following the bindings still to arrive.
+    dragRef.current = { pointerId: e.pointerId, service, startX: e.clientX, startY: e.clientY, origin, moved: false, last: null }
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   const onCardPointerMove = (e: PointerEvent<HTMLDivElement>) => {
@@ -230,8 +230,14 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
     const dx = e.clientX - drag.startX
     const dy = e.clientY - drag.startY
     if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return
-    drag.moved = true
-    setPositions((prev) => ({ ...prev, [drag.service.id]: { x: snapToGrid(drag.origin.x + dx / camera.scale), y: snapToGrid(drag.origin.y + dy / camera.scale) } }))
+    if (!drag.moved) {
+      drag.moved = true
+      cameraClaimedRef.current = true
+      stopCameraAnimation()
+    }
+    const point = { x: snapToGrid(drag.origin.x + dx / camera.scale), y: snapToGrid(drag.origin.y + dy / camera.scale) }
+    drag.last = point
+    setPositions((prev) => ({ ...prev, [drag.service.id]: point }))
   }
   const onCardPointerUp = (e: PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current
@@ -254,7 +260,11 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
     const drag = dragRef.current
     if (!drag || drag.pointerId !== e.pointerId) return
     dragRef.current = null
-    if (drag.moved) savePositions(storageKey, positionsRef.current)
+    if (!drag.moved || !drag.last) return
+    // From the drag itself, not the positions mirror, which its passive effect may not have refreshed yet.
+    const next = { ...positionsRef.current, [drag.service.id]: drag.last }
+    setPositions(next)
+    savePositions(storageKey, next)
   }
 
   return (

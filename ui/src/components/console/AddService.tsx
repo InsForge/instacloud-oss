@@ -188,10 +188,10 @@ function AlwaysOnRow({ choice, defaultOn, unreadable, onPick }: {
   choice: AlwaysOnChoice; defaultOn: boolean; unreadable: boolean; onPick: (v: boolean) => void
 }) {
   const hint = !choice.known
-    ? unreadable ? "Couldn't read this environment: choose on or off." : 'Checking this environment…'
+    ? unreadable ? "Couldn't read this branch: choose on or off." : 'Checking this branch…'
     : defaultOn
       ? 'Keep it running instead of stopping it when idle. On by default here; turn off to scale to zero.'
-      : 'Keep it running instead of stopping it when idle. Off by default on this environment; turn on to keep it running.'
+      : 'Keep it running instead of stopping it when idle. Off by default on this branch; turn on to keep it running.'
   return (
     <FormRow label="Always On" hint={hint}>
       <Switch checked={choice.value} onCheckedChange={onPick} aria-label="Always on" />

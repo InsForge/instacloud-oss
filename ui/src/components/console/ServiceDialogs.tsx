@@ -165,7 +165,7 @@ export function DeleteServiceDialog({ projectId, branch, service, open, onOpenCh
       description={
         <span>
           This permanently deletes <span className="font-semibold text-foreground">{service.name}</span> along with its data and
-          removes it from this environment. This cannot be undone.
+          removes it from this branch. This cannot be undone.
         </span>
       }
       onConfirm={remove} />

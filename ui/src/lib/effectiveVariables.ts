@@ -1,8 +1,8 @@
 // Which variable names a service's container actually receives, and which scope each one comes
 // from. A container receives ONE value per name, so this is a map keyed by name, not a list: the
 // daemon overwrites in a fixed order and the Secrets dialog deliberately allows the same name at
-// both project and environment scope, so a project `API_KEY` with an environment override is one
-// variable whose source is the environment, never two rows with contradictory sources.
+// both project and branch scope, so a project `API_KEY` with a branch override is one variable whose
+// source is the branch, never two rows with contradictory sources.
 
 import type { SecretTree } from '../api'
 
@@ -33,7 +33,7 @@ export function effectiveVariables(
       for (const n of s.minted) effective.set(n, s.name)
     }
     for (const n of tree.projectWide) effective.set(n, 'Project')
-    for (const n of branch.unbound) effective.set(n, 'Environment')
+    for (const n of branch.unbound) effective.set(n, 'Branch')
     const own = branch.services.find((s) => s.type === 'compute' && s.name === service.name)
     // A BINDING is not "this service": the value is read from another service's credential and
     // mapped into this group's env under a different name, and `envFor` applies bindings after

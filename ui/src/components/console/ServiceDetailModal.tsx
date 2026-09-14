@@ -335,7 +335,7 @@ function GeneralSettings({ projectId, branch, service, onDone, onError, onApprov
             <span className="py-1.5 text-sm text-destructive">Delete service</span>
             <p className="pb-2 text-[13px] text-destructive">
               Deleting this service permanently deletes its container, data and credentials and removes it from this
-              environment. This cannot be undone.
+              branch. This cannot be undone.
             </p>
           </div>
           <div className="flex min-w-0 flex-1 items-center gap-3">

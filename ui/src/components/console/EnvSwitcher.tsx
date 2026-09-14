@@ -1,6 +1,6 @@
-// The console's topbar environment switcher (insta-frontend env-switcher.tsx): a 200px cell naming
-// the active environment with its badge, a menu of environments plus "Manage Environments", and a
-// secondary "Add Environment" beside it. Switching navigates and keeps the page you are on.
+// The console's topbar branch switcher (insta-frontend branches/env-switcher.tsx): a 200px cell naming
+// the active branch with its badge, a menu of branches plus "Manage Branches", and a secondary
+// "Add Branch" beside it. Switching navigates and keeps the page you are on.
 
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -25,10 +25,10 @@ export function EnvSwitcher({ projectId, branch }: { projectId: string; branch: 
   const [createOpen, setCreateOpen] = useState(false)
   const [approval, setApproval] = useState<PendingApproval>(null)
   const { data: all = [], reload } = usePoll(() => api.branches(projectId), [projectId], 15_000)
-  // The trigger says where you are, even on an environment that failed; the menu offers only
-  // somewhere you can go.
+  // The trigger says where you are, even on a branch that failed; the menu offers only somewhere you
+  // can go.
   const active = all.find((env) => env.name === branch) ?? null
-  const environments = all.filter((env) => envBadge(env).label !== 'Failed')
+  const branches = all.filter((env) => envBadge(env).label !== 'Failed')
 
   return (
     <div className="flex h-full items-center gap-3">
@@ -43,7 +43,7 @@ export function EnvSwitcher({ projectId, branch }: { projectId: string; branch: 
                   <span className="shrink-0"><EnvStatusBadge env={active} /></span>
                 </>
               ) : (
-                <span className="truncate text-sm text-muted-foreground">No environments</span>
+                <span className="truncate text-sm text-muted-foreground">No branches</span>
               )}
             </span>
             <ChevronDown className="size-5 shrink-0 text-muted-foreground" />
@@ -51,7 +51,7 @@ export function EnvSwitcher({ projectId, branch }: { projectId: string; branch: 
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-60">
           <div className="max-h-78 overflow-y-auto">
-            {environments.map((env) => (
+            {branches.map((env) => (
               <DropdownMenuItem key={env.id}
                 onSelect={() => nav(`/p/${projectId}/${encodeURIComponent(env.name)}/${subpageForSwitch(pathname)}`)}>
                 <Check className={env.name === branch ? 'size-4 shrink-0' : 'invisible size-4 shrink-0'} />
@@ -61,9 +61,9 @@ export function EnvSwitcher({ projectId, branch }: { projectId: string; branch: 
             ))}
           </div>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => nav(`/p/${projectId}/${branch}/env`)}>
+          <DropdownMenuItem onSelect={() => nav(`/p/${projectId}/${branch}/branches`)}>
             <Settings2 className="size-4 shrink-0" />
-            Manage Environments
+            Manage Branches
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -71,7 +71,7 @@ export function EnvSwitcher({ projectId, branch }: { projectId: string; branch: 
       <Button variant="secondary" size="sm" className="h-9 gap-1.5 text-muted-foreground hover:text-primary"
         onClick={() => setCreateOpen(true)}>
         <Plus className="size-4" />
-        Add Environment
+        Add Branch
       </Button>
 
       <CreateEnvironmentDialog projectId={projectId} environments={all} open={createOpen} onOpenChange={setCreateOpen}

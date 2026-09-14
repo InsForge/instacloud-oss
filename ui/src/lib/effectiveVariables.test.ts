@@ -9,18 +9,18 @@ const branch = (over: Partial<Branch> = {}): Branch => ({
 })
 
 describe('effectiveVariables', () => {
-  it('shows one row per name when the environment shadows the project', () => {
+  it('shows one row per name when the branch shadows the project', () => {
     const tree: SecretTree = { projectWide: ['API_KEY', 'ONLY_PROJECT'], branches: [] }
-    const b = branch({ unbound: ['API_KEY', 'ONLY_ENV'] })
+    const b = branch({ unbound: ['API_KEY', 'ONLY_BRANCH'] })
     const rows = effectiveVariables(tree, b, { type: 'compute', name: 'app' })
     expect(rows.filter((r) => r.name === 'API_KEY')).toHaveLength(1)
-    // The environment wins: it is applied after project-wide in engine.envFor.
-    expect(rows.find((r) => r.name === 'API_KEY')?.source).toBe('Environment')
+    // The branch wins: it is applied after project-wide in engine.envFor.
+    expect(rows.find((r) => r.name === 'API_KEY')?.source).toBe('Branch')
     expect(rows.find((r) => r.name === 'ONLY_PROJECT')?.source).toBe('Project')
-    expect(rows.find((r) => r.name === 'ONLY_ENV')?.source).toBe('Environment')
+    expect(rows.find((r) => r.name === 'ONLY_BRANCH')?.source).toBe('Branch')
   })
 
-  it('lets a secret bound to this group shadow both the project and the environment', () => {
+  it('lets a secret bound to this group shadow both the project and the branch', () => {
     const tree: SecretTree = { projectWide: ['API_KEY'], branches: [] }
     const b = branch({
       unbound: ['API_KEY'],
@@ -39,7 +39,7 @@ describe('effectiveVariables', () => {
     })
     const rows = effectiveVariables(tree, b, { type: 'compute', name: 'app' })
     expect(rows.filter((r) => r.name === 'REDIS_URL')).toHaveLength(1)
-    expect(rows[0]?.source).toBe('Environment')
+    expect(rows[0]?.source).toBe('Branch')
   })
 
   // A BINDING is platform-owned and reads from another service: `envFor` applies bindings last,

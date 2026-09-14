@@ -20,7 +20,7 @@ export function Operations() {
 
   return (
     <ConsolePage title="Operations"
-      subtitle="Control-plane operations across all environments — provisioning, deploys, and lifecycle changes, newest first">
+      subtitle="Control-plane operations across all branches — provisioning, deploys, and lifecycle changes, newest first">
 
       {error && (
         <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-destructive">{error.message}</div>

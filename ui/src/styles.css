@@ -176,3 +176,46 @@ body {
 [class~="bg-primary"]:active:not(:disabled):not([data-disabled]) {
   background-color: rgb(var(--theme) / 0.8);
 }
+
+/*
+ * The console's Activities side panel (insta-frontend globals.css): a 320px column docked to the right of
+ * the content. It grows in from zero width while its content slides in, so the page is pushed aside
+ * rather than covered.
+ */
+.project-feed-panel-shell {
+  position: relative;
+  z-index: 40;
+  flex: 0 0 auto;
+  width: 0;
+  overflow: hidden;
+  transition: width 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.project-feed-panel-shell[data-open="true"] {
+  width: 320px;
+}
+.project-feed-panel-content {
+  transform: translateX(100%);
+  opacity: 0;
+  transition:
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms ease;
+}
+.project-feed-panel-shell[data-open="true"] > .project-feed-panel-content {
+  transform: translateX(0);
+  opacity: 1;
+}
+@starting-style {
+  .project-feed-panel-shell[data-open="true"] {
+    width: 0;
+  }
+  .project-feed-panel-shell[data-open="true"] > .project-feed-panel-content {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-feed-panel-shell,
+  .project-feed-panel-content {
+    transition-duration: 1ms;
+  }
+}

@@ -30,6 +30,13 @@ export function boundedDockerRead(args: string[]): Promise<Buffer> {
   return Promise.race([call.done, timeout]).finally(() => clearTimeout(timer))
 }
 
+/** A container's generation, from its docker ID: the same name comes back with a new ID on every
+ *  redeploy or recreate, and its network counters start over with it. The 12-hex short ID is 48 bits,
+ *  a safe integer; anything unparseable is generation 0. */
+export function generationOf(id: string | undefined): number {
+  return id && /^[0-9a-f]{12}/i.test(id) ? parseInt(id.slice(0, 12), 16) : 0
+}
+
 export class MetricsSampler {
   private timer: ReturnType<typeof setInterval> | undefined
   private inFlight: Promise<void> | undefined
@@ -71,18 +78,21 @@ export class MetricsSampler {
 
   async sampleOnce(): Promise<void> {
     const t = this.now()
-    const ps = (await this.docker(['ps', '-a', '--format', '{{.Names}}\t{{.State}}'])).toString()
+    const ps = (await this.docker(['ps', '-a', '--format', '{{.Names}}\t{{.State}}\t{{.ID}}'])).toString()
     const rows: ContainerSample[] = []
     const running: string[] = []
+    const generation = new Map<string, number>()
     for (const line of ps.split('\n').filter(Boolean)) {
-      const [name, state] = line.split('\t')
+      const [name, state, id] = line.split('\t')
       if (!name?.startsWith(MANAGED_PREFIX)) continue
+      generation.set(name, generationOf(id))
       if (state === 'running') running.push(name)
-      else rows.push({ name, cpuCores: 0, memBytes: 0, rxBytes: 0, txBytes: 0 })
+      else rows.push({ name, cpuCores: 0, memBytes: 0, rxBytes: 0, txBytes: 0, generation: generationOf(id) })
     }
     if (running.length) {
       try {
-        rows.push(...statsToSamples((await this.docker(['stats', '--no-stream', '--format', '{{json .}}', ...running])).toString()))
+        const stats = statsToSamples((await this.docker(['stats', '--no-stream', '--format', '{{json .}}', ...running])).toString())
+        rows.push(...stats.map((s) => ({ ...s, generation: generation.get(s.name) ?? 0 })))
       } catch (e) {
         // A container stopping between `ps` and `stats` fails the whole call; the next tick sees it stopped.
         this.log(`metrics history: docker stats failed: ${String(e)}`)

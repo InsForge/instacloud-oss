@@ -22,24 +22,29 @@ export const MAX_POINTS = 2_000
 export const MAX_RATE_GAP_SEC = 120
 
 /** One container's reading at one instant. Network counters are CUMULATIVE since the container
- *  started, as `docker stats` reports them; rates are derived between consecutive samples. */
-export interface ContainerSample { name: string; cpuCores: number; memBytes: number; rxBytes: number; txBytes: number }
+ *  started, as `docker stats` reports them; rates are derived between consecutive samples of the same
+ *  `generation` — the container instance, which a redeploy replaces under the same name. */
+export interface ContainerSample { name: string; cpuCores: number; memBytes: number; rxBytes: number; txBytes: number; generation?: number }
 
 /** A container a request covers, and the service it is drawn as. */
 export interface MetricsTarget { container: string; group: string }
 
-export interface PersistedHistory { version: 1; samples: Record<string, number[]> }
+/** Version 2 stores a generation per sample; a version-1 file (no generation) loads as generation 0. */
+export interface PersistedHistory { version: 2; samples: Record<string, number[]> }
 
 export type MetricsWindow = { from: number; to: number; step: number }
 
-/** Values stored per sample: t, cpu cores, memory bytes, received bytes, sent bytes. */
-const FIELDS = 5
+/** Values stored per sample: t, cpu cores, memory bytes, received bytes, sent bytes, generation. */
+const FIELDS = 6
+/** Version 1's per-sample values: everything above but the generation. */
+const V1_FIELDS = 5
 
 const clean = (n: number): number => (Number.isFinite(n) && n > 0 ? n : 0)
+const generationValue = (n: unknown): number => (typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : 0)
 const round = (n: number, digits: number): number => Number(n.toFixed(digits))
 
 export class MetricsHistory {
-  /** container -> flat [t, cpu, mem, rx, tx, t, cpu, …], ascending t. */
+  /** container -> flat [t, cpu, mem, rx, tx, generation, t, cpu, …], ascending t. */
   private samples = new Map<string, number[]>()
 
   record(t: number, rows: readonly ContainerSample[]): void {
@@ -49,7 +54,7 @@ export class MetricsHistory {
       if (!arr) { arr = []; this.samples.set(r.name, arr) }
       // A clock step back or a duplicate tick must not break the ascending order the query relies on.
       if (arr.length >= FIELDS && arr[arr.length - FIELDS]! >= t) continue
-      arr.push(t, round(clean(r.cpuCores), 6), Math.round(clean(r.memBytes)), Math.round(clean(r.rxBytes)), Math.round(clean(r.txBytes)))
+      arr.push(t, round(clean(r.cpuCores), 6), Math.round(clean(r.memBytes)), Math.round(clean(r.rxBytes)), Math.round(clean(r.txBytes)), generationValue(r.generation))
     }
   }
 
@@ -87,15 +92,13 @@ export class MetricsHistory {
         b[0]! += arr[i + 1]!
         b[1]! += arr[i + 2]!
         b[2]! += 1
-        if (i >= FIELDS) {
+        if (i >= FIELDS && this.differenceable(arr, i)) {
           const dt = t - arr[i - FIELDS]!
           const rx = arr[i + 3]! - arr[i - FIELDS + 3]!
           const tx = arr[i + 4]! - arr[i - FIELDS + 4]!
-          // Counters restart with the container: a negative delta is a new container, not negative traffic.
-          // A gap wider than MAX_RATE_GAP_SEC is a daemon that was not watching (down, or restarted onto a
-          // saved history): averaging hours of counter movement into one bucket after it would invent a
-          // rate, where the truth is a gap.
-          if (dt > 0 && dt <= MAX_RATE_GAP_SEC && rx >= 0 && tx >= 0) { b[3]! += rx / dt; b[4]! += tx / dt; b[5]! += 1 }
+          b[3]! += rx / dt
+          b[4]! += tx / dt
+          b[5]! += 1
         }
       }
       if (buckets.size === 0) continue
@@ -114,24 +117,46 @@ export class MetricsHistory {
     return out
   }
 
+  /** Whether the sample at `i` and the one before it are ONE uninterrupted run of cumulative counters,
+   *  so their difference is traffic. Every condition is a way the counters stop being one run:
+   *  - a different generation: a redeploy or recreate put a new container under the same name, whose
+   *    counters start over — whether they have since grown past the old ones or not;
+   *  - either sample not running (memory 0, counters recorded as zero): `docker pause` keeps the
+   *    counters, so a resumed container differenced against that zero replays its whole lifetime;
+   *  - a gap wider than MAX_RATE_GAP_SEC: the daemon was not watching (down, or restarted onto a saved
+   *    history), and averaging hours of movement into one bucket invents a rate where the truth is a gap;
+   *  - a negative delta: a restart this generation check could not see (a version-1 history). */
+  private differenceable(arr: number[], i: number): boolean {
+    const prev = i - FIELDS
+    const dt = arr[i]! - arr[prev]!
+    return arr[i + 5] === arr[prev + 5]
+      && arr[i + 2]! > 0 && arr[prev + 2]! > 0
+      && dt > 0 && dt <= MAX_RATE_GAP_SEC
+      && arr[i + 3]! >= arr[prev + 3]! && arr[i + 4]! >= arr[prev + 4]!
+  }
+
   toJSON(): PersistedHistory {
-    return { version: 1, samples: Object.fromEntries(this.samples) }
+    return { version: 2, samples: Object.fromEntries(this.samples) }
   }
 
   /** Replace the history with a saved one. Malformed containers are skipped rather than failing the
-   *  load, out-of-order samples are dropped, and anything past retention is pruned. */
+   *  load, out-of-order samples are dropped, and anything past retention is pruned. A version-1 file
+   *  loads with every sample at generation 0. */
   load(raw: unknown, nowSec: number): void {
     this.samples.clear()
-    if (!raw || typeof raw !== 'object' || (raw as { version?: unknown }).version !== 1) return
+    const version = raw && typeof raw === 'object' ? (raw as { version?: unknown }).version : undefined
+    if (version !== 1 && version !== 2) return
+    const width = version === 1 ? V1_FIELDS : FIELDS
     const saved = (raw as { samples?: unknown }).samples
     if (!saved || typeof saved !== 'object') return
     for (const [name, arr] of Object.entries(saved as Record<string, unknown>)) {
-      if (!Array.isArray(arr) || arr.length % FIELDS !== 0) continue
+      if (!Array.isArray(arr) || arr.length % width !== 0) continue
       if (!arr.every((n) => typeof n === 'number' && Number.isFinite(n))) continue
       const kept: number[] = []
-      for (let i = 0; i < arr.length; i += FIELDS) {
+      for (let i = 0; i < arr.length; i += width) {
         if (kept.length >= FIELDS && kept[kept.length - FIELDS]! >= (arr[i] as number)) continue
-        kept.push(arr[i] as number, ...(arr.slice(i + 1, i + FIELDS) as number[]).map(clean))
+        const values = arr.slice(i + 1, i + V1_FIELDS) as number[]
+        kept.push(arr[i] as number, ...values.map(clean), width === FIELDS ? generationValue(arr[i + 5]) : 0)
       }
       if (kept.length) this.samples.set(name, kept)
     }

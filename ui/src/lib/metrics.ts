@@ -399,7 +399,12 @@ export function withZeroUsageFill(
     return withMultiServiceFill(cards, points, rosters)
   }
 
-  const specs = ZERO_FILL_CARDS[component]
+  // One service: its OWN component picks the cards and names the lines. The view's primary component
+  // said nothing about a lone database, and using it invented an all-zero Network Traffic card for a
+  // series the daemon does not measure there, with lines called "CPU" rather than the service.
+  const lone = rosters?.find((r) => r.services.length > 0)
+  const specs = ZERO_FILL_CARDS[lone?.component ?? component]
+  const name = lineName ?? lone?.services[0]
   const zero = (spec: ZeroFillSpec): MetricCardData => ({
     id: spec.id,
     title: spec.title,
@@ -409,7 +414,7 @@ export function withZeroUsageFill(
     lines: [
       // A single-line card is named after the service it belongs to; a multi-line card names its
       // own directions instead, or the two lines would be indistinguishable.
-      { key: spec.id, name: spec.extraLines ? spec.label : (lineName ?? spec.label), color: SERIES_COLORS[0], points },
+      { key: spec.id, name: spec.extraLines ? spec.label : (name ?? spec.label), color: SERIES_COLORS[0], points },
       ...(spec.extraLines ?? []).map((l) => ({ key: `${spec.id}:${l.label.toLowerCase()}`, name: l.label, color: l.color, points })),
     ],
   })

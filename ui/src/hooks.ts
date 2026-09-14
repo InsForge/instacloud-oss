@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { startPoll } from './lib/pollLoop'
 
 export type PollOptions = {
   /** Default 5 s (the daemon is local or one hop away). */
@@ -18,23 +19,17 @@ export function usePoll<T>(fn: () => Promise<T>, deps: unknown[], opts: number |
   const [error, setError] = useState<Error>()
   const [loading, setLoading] = useState(true)
   const [tick, setTick] = useState(0)
-  const alive = useRef(true)
 
   useEffect(() => {
     if (!enabled) return
-    alive.current = true
-    let timer: ReturnType<typeof setTimeout>
-    const run = async () => {
-      try {
-        const d = await fn()
-        if (alive.current) { setData(d); setError(undefined) }
-      } catch (e) {
-        if (alive.current) setError(e as Error)
-      }
-      if (alive.current) { setLoading(false); timer = setTimeout(run, intervalMs) }
-    }
-    void run()
-    return () => { alive.current = false; clearTimeout(timer) }
+    // Each effect run owns its loop, and cleanup stops THAT loop (lib/pollLoop.ts). A shared "alive"
+    // ref was set back to true by the next run before the old request resolved, so the old request
+    // wrote stale data and kept polling forever — one more loop per dependency change.
+    return startPoll(fn, {
+      onData: (d) => { setData(d); setError(undefined) },
+      onError: (e) => { setError(e as Error) },
+      onSettled: () => { setLoading(false) },
+    }, intervalMs)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick, intervalMs, enabled])
 

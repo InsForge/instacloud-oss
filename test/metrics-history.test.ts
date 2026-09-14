@@ -48,8 +48,8 @@ describe('MetricsHistory.query', () => {
 
   test('derives egress and ingress rates from the cumulative counters', () => {
     const h = new MetricsHistory()
-    h.record(0, [sample(APP.container, 0, 0, 1_000, 2_000)])
-    h.record(30, [sample(APP.container, 0, 0, 4_000, 2_600)])
+    h.record(0, [sample(APP.container, 0, 1,1_000, 2_000)])
+    h.record(30, [sample(APP.container, 0, 1,4_000, 2_600)])
     const series = h.query([APP], 0, 60, 60)
     // (4000 - 1000) / 30 received, (2600 - 2000) / 30 sent
     expect(named(series, 'ingress_bytes_rate')[0]!.points).toEqual([[0, 100]])
@@ -59,8 +59,8 @@ describe('MetricsHistory.query', () => {
 
   test('a counter reset from a restart is not negative traffic', () => {
     const h = new MetricsHistory()
-    h.record(0, [sample(APP.container, 0, 0, 9_000, 9_000)])
-    h.record(60, [sample(APP.container, 0, 0, 10, 10)])
+    h.record(0, [sample(APP.container, 0, 1,9_000, 9_000)])
+    h.record(60, [sample(APP.container, 0, 1,10, 10)])
     expect(named(h.query([APP], 0, 120, 120), 'egress_bytes_rate')).toEqual([])
   })
 
@@ -176,21 +176,87 @@ describe('metricsWindow past safe integers (regression: Infinity became NaN buck
 describe('network rates across a daemon outage (regression: hours of counter movement pinned on one bucket)', () => {
   test('a sample after a long gap, reloaded from a saved history, starts a new chain: no rate across the outage', () => {
     const before = new MetricsHistory()
-    before.record(0, [sample(APP.container, 0, 0, 1_000, 1_000)])
-    before.record(30, [sample(APP.container, 0, 0, 2_000, 2_000)])
+    before.record(0, [sample(APP.container, 0, 1,1_000, 1_000)])
+    before.record(30, [sample(APP.container, 0, 1,2_000, 2_000)])
     const after = new MetricsHistory()
     after.load(JSON.parse(JSON.stringify(before.toJSON())), 60)
-    after.record(7_230, [sample(APP.container, 0, 0, 9_000_000, 9_000_000)]) // the daemon was down for two hours
+    after.record(7_230, [sample(APP.container, 0, 1,9_000_000, 9_000_000)]) // the daemon was down for two hours
     const egress = named(after.query([APP], 0, 8_000, 60), 'egress_bytes_rate')[0]!
     expect(egress.points.map(([t]) => t)).toEqual([0]) // the pre-outage bucket only; nothing at 7200
   })
 
   test('a missed tick (one failed docker stats) still differences, within MAX_RATE_GAP_SEC', () => {
     const h = new MetricsHistory()
-    h.record(0, [sample(APP.container, 0, 0, 0, 0)])
-    h.record(60, [sample(APP.container, 0, 0, 6_000, 0)])
+    h.record(0, [sample(APP.container, 0, 1,0, 0)])
+    h.record(60, [sample(APP.container, 0, 1,6_000, 0)])
     expect(MAX_RATE_GAP_SEC).toBeGreaterThanOrEqual(60)
     expect(named(h.query([APP], 0, 120, 120), 'ingress_bytes_rate')[0]!.points).toEqual([[0, 100]])
+  })
+})
+
+describe('a redeployed container (regression: a new container differenced against the old one)', () => {
+  const gen = (name: string, generation: number, rx: number, tx: number, t: number, h: MetricsHistory) =>
+    h.record(t, [{ name, cpuCores: 0.1, memBytes: 100, rxBytes: rx, txBytes: tx, generation }])
+
+  test('no rate across a generation change when the new counters came back LOWER', () => {
+    const h = new MetricsHistory()
+    gen(APP.container, 1, 9_000, 9_000, 0, h)
+    gen(APP.container, 2, 10, 10, 30, h)
+    expect(named(h.query([APP], 0, 60, 60), 'egress_bytes_rate')).toEqual([])
+  })
+
+  test('no rate across a generation change when the new counters have already grown HIGHER', () => {
+    const h = new MetricsHistory()
+    gen(APP.container, 1, 100, 100, 0, h)
+    gen(APP.container, 2, 1_000, 1_000, 30, h) // a fresh container that already sent more than the old one had
+    expect(named(h.query([APP], 0, 60, 60), 'egress_bytes_rate')).toEqual([])
+  })
+
+  test('rates carry on within one generation', () => {
+    const h = new MetricsHistory()
+    gen(APP.container, 2, 1_000, 1_000, 30, h)
+    gen(APP.container, 2, 4_000, 4_000, 60, h)
+    expect(named(h.query([APP], 0, 120, 120), 'egress_bytes_rate')[0]!.points).toEqual([[0, 100]])
+  })
+
+  test('a version-1 history (no generation) still loads and charts, as generation 0', () => {
+    const h = new MetricsHistory()
+    h.load({ version: 1, samples: { [APP.container]: [0, 0.1, 100, 0, 0, 30, 0.1, 100, 3_000, 3_000] } }, 60)
+    expect(named(h.query([APP], 0, 60, 60), 'egress_bytes_rate')[0]!.points).toEqual([[0, 100]])
+    expect(h.toJSON().version).toBe(2)
+  })
+})
+
+describe('a failed save', () => {
+  test('is logged and never throws, and leaves any saved history in place', async () => {
+    const logs: string[] = []
+    const sampler = new MetricsSampler(new MetricsHistory(), {
+      file: '/nonexistent-dir-for-metrics-test/metrics-history.json',
+      docker: async (args) => Buffer.from(args[0] === 'ps' ? '' : ''),
+      now: () => 10_000,
+      log: (m) => logs.push(m),
+    })
+    await expect(sampler.sampleOnce()).resolves.toBeUndefined() // first tick of a never-saved sampler saves
+    expect(logs.join('\n')).toMatch(/could not save/)
+  })
+})
+
+describe('a paused container (regression: resume replayed lifetime counters as one bucket)', () => {
+  test('no rate is differenced against the zeroed counters recorded while it was not running', () => {
+    const h = new MetricsHistory()
+    h.record(0, [sample(APP.container, 0.1, 100, 5e9, 4e9)])
+    h.record(30, [sample(APP.container, 0, 0, 0, 0)]) // `docker pause`: recorded as not running
+    h.record(60, [sample(APP.container, 0.1, 100, 5e9 + 1_000, 4e9 + 1_000)]) // resumed, counters kept
+    expect(named(h.query([APP], 0, 120, 30), 'egress_bytes_rate')).toEqual([])
+    expect(named(h.query([APP], 0, 120, 30), 'ingress_bytes_rate')).toEqual([])
+  })
+
+  test('rates resume once two consecutive samples are running again', () => {
+    const h = new MetricsHistory()
+    h.record(30, [sample(APP.container, 0, 0, 0, 0)])
+    h.record(60, [sample(APP.container, 0.1, 100, 5e9, 4e9)])
+    h.record(90, [sample(APP.container, 0.1, 100, 5e9 + 3_000, 4e9 + 3_000)])
+    expect(named(h.query([APP], 0, 120, 30), 'egress_bytes_rate')[0]!.points).toEqual([[90, 100]])
   })
 })
 

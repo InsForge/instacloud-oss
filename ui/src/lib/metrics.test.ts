@@ -348,6 +348,17 @@ describe('self-host divergences', () => {
     expect(cards.every((c) => c.lines.map((l) => l.name).join() === 'store,cache,legacy,docs')).toBe(true)
   })
 
+  // A lone database used to take the view's primary component (compute) for its fill: an invented
+  // Network Traffic card for a series never measured, and lines called "CPU" instead of the service.
+  it('gives a lone database its own cards, named after it, with no invented traffic card', () => {
+    const out = cardsForSources([
+      { result: { series: [] }, component: 'compute', services: [] },
+      { result: { series: [] }, component: 'db', services: ['store'] },
+    ], WIN, undefined, 'compute')
+    expect(out.cards.map((c) => c.title)).toEqual(['CPU Usage', 'Memory Usage'])
+    expect(out.cards.every((c) => c.lines.map((l) => l.name).join() === 'store')).toBe(true)
+  })
+
   it('splits a services list into rosters by metrics component, leaving storage out', () => {
     expect(serviceNamesByComponent([
       { type: 'compute', name: 'app' },

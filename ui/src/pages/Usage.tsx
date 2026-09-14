@@ -11,27 +11,30 @@ import { usePoll } from '../hooks'
 import { serviceNamesByComponent } from '../lib/metrics'
 import { MetricCharts, type MetricSource } from '../components/metrics/MetricCharts'
 
-const DATABASES = ['db', 'redis', 'mysql', 'mongodb'] as const
+const COMPONENTS = ['compute', 'db', 'redis', 'mysql', 'mongodb'] as const
 
 export function Usage() {
   const { projectId, branch } = useParams() as { projectId: string; branch: string }
   const { data: services } = usePoll(() => api.services(projectId, branch), [projectId, branch], 30_000)
   const roster = useMemo(() => serviceNamesByComponent(services ?? []), [services])
-  const compute = roster.compute
-  const databases: MetricSource[] = DATABASES.flatMap((c) => (roster[c]?.length ? [{ component: c, services: roster[c] }] : []))
-  const total = (compute?.length ?? 0) + databases.reduce((n, d) => n + (d.services?.length ?? 0), 0)
+  // Every component that has services, compute first as on the console. The first is the primary
+  // request: always asking for compute made an environment with only databases answer "nothing
+  // deployed", and that note replaced every chart, databases included.
+  const sources: MetricSource[] = COMPONENTS.flatMap((c) => (roster[c]?.length ? [{ component: c, services: roster[c] }] : []))
+  const [primary, ...also] = sources
+  const total = sources.reduce((n, s) => n + (s.services?.length ?? 0), 0)
 
   return (
     <div className="mx-auto flex w-full max-w-[90rem] flex-col">
       <MetricCharts
         projectId={projectId}
-        component="compute"
+        // With nothing deployed there is no source; compute's request then brings the daemon's own note.
+        component={primary?.component ?? 'compute'}
         branch={branch}
-        services={compute}
-        // Only when the environment has a database, else a compute-only one waits on pointless requests.
-        also={databases.length ? databases : undefined}
+        services={primary?.services}
+        also={also.length ? also : undefined}
         // A lone service keeps the single-line shape and still needs a name.
-        lineName={total === 1 ? (compute?.[0] ?? databases[0]?.services?.[0]) : undefined}
+        lineName={total === 1 ? primary?.services?.[0] : undefined}
         title="Observability"
       />
     </div>

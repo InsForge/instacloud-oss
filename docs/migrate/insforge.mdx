@@ -91,6 +91,6 @@ Change `baseUrl` in your `createClient` call to that URL. Unless your app calls 
 
 Cron jobs are not supported for now. InsForge schedules are not affected: they run in `pg_cron` inside your database and came over with the dump.
 
-And that is it. Every InstaCloud action your agent took is a command you can run yourself, in the [CLI reference](/reference/cli/overview); the inspection on the other side used `docker compose` and `pg_dump`.
+And that is it. Every InstaCloud action your agent took is a command you can run yourself, in the [CLI reference](/reference/cli/overview). The inspection on the other side used `docker compose` and `pg_dump`.
 
 Once you are settled in, [database branching](/postgres/branching) is the part most people came for: one command clones your database, storage and apps, data included, so work an agent does *on its branch* stays there. The branch boundary is separation, not authorization: any command taking `--branch` still reaches `main`, so set policy for the actions that matter. Stuck anywhere? Come to [Discord](https://discord.com/invite/MPxwj5xVvW).

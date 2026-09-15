@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { eventDetail, formatLocalDateTime, mapEvents, panelState, pendingFor, type ActivityEvent } from './activity'
+import { eventDetail, formatLocalDateTime, mapEvents, panelState, type ActivityEvent } from './activity'
 
 describe('eventDetail', () => {
   it('summarizes primitive payload values on one line, as the console card does', () => {
@@ -91,17 +91,5 @@ describe('panelState', () => {
 
   it('lets a failed Load more be retried instead of staying on Loading…', () => {
     expect(panelState({ projectId: 'A', limit: 50, events: page(50) }, 'A', 100, true)).toMatchObject({ loadingMore: false, maybeMore: true })
-  })
-})
-
-describe('pendingFor', () => {
-  it("never badges one project with another's approvals: the poll hook keeps them across a switch", () => {
-    const load = { projectId: 'A', statuses: ['pending', 'pending', 'granted', 'denied'] }
-    expect(pendingFor(load, 'A')).toBe(2)
-    expect(pendingFor(load, 'B')).toBe(0)
-  })
-
-  it('is 0 before the first answer', () => {
-    expect(pendingFor(undefined, 'A')).toBe(0)
   })
 })

@@ -219,3 +219,110 @@ body {
     transition-duration: 1ms;
   }
 }
+
+/*
+ * The console's pending-review stack and cards (insta-frontend globals.css): a warning wash over an opaque card,
+ * cards that drop in, step up as the front one is decided and slide out to the right, and a dismissed stack
+ * that shrinks toward the bell. The stack sits clear of an open Activities column and fades out under
+ * Notifications, staying mounted so its dismissals survive.
+ */
+.review-notification-surface {
+  background:
+    linear-gradient(rgb(var(--warning) / 0.08), rgb(var(--warning) / 0.08)), rgb(var(--card));
+}
+.review-notification-enter,
+.review-notification-layer-second,
+.review-notification-layer-third {
+  animation: review-notification-enter 280ms ease-out both;
+}
+.review-notification-layer-second {
+  --review-opacity: 0.7;
+  animation-delay: 100ms;
+}
+.review-notification-layer-third {
+  --review-opacity: 0.4;
+  animation-delay: 200ms;
+}
+.review-notification-promote {
+  animation: review-notification-promote 240ms ease-out both;
+}
+.review-notification-exit {
+  animation: review-notification-exit 240ms ease-in both;
+}
+@keyframes review-notification-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: var(--review-opacity, 1);
+    transform: translateY(0);
+  }
+}
+@keyframes review-notification-promote {
+  from {
+    transform: translateY(6px) scale(0.9625);
+  }
+  to {
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes review-notification-exit {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(100% + 12px));
+  }
+}
+.review-notification-dismiss {
+  pointer-events: none;
+  animation: review-notification-dismiss 280ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes review-notification-dismiss {
+  from {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(var(--review-dismiss-x), var(--review-dismiss-y)) scale(0.08);
+  }
+}
+.review-notification-position {
+  right: 0;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    right 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 140ms ease,
+    visibility 0s;
+}
+.review-notification-position[data-panel="activities"] {
+  right: 320px;
+}
+.review-notification-position[data-panel="notifications"] {
+  right: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    right 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 140ms ease 140ms,
+    visibility 0s 280ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-notification-enter,
+  .review-notification-layer-second,
+  .review-notification-layer-third,
+  .review-notification-promote,
+  .review-notification-exit,
+  .review-notification-dismiss {
+    animation-duration: 1ms;
+    animation-delay: 0ms;
+  }
+  .review-notification-position,
+  .review-notification-position[data-panel="notifications"] {
+    transition-duration: 1ms;
+    transition-delay: 0ms;
+  }
+}

@@ -5,19 +5,21 @@
 // and edges are read-only, so nothing needs handles, edge hit-testing or re-routing.
 //
 // Self-host divergences: no staged "Will be added" or template ghost cards (the daemon applies creates
-// and template deploys immediately, so there is nothing staged to draw); no attachment rows or "+ Add"
-// slots (no attachment model); no region in the footer (one node); no `?focus=` glide (no dashboard
-// flow links to it). Cards also open with Enter/Space, as the list rows do.
+// and template deploys immediately, so there is nothing staged to draw); a volume is the only attachment
+// row (the daemon has no PgBouncer) and there are no "+ Add" slots under a card (attaching happens in the
+// Volume tab); no region in the footer (one node); no `?focus=` glide (no dashboard flow links to it).
+// Cards also open with Enter/Space, as the list rows do.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { cn } from '@insforge/ui'
-import { BrushCleaning, Focus, Plus, ZoomIn, ZoomOut } from 'lucide-react'
+import { BrushCleaning, Focus, HardDrive, Plus, ZoomIn, ZoomOut } from 'lucide-react'
 import { api, type RuntimeHealthRow, type Service } from '../../api'
 import { usePoll } from '../../hooks'
 import {
-  CARD_HEIGHT, CARD_WIDTH, DOT_SPACING, DRAG_THRESHOLD, FAN_MAX, FIT_PADDING, LAYOUT_METRICS, PORT_Y, WIRE_DASH,
-  autoFit, clampScale, clearPositions, loadPositions, positionsKey, savePositions, snapToGrid, type Camera,
+  CARD_HEIGHT, CARD_MAX_HEIGHT, CARD_WIDTH, DOT_SPACING, DRAG_THRESHOLD, FAN_MAX, FIT_PADDING, LAYOUT_METRICS, PORT_Y, WIRE_DASH,
+  autoFit, cardHeight, clampScale, clearPositions, loadPositions, positionsKey, savePositions, snapToGrid, type Camera,
 } from '../../lib/canvasLayout'
+import { attachmentsFor, type Attachment } from '../../lib/serviceAttachments'
 import { edgeFans, edgeGeometry, layoutGraph, type Point, type ServiceLink } from '../../lib/serviceGraph'
 import { deriveStatus, healthFor } from '../../lib/status'
 import type { PendingApproval } from '../ApprovalPrompt'
@@ -35,7 +37,8 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
   links: ServiceLink[]
   health?: RuntimeHealthRow[]
   isWaking: (id: string) => boolean
-  onOpen: (service: Service) => void
+  /** `tab` names the detail tab to open on, for an attachment row; omitted, the service's default tab. */
+  onOpen: (service: Service, tab?: string) => void
   /** When set and there are no services, a dashed "Add Your First Service" node renders at the origin —
    *  inside the camera transform, so it pans and zooms like a card. */
   onAddFirstService?: () => void
@@ -72,9 +75,13 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
     const live = links.filter((l) => pointOf.has(l.sourceId) && pointOf.has(l.targetId))
     // Two cards' columns name the corridor a wire pivots in.
     const fans = edgeFans(live, FAN_MAX, (l) => `${pointOf.get(l.sourceId)!.x}>${pointOf.get(l.targetId)!.x}`)
+    // The height a card is actually drawn at, since an edge may come in through its top or bottom edge:
+    // the same attachment list the card renders.
+    const rowsOf = new Map(nodes.map((n) => [n.id, attachmentsFor(n.service).length]))
+    const heightOf = (id: string) => cardHeight(rowsOf.get(id) ?? 0)
     return live.map((l, i) => ({
       id: `${l.sourceId}>${l.targetId}`,
-      ...edgeGeometry(pointOf.get(l.sourceId)!, pointOf.get(l.targetId)!, { width: CARD_WIDTH, fromHeight: CARD_HEIGHT, toHeight: CARD_HEIGHT, portY: PORT_Y }, fans[i]),
+      ...edgeGeometry(pointOf.get(l.sourceId)!, pointOf.get(l.targetId)!, { width: CARD_WIDTH, fromHeight: heightOf(l.sourceId), toHeight: heightOf(l.targetId), portY: PORT_Y }, fans[i]),
     }))
   }, [links, nodes])
 
@@ -128,7 +135,8 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
     const minX = Math.min(...pts.map((p) => p.x))
     const minY = Math.min(...pts.map((p) => p.y))
     const width = Math.max(...pts.map((p) => p.x)) - minX + CARD_WIDTH
-    const height = Math.max(...pts.map((p) => p.y)) - minY + CARD_HEIGHT
+    // The tallest card, not the shortest: a bottom-row card with a volume row must land inside the fit.
+    const height = Math.max(...pts.map((p) => p.y)) - minY + CARD_MAX_HEIGHT
     // Fitting a few cards must not blow them up past 100%.
     const scale = clampScale(Math.min((rect.width - FIT_PADDING * 2) / width, (rect.height - FIT_PADDING * 2) / height, 1))
     const target = { x: (rect.width - width * scale) / 2 - minX * scale, y: (rect.height - height * scale) / 2 - minY * scale, scale }
@@ -321,6 +329,8 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
               status={<ServiceStatusIndicator status={deriveStatus(service, healthFor(health, service.id), isWaking(service.id))} />}
               actions={<ServiceActionsMenu projectId={projectId} branch={branch} service={service} onDone={onDone} onError={onError} onApproval={onApproval} iconClassName="size-5 text-disabled" />}
               onOpen={() => onOpen(service)}
+              attachments={attachmentsFor(service)}
+              onOpenAttachment={(att) => onOpen(service, att.tab ?? undefined)}
               onPointerDown={(e) => onCardPointerDown(e, service, point)}
               onPointerMove={onCardPointerMove}
               onPointerUp={onCardPointerUp}
@@ -350,13 +360,16 @@ function CanvasControl({ label, onClick, children }: { label: string; onClick: (
   )
 }
 
-function ServiceCard({ point, service, mark, status, actions, onOpen, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: {
+function ServiceCard({ point, service, mark, status, actions, onOpen, attachments, onOpenAttachment, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: {
   point: Point
   service: Service
   mark: ReactNode
   status: ReactNode
   actions: ReactNode
   onOpen: () => void
+  /** What is mounted, drawn as rows inside the card below its footer (lib/serviceAttachments.ts). */
+  attachments: Attachment[]
+  onOpenAttachment: (att: Attachment) => void
   onPointerDown: (e: PointerEvent<HTMLDivElement>) => void
   onPointerMove: (e: PointerEvent<HTMLDivElement>) => void
   onPointerUp: (e: PointerEvent<HTMLDivElement>) => void
@@ -406,6 +419,30 @@ function ServiceCard({ point, service, mark, status, actions, onOpen, onPointerD
         <div className="flex h-10 items-center justify-between gap-2 p-3 text-xs whitespace-nowrap">
           <span className="truncate text-muted-foreground">Created {createdDate(service.created_at ?? service.updated_at)}</span>
         </div>
+        {attachments.length > 0 && (
+          // What is mounted, drawn inside the card below a hairline rule: page-dark rows inset 4px, label left,
+          // figure right, each row deep-linking into the tab that manages it. A press on one must not start a
+          // drag, and its click must not also open the card.
+          <div className="flex flex-col gap-1 border-t border-border p-1" onPointerDown={(e) => e.stopPropagation()}>
+            {attachments.map((att) => (
+              <button
+                key={att.kind}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpenAttachment(att) }}
+                className={cn(
+                  // The row lifts its own background a notch on hover: the card's alpha-4 wash again, isolated so
+                  // the pseudo lands above bg-page and below the label.
+                  'relative isolate flex items-center gap-2 bg-page p-2 text-xs text-muted-foreground',
+                  "cursor-pointer after:pointer-events-none after:absolute after:inset-0 after:-z-10 after:content-[''] hover:text-foreground hover:after:bg-alpha-4",
+                )}
+              >
+                <HardDrive className="size-5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-left">{att.label}</span>
+                <span className="shrink-0">{att.meta}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

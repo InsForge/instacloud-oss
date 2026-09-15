@@ -1,7 +1,7 @@
 // The console's canvas constants and camera helpers (insta-frontend src/lib/canvas-layout.ts).
-// Self-host divergence: a card is always its 140px body. The console grows a card by one row per
-// mounted attachment (a volume, PgBouncer); the dashboard has no attachment rows yet, so the tallest
-// card and the plain card are the same height.
+// Self-host divergence: a card grows by at most one attachment row, where the console allows two. The
+// console's second row is PgBouncer, which the daemon has no equivalent of, so a volume is the only
+// thing a card here can mount (lib/serviceAttachments.ts), and the tallest card is cardHeight(1).
 //
 // No react import: the root vitest config tests this module (see localPrefStore.ts on why).
 
@@ -11,16 +11,23 @@ import type { Point } from './serviceGraph'
 export const CARD_WIDTH = 320
 /** The card's own body: a 100px header over a 40px footer. */
 export const CARD_HEIGHT = 140
+/** How much taller a card draws per attachment: a 36px row on the stack's 4px rhythm. */
+const ATTACHMENT_ROW = 40
+/** The stack adds a 1px rule and its 4px top pad above the rows themselves. */
+export const cardHeight = (rows: number) => CARD_HEIGHT + (rows > 0 ? 5 + ATTACHMENT_ROW * rows : 0)
+/** The tallest a card gets: what a packed block and the fit have to clear. */
+export const CARD_MAX_HEIGHT = cardHeight(1)
 export const LAYOUT_METRICS = {
   cardWidth: CARD_WIDTH,
-  cardHeight: CARD_HEIGHT,
+  cardHeight: CARD_MAX_HEIGHT,
   gap: 60,
   edgeGap: 160,
   // Measured on the console: <main> less the sidebar and header is ~1.44 on a 1440x900 laptop and
   // ~1.65 at 1920x1080, so 3:2 sits inside the range where 16:9 sat outside it.
   aspect: 3 / 2,
 }
-/** Where an edge meets a card, measured from its top: the middle of the card body. */
+/** Where an edge meets a card, measured from its top: the middle of the card BODY, not of the whole card,
+ *  so the port holds still when an attachment row grows beneath it. */
 export const PORT_Y = CARD_HEIGHT / 2
 /**
  * How far an exit or entry point may slide along a card's edge as edges fan out. Short

@@ -92,7 +92,8 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
   return (
     <div className="flex flex-col gap-4">
       {(title || showRangePicker) && (
-        <div className={cn('flex flex-wrap items-center gap-3', title ? 'justify-between' : 'justify-end')}>
+        // Untitled means a tab inside a service detail, where the console starts the picker at the left.
+        <div className={cn('flex flex-wrap items-center gap-3', title && 'justify-between')}>
           {title && <h1 className="text-[32px] leading-12 font-bold">{title}</h1>}
           {showRangePicker && (
             <TimeRangePicker value={active} onChange={setActive} busy={fetching} align={title ? 'end' : 'start'} />

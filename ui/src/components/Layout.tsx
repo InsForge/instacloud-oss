@@ -3,7 +3,8 @@
 // collapsible sidebar with the project switcher at its head; a 48px topbar with the branch switcher
 // on the left and the Activities, Notifications and account cells on the right; the Activities or
 // Notifications panel docked to the right of the content, pushing it aside rather than covering it; and
-// the pending-review stack over the top right of the content.
+// the pending-review stack over the top right of the content; and Settings as a modal over whatever page
+// is open (`?panel=settings`, ProjectSettingsPanel.tsx).
 //
 // Sidebar, as the console orders it: Service, Observability, Secrets | Branches | Quick Start,
 // Settings. Self-host divergences: no Usage (billing) entry; Observability opens the live CPU/memory
@@ -18,9 +19,11 @@ import { EnvSwitcher } from './console/EnvSwitcher'
 import { ActivitiesButton, ActivitiesPanel } from './console/ActivitiesButton'
 import { NotificationsButton, NotificationsPanel, ReviewNotificationStack } from './console/NotificationsPanel'
 import { AccountMenu } from './console/AccountMenu'
+import { ProjectSettingsPanel } from './console/ProjectSettingsPanel'
 import { api } from '../api'
 import { usePoll } from '../hooks'
 import { pendingCount, reviewsFor, type Decisions, type ReviewDecision } from '../lib/notifications'
+import { withSettings } from '../lib/panels'
 
 type NavItem = { label: string; segment: string; icon: LucideIcon }
 
@@ -36,11 +39,16 @@ const bottomNav: NavItem[] = [
 ]
 
 function ProjectSidebar({ projectId, branch }: { projectId: string; branch: string }) {
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const base = `/p/${projectId}/${branch}`
+  const settingsOpen = new URLSearchParams(search).get('panel') === 'settings'
   const item = ({ label, segment, icon }: NavItem) => {
+    // Settings opens the console's panel over the page you are on, not a page of its own.
+    if (segment === 'settings') {
+      return <SidebarLink key={label} to={`${pathname}${withSettings(search)}`} icon={icon} label={label} active={settingsOpen} />
+    }
     const to = `${base}/${segment}`
-    const active = pathname === to || pathname.startsWith(`${to}/`)
+    const active = !settingsOpen && (pathname === to || pathname.startsWith(`${to}/`))
     return <SidebarLink key={label} to={to} icon={icon} label={label} active={active} />
   }
   return (
@@ -119,6 +127,7 @@ export function Layout() {
           <NotificationsPanel reviews={reviews} error={error} onDecide={decide} />
         </div>
       </div>
+      <ProjectSettingsPanel projectId={projectId} />
     </div>
   )
 }

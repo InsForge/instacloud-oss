@@ -34,24 +34,7 @@ import { DeleteServiceDialog, RestartServiceDialog } from './ServiceDialogs'
 import { SettingsCard, SettingsRow } from './SettingsRow'
 import { SideTabs, TopTabs } from './Tabs'
 import { ServiceTypeIcon } from './ServiceIcon'
-
-/** Is a nested dialog OPEN above this overlay?
- *
- *  Restart, Delete and the approval prompt are the kit's Radix Dialog, which PORTALS to
- *  document.body — outside the overlay's DOM root. So does a Radix Popover: the Metrics tab's time range
- *  picker renders its panel as `role="dialog"` with `data-state="open"`, so it is covered too, and Tab
- *  walks its quick ranges while one Escape closes only the picker. Both the focus trap and the Escape handler have
- *  to stand down for them: the trap because the nested dialog's own buttons look like "focus
- *  outside", and Escape because Radix dismisses on it without guaranteeing the native event is
- *  default-prevented, so one press would close the dialog AND the overlay behind it.
- *
- *  Keyed on `data-state="open"`, not mere presence, so an unrelated dialog element or one still
- *  mounted through a close animation cannot silently disable either guard. */
-function hasOpenNestedDialog(root: HTMLElement | null): boolean {
-  return Array.from(
-    document.querySelectorAll('[role="dialog"][data-state="open"],[role="alertdialog"][data-state="open"]'),
-  ).some((d) => d !== root && !root?.contains(d))
-}
+import { hasOpenNestedDialog } from './nestedDialog'
 
 type Ctx = {
   projectId: string; branch: string; service: Service
@@ -157,7 +140,8 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
   const ctx: Ctx = { projectId, branch, service, onDone: reload, onError: setError, onApproval: setApproval }
 
   return (
-    <div ref={overlayRef} className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={service.name}>
+    // `data-state="open"`, like a Radix dialog, so an overlay stacked on this one can see it (nestedDialog.ts).
+    <div ref={overlayRef} className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={service.name} data-state="open">
       <div className="absolute inset-0 bg-black/80" onClick={onClose} />
       <div className="absolute inset-x-6 top-16 bottom-16 mx-auto flex max-w-[1440px] flex-col overflow-hidden border border-border bg-semantic-1 shadow-[0px_8px_12px_0px_rgba(0,0,0,0.24)]">
         <div className="flex shrink-0 items-center gap-3 px-4 py-4">

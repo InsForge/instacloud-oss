@@ -64,6 +64,19 @@ function useProjects() {
   return cache
 }
 
+/** After a rename or a delete: fetch the list now rather than waiting out the TTL. A fetch already in flight
+ *  may have started before the change, so a second one follows it. */
+export function refreshProjectsNow(): void {
+  nextFetchAt = 0
+  if (inflight) void inflight.then(() => { nextFetchAt = 0; refreshProjects() })
+  else refreshProjects()
+}
+
+/** This project's display name from the shell's one project list; undefined until the list loads. */
+export function useProjectName(projectId: string): string | undefined {
+  return useProjects()?.find((project) => project.id === projectId)?.name
+}
+
 function ProjectSwitcherMenu({ projectId, trigger }: { projectId: string; trigger: ReactNode }) {
   const nav = useNavigate()
   const projects = useProjects() ?? []

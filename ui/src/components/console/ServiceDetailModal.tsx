@@ -29,7 +29,7 @@ import { ErrorNote, hrefFor } from '../ui'
 import { LogsPanel } from '../../pages/Logs'
 import { DatabasePanel } from '../../pages/DatabaseInsight'
 import { MetricCharts } from '../metrics/MetricCharts'
-import { VolumeSection } from '../../pages/ServiceDetail'
+import { VolumeCard } from './VolumeCard'
 import { DeleteServiceDialog, RestartServiceDialog } from './ServiceDialogs'
 import { SettingsCard, SettingsRow } from './SettingsRow'
 import { SideTabs, TopTabs } from './Tabs'
@@ -193,7 +193,7 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
               {active === 'runtime' && runtimeComponent && (
                 <LogsPanel projectId={projectId} branch={branch} component={runtimeComponent} service={service} />
               )}
-              {active === 'volume' && <VolumeSection projectId={projectId} branch={branch} service={service} onApproval={setApproval} />}
+              {active === 'volume' && <VolumeCard key={service.id} projectId={projectId} branch={branch} service={service} onApproval={setApproval} />}
               {active === 'settings' && <SettingsTab {...ctx} serverMode={mode === 'server'} onDeleted={onClose} />}
             </div>
           </div>

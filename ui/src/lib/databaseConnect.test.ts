@@ -35,6 +35,18 @@ describe('client commands', () => {
     expect(psqlCommand('postgres://app@127.0.0.1/')?.full).toBe('psql -h 127.0.0.1 -p 5432 -U app -d app')
     expect(psqlCommand('nope')).toBeNull()
   })
+  it("psql keeps a server-mode lane's sslmode, which the Postgres router requires", () => {
+    // The documented server-mode DSN: `pg-<name>-<ref>.<domain>:5432` with `sslmode=require` (COMPATIBILITY.md).
+    const dsn = 'postgres://app:pw@pg-store-io-demo-main.db.example.com:5432/app?sslmode=require'
+    expect(psqlCommand(dsn)).toEqual({
+      full: "PGSSLMODE='require' PGPASSWORD='pw' psql -h pg-store-io-demo-main.db.example.com -p 5432 -U app -d app",
+      masked: "PGSSLMODE='require' PGPASSWORD=••••••• psql -h pg-store-io-demo-main.db.example.com -p 5432 -U app -d app",
+    })
+    expect(dbRawCommand('postgres', dsn)?.full).toContain("PGSSLMODE='require'")
+    expect(instaCliRun('main', psqlCommand(dsn)!.full)).toContain('PGSSLMODE=')
+    // A local lane has no sslmode and gets no PGSSLMODE.
+    expect(psqlCommand('postgres://app:pw@127.0.0.1:20001/app')?.full.startsWith('PGPASSWORD=')).toBe(true)
+  })
   it('mysql keeps the password in MYSQL_PWD', () => {
     expect(mysqlCommand('mysql://root:pw@127.0.0.1:3307/app')).toEqual({
       full: "MYSQL_PWD='pw' mysql -h 127.0.0.1 -P 3307 -u root app",

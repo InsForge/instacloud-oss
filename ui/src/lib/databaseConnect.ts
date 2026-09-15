@@ -39,16 +39,23 @@ export function maskDsn(dsn: string): string {
 
 type Command = { full: string; masked: string }
 
-/** psql in flag form, the password in PGPASSWORD so the visible command is safe to leave on screen. */
+/** psql in flag form, the password in PGPASSWORD so the visible command is safe to leave on screen. Flag form drops
+ *  the DSN's query, so its `sslmode` rides in PGSSLMODE: a server-mode lane answers `?sslmode=require` and its Postgres
+ *  router refuses a connection without TLS. */
 export function psqlCommand(dsn: string): Command | null {
   try {
     const url = new URL(dsn)
     const user = decodeURIComponent(url.username)
     if (!user) return null
     const db = decodeURIComponent(url.pathname.replace(/^\//, '')) || user
+    const sslmode = url.searchParams.get('sslmode')
+    const ssl = sslmode ? `PGSSLMODE=${shellQuote(sslmode)} ` : ''
     const base = `psql -h ${url.hostname} -p ${url.port || '5432'} -U ${user} -d ${db}`
-    if (!url.password) return { full: base, masked: base }
-    return { full: `PGPASSWORD=${shellQuote(decodeURIComponent(url.password))} ${base}`, masked: `PGPASSWORD=${MASK} ${base}` }
+    if (!url.password) return { full: `${ssl}${base}`, masked: `${ssl}${base}` }
+    return {
+      full: `${ssl}PGPASSWORD=${shellQuote(decodeURIComponent(url.password))} ${base}`,
+      masked: `${ssl}PGPASSWORD=${MASK} ${base}`,
+    }
   } catch {
     return null
   }

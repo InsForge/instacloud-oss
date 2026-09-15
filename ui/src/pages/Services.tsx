@@ -76,7 +76,7 @@ export function Services() {
   const [params, setParams] = useSearchParams()
   const openId = params.get('service')
   const closeDetail = useCallback(() => setParams({}), [setParams])
-  const openService = useCallback((s: Service) => setParams({ service: s.id }), [setParams])
+  const openService = useCallback((s: Service, tab?: string) => setParams(tab ? { service: s.id, tab } : { service: s.id }), [setParams])
   const waking = useWaking()
   const interval = waking.anyWaking ? 2000 : 5000
   const { data: services, error, reload } = usePoll(() => api.services(projectId, branch), [projectId, branch], interval)

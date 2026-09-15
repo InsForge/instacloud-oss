@@ -17,7 +17,7 @@ import { ApprovalPrompt, type PendingApproval } from '../components/ApprovalProm
 import { CreateEnvironmentDialog } from '../components/console/CreateEnvironmentDialog'
 import { EnvStatusBadge } from '../components/console/EnvSwitcher'
 import { ServiceTypeIcon } from '../components/console/ServiceIcon'
-import { createdDate } from '../components/console/ServiceTable'
+import { formatDateTime } from '../lib/format'
 import { ErrorNote } from '../components/ui'
 
 function Th({ children }: { children?: string }) {
@@ -159,7 +159,7 @@ export function Environments() {
                       )}
                     </td>
                     <td className="px-4 py-3"><ServiceIcons types={typesByBranch.get(env.id) ?? []} /></td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{createdDate(env.created_at)}</td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTime(env.created_at)}</td>
                     {env.is_default ? (
                       <td className="w-12" />
                     ) : (

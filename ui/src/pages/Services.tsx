@@ -22,6 +22,7 @@ import { healthFor } from '../lib/status'
 import { ApprovalPrompt, type PendingApproval } from '../components/ApprovalPrompt'
 import { AddFirstServiceDialog, AddServiceButton, AddSourceDialog } from '../components/console/AddService'
 import { addIntent, cliSteps, setupPrompt } from '../lib/quickStart'
+import { servicesFor } from '../lib/servicesLoad'
 import { useAuth } from '../components/AuthGate'
 import { ConnectAgentPanel } from '../components/console/ConnectAgentPanel'
 import { ServiceCanvas } from '../components/console/ServiceCanvas'
@@ -83,7 +84,11 @@ export function Services() {
   const openService = useCallback((s: Service, tab?: string) => setParams(tab ? { service: s.id, tab } : { service: s.id }), [setParams])
   const waking = useWaking()
   const interval = waking.anyWaking ? 2000 : 5000
-  const { data: services, error, reload } = usePoll(() => api.services(projectId, branch), [projectId, branch], interval)
+  // Tagged with the scope that made it: the hook keeps its last data across a project or branch switch and a failed
+  // read, and an empty branch's list must not keep the next branch looking empty (lib/servicesLoad.ts).
+  const { data: servicesLoad, error, reload } = usePoll(
+    async () => ({ projectId, branch, services: await api.services(projectId, branch) }), [projectId, branch], interval)
+  const services = servicesFor(servicesLoad, projectId, branch)
   const { data: health } = usePoll(() => api.runtimeHealth(projectId, branch), [projectId, branch], interval)
   const [storedMode, setStoredMode] = useLocalPref(VIEW_MODE_KEY)
   const mode: 'canvas' | 'list' = storedMode === 'list' ? 'list' : 'canvas'

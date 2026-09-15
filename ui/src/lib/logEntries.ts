@@ -48,9 +48,11 @@ export function toSeverity(level: string | undefined): LogSeverity | undefined {
 
 const PINO_LEVELS: Record<number, string> = { 10: 'trace', 20: 'debug', 30: 'info', 40: 'warn', 50: 'error', 60: 'fatal' }
 const LEVEL_WORD = '(fatal|panic|crit(?:ical)?|err(?:or)?|warn(?:ing)?|info|notice|debug|trace)'
-// "ERROR: x", "[warn] x", "INFO  x", "Error: connect ECONNREFUSED". The word must end at a separator, so
-// "information about" or "errors=0" is not read as a level.
-const LEADING = new RegExp(`^\\[?\\s*${LEVEL_WORD}\\b(?:\\s*[\\]:|-]|\\s)`, 'i')
+// "ERROR: x", "[warn] x", "Error: connect ECONNREFUSED": any case, but the word must end at a separator, so
+// "information about", "errors=0" and "Error handling is enabled" are not read as levels.
+const LEADING = new RegExp(`^\\[?\\s*${LEVEL_WORD}\\b\\s*[\\]:|-]`, 'i')
+// "INFO  listening on 8080", "WARN disk at 90%": a bare space counts only after an all-caps level word.
+const LEADING_CAPS = /^(FATAL|PANIC|CRIT(?:ICAL)?|ERR(?:OR)?|WARN(?:ING)?|INFO|NOTICE|DEBUG|TRACE)\s/
 // nginx error log: "2026/09/14 20:00:00 [error] 29#29: ..."
 const NGINX = /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} \[(\w+)\]/
 // Postgres: "2026-09-14 20:00:00.123 UTC [1] ERROR:  relation does not exist"
@@ -71,7 +73,7 @@ export function levelOf(line: { level?: string; message: string }): string | und
       // Not JSON after all: fall through to the text forms.
     }
   }
-  return NGINX.exec(m)?.[1] ?? POSTGRES.exec(m)?.[1] ?? LOGFMT.exec(m)?.[2] ?? LEADING.exec(m)?.[1]
+  return NGINX.exec(m)?.[1] ?? POSTGRES.exec(m)?.[1] ?? LOGFMT.exec(m)?.[2] ?? LEADING.exec(m)?.[1] ?? LEADING_CAPS.exec(m)?.[1]
 }
 
 /** The console's log timestamp, in the viewer's zone. `timeZone` exists for tests. */
@@ -101,7 +103,8 @@ export function mapLogLines(lines: readonly SourceLine[], timeZone?: string): Lo
 export interface LogFilterState {
   query: string
   severity: SeverityFilter
-  /** Unix-second window; lines outside it, or without a parseable timestamp, are dropped. */
+  /** Unix-second window; stamped lines outside it are dropped. A line with no timestamp is kept: the daemon merges
+   *  docker's own diagnostics into the stream unstamped, and those are the lines that explain an odd-looking tail. */
   window?: { from: number; to: number }
 }
 
@@ -109,11 +112,26 @@ export interface LogFilterState {
 export function filterLogs(entries: readonly LogEntry[], { query, severity, window }: LogFilterState): LogEntry[] {
   const q = query.trim().toLowerCase()
   return entries.filter((e) => {
-    if (window && (e.instant === undefined || e.instant < window.from || e.instant > window.to)) return false
+    if (window && e.instant !== undefined && (e.instant < window.from || e.instant > window.to)) return false
     if (severity !== 'all' && e.severity !== severity) return false
     if (q && !e.message.toLowerCase().includes(q)) return false
     return true
   })
+}
+
+/** The oldest loaded line's instant: the honest left edge of what the daemon returned. */
+export function oldestInstant(entries: readonly LogEntry[]): number | undefined {
+  let min: number | undefined
+  for (const e of entries) if (e.instant !== undefined && (min === undefined || e.instant < min)) min = e.instant
+  return min
+}
+
+/** What the window does to the tail. The daemon answers the recent tail whatever the range (the console's platform
+ *  serves the window), so the range can only subtract: `hidden` counts the lines the search and severity would show
+ *  that the window alone takes away, which the page says rather than presenting a quiet table. */
+export function windowCoverage(entries: readonly LogEntry[], state: LogFilterState): { hidden: number } {
+  if (!state.window) return { hidden: 0 }
+  return { hidden: filterLogs(entries, { ...state, window: undefined }).length - filterLogs(entries, state).length }
 }
 
 /** Mirrors the table's columns; absent fields are dropped rather than padded into blank columns. */

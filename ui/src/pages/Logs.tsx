@@ -1,19 +1,22 @@
 // The Logs page and a service's Runtime Logs tab (insta-frontend logs/runtime-logs-tab.tsx): the console's filter bar
 // (Search logs, Severity, Copy Logs) and time range picker over a Time / Severity / Logs table.
 //
-// Self-host divergences: the daemon answers the recent tail of `docker logs` (no from/to), so the range narrows that
-// tail here, as the console narrows its page a second time; the picker offers the metrics presets (up to 3 days)
-// rather than the console's 7; there is no histogram yet; and the tail refreshes every 5s instead of on range change.
+// Self-host divergences: the daemon answers the recent tail of `docker logs` whatever the range (no from/to), so the
+// range can only narrow that tail here. It starts at the widest preset, as the console starts any view over an
+// endpoint that takes no range, and the page says how many loaded lines the range hides, with Show all lines to
+// lift it: a sleeping service's last lines, or ones older than any preset, stay one click away. The picker offers
+// the metrics presets (up to 3 days) rather than the console's 7; there is no histogram yet; and the tail refreshes
+// every 5s instead of on range change.
 
 import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Skeleton, Tab, Tabs } from '@insforge/ui'
+import { Button, Skeleton, Tab, Tabs } from '@insforge/ui'
 import { Moon } from 'lucide-react'
 import { api, obsComponentFor, type ObsComponent } from '../api'
 import { usePoll } from '../hooks'
 import { healthFor } from '../lib/status'
-import { filterLogs, mapLogLines, type SeverityFilter } from '../lib/logEntries'
-import { activeRange, tickedRange, type ActiveRange } from '../lib/metricRanges'
+import { filterLogs, formatLogTime, mapLogLines, oldestInstant, windowCoverage, type SeverityFilter } from '../lib/logEntries'
+import { activeRange, PRESET_KEYS, tickedRange, type ActiveRange } from '../lib/metricRanges'
 import { ConsolePage } from '../components/console/ConsolePage'
 import { LogFilterBar, LogsTable } from '../components/console/LogParts'
 import { TimeRangePicker } from '../components/metrics/TimeRangePicker'
@@ -22,6 +25,8 @@ type Component = ObsComponent
 
 /** The daemon's cap on one read: the most the range can narrow. */
 const TAIL_LINES = 1000
+/** The widest preset: a view over an endpoint that takes no range starts here, or the default hides what it carries. */
+const WIDEST_RANGE = PRESET_KEYS[PRESET_KEYS.length - 1]!
 
 /** The live container tail, for the Logs page and a service's Runtime Logs tab. `service` narrows
  *  it to one service's container. Reading logs never wakes anything. */
@@ -37,7 +42,9 @@ export function LogsPanel({ projectId, branch, component, service }: {
   )
   const { data: services } = usePoll(() => api.services(projectId, branch), [projectId, branch], 15000)
   const { data: health } = usePoll(() => api.runtimeHealth(projectId, branch), [projectId, branch], 15000)
-  const [range, setRange] = useState<ActiveRange>(() => activeRange('1h', Date.now()))
+  const [range, setRange] = useState<ActiveRange>(() => activeRange(WIDEST_RANGE, Date.now()))
+  // Show all lines: the range stays picked but is not applied, until another range is picked.
+  const [showAll, setShowAll] = useState(false)
   const [query, setQuery] = useState('')
   const [severity, setSeverity] = useState<SeverityFilter>('all')
 
@@ -51,10 +58,12 @@ export function LogsPanel({ projectId, branch, component, service }: {
 
   const loaded = useMemo(() => mapLogLines(data?.lines ?? []), [data])
   // A preset rolls forward with every poll, so a line that just arrived is inside "last hour"; a custom range stays put.
-  const filtered = useMemo(() => {
-    const { window } = tickedRange(range, Date.now())
-    return filterLogs(loaded, { query, severity, window })
-  }, [loaded, range, query, severity])
+  const { filtered, hidden } = useMemo(() => {
+    const state = { query, severity, window: showAll ? undefined : tickedRange(range, Date.now()).window }
+    return { filtered: filterLogs(loaded, state), hidden: windowCoverage(loaded, state).hidden }
+  }, [loaded, range, showAll, query, severity])
+  const oldest = oldestInstant(loaded)
+  const capped = (data?.lines.length ?? 0) >= TAIL_LINES
 
   if (!data && !error) return <Skeleton className="h-96 rounded-lg" />
   return (
@@ -67,20 +76,38 @@ export function LogsPanel({ projectId, branch, component, service }: {
       <div className="flex flex-wrap items-center gap-2">
         <LogFilterBar query={query} onQuery={setQuery} severity={severity} onSeverity={setSeverity} filtered={filtered}
           className="min-w-0 flex-1" />
-        <TimeRangePicker value={range} onChange={setRange} align="end" />
+        <TimeRangePicker value={range} onChange={(next) => { setRange(next); setShowAll(false) }} align="end" />
       </div>
-      {error ? (
+      {/* Beside the table, not instead of it: one failed 5s poll must not blank lines that are still good. */}
+      {error && (
         <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-destructive">{error.message}</div>
-      ) : (
+      )}
+      {(hidden > 0 || showAll) && (
+        <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+          {showAll ? (
+            <>
+              <span>Showing every loaded line, whatever the range.</span>
+              <Button variant="secondary" size="sm" className="h-7" onClick={() => setShowAll(false)}>Apply range</Button>
+            </>
+          ) : (
+            <>
+              <span>{hidden === 1 ? '1 loaded line is' : `${hidden} loaded lines are`} outside the selected range.</span>
+              <Button variant="secondary" size="sm" className="h-7" onClick={() => setShowAll(true)}>Show all lines</Button>
+            </>
+          )}
+        </div>
+      )}
+      {data && (
         <LogsTable logs={filtered}
-          emptyMessage={loaded.length > 0
-            ? 'No logs match your filters or range.'
-            : component === 'compute'
+          emptyMessage={loaded.length === 0
+            ? component === 'compute'
               ? 'No logs yet. Deploy an app to this branch and its container output lands here.'
-              : 'No logs yet. The database has not written any log lines.'} />
+              : 'No logs yet. The database has not written any log lines.'
+            : hidden > 0 ? 'No logs in the selected range.' : 'No logs match your filters or range.'} />
       )}
       <p className="text-xs text-muted-foreground">
         Tailed live from this branch&apos;s containers ({data?.source ?? 'docker-logs'}); refreshes every 5s.
+        {capped && oldest !== undefined && ` Loaded lines start ${formatLogTime(new Date(oldest * 1000))}; older ones aren't fetched.`}
       </p>
     </div>
   )

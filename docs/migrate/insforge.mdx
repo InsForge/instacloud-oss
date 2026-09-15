@@ -70,7 +70,7 @@ It will ask you to approve anything that touches production, and it moves the fi
 Give me the new InsForge URL, and confirm the anon key and API key match the ones in my .env without printing either value.
 ```
 
-Change `baseUrl` in your `createClient` call to that URL. Unless your app calls edge functions, nothing else in it changes. Leave the old stack stopped rather than deleted, so you can go back to it.
+Change `baseUrl` in your `createClient` call to that URL. Nothing else in it changes. Leave the old stack stopped rather than deleted, so you can go back to it.
 
 If your app ran on the same machine as your InsForge, it stopped along with it. Bringing it to InstaCloud is optional and separate from the migration. With a Dockerfile in its directory, it is [one command](/deploy/overview):
 
@@ -78,9 +78,17 @@ If your app ran on the same machine as your InsForge, it stopped along with it. 
 insta deploy .
 ```
 
-## What does not come over
+## Edge functions
 
-Edge functions. The `deno` container is the one piece with no equivalent here yet, so wait if your app calls them.
+They come over. Your function code lives in the database, so it arrives with everything else, and your agent stands the Deno host up as one more compute service and points the backend at it.
+
+Ask for it in step 3, before you switch anything over, so your functions are already running when your app arrives:
+
+```text title="Prompt" wrap
+Migrate my edge functions too, and check one of them runs before I switch over.
+```
+
+## What does not come over
 
 Cron jobs are not supported for now. InsForge schedules are not affected: they run in `pg_cron` inside your database and came over with the dump.
 

@@ -15,6 +15,7 @@ import { TriangleAlert } from 'lucide-react'
 import { api, type Decision } from '../../api'
 import { usePoll } from '../../hooks'
 import { SETTINGS_TABS, settingsTabFrom, withoutPanel, withSettings } from '../../lib/panels'
+import { readDraftName, writeDraftName } from '../../lib/settingsDraft'
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog'
 import { highlightUnsavedPanelFooter, PanelModal, PanelSaveFooter } from './PanelModal'
 import { refreshProjectsNow, useProjectName } from './ProjectSwitcher'
@@ -73,8 +74,13 @@ function GeneralSettings({ projectId }: { projectId: string }) {
   const [renamedTo, setRenamedTo] = useState<string | null>(null)
   if (renamedTo !== null && listName === renamedTo) setRenamedTo(null)
   const projectName = renamedTo ?? listName
-  // `null` = untouched, mirroring the saved name; a string once edited.
-  const [draftName, setDraftName] = useState<string | null>(null)
+  // `null` = untouched, mirroring the saved name; a string once edited. Kept in lib/settingsDraft.ts as well, so
+  // browser Back or Forward, which unmount the panel without its close guard, cannot lose it.
+  const [draftName, setDraft] = useState<string | null>(() => readDraftName(projectId))
+  const setDraftName = (next: string | null) => {
+    writeDraftName(projectId, next)
+    setDraft(next)
+  }
   const name = draftName ?? projectName
   // A collision with another project's name is about what was typed, so it sits by the field.
   const [renameError, setRenameError] = useState<string | null>(null)
@@ -134,6 +140,10 @@ function DeleteProjectSection({ projectId, projectName }: { projectId: string; p
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [gated, setGated] = useState(false)
+  // Read while the dialog is open, so a governed delete says "Approve & delete" BEFORE the confirm, not only once
+  // the DELETE has come back asking. `gated` still covers a policy changed after this read.
+  const { data: policy } = usePoll(() => api.policy(projectId), [projectId], { intervalMs: 30_000, enabled: open })
+  const needsApproval = gated || policy?.['project.delete'] === 'approve'
   // The confirm dialog closes once its action resolves; a failed delete marks itself here so that close is skipped
   // and the error stays readable. Cancel still closes, because only the failure's own close is consumed.
   const failed = useRef(false)
@@ -192,7 +202,7 @@ function DeleteProjectSection({ projectId, projectName }: { projectId: string; p
               This permanently deletes <span className="font-semibold text-foreground">{projectName}</span> and destroys all of its
               resources. This action cannot be undone.
             </span>
-            {gated && (
+            {needsApproval && (
               <span className="rounded-md bg-warning/10 px-2.5 py-2 text-[13px] leading-[18px] text-warning">
                 This project&apos;s policy requires approval to delete it. Confirming approves the request and deletes the project in one step.
               </span>
@@ -200,7 +210,7 @@ function DeleteProjectSection({ projectId, projectName }: { projectId: string; p
             {error && <span role="alert" className="text-[13px] leading-[18px] text-destructive">{error}</span>}
           </span>
         }
-        confirmText={gated ? 'Approve & delete' : 'Delete'}
+        confirmText={needsApproval ? 'Approve & delete' : 'Delete'}
         cancelText="Cancel"
         onConfirm={remove}
       />

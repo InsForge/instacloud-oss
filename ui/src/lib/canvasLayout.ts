@@ -17,6 +17,10 @@ const ATTACHMENT_ROW = 40
 export const cardHeight = (rows: number) => CARD_HEIGHT + (rows > 0 ? 5 + ATTACHMENT_ROW * rows : 0)
 /** The tallest a card gets: what a packed block and the fit have to clear. */
 export const CARD_MAX_HEIGHT = cardHeight(1)
+/** What the hover row of "+ Add" slots occupies below a card: an 8px gap over a 32px button. The card's shell
+ *  reserves it as padding while it offers slots, and a card offering one has no attachment row, so it stays
+ *  within CARD_MAX_HEIGHT (140 + 40 = 180). */
+export const ADD_ROW_SPACE = 40
 export const LAYOUT_METRICS = {
   cardWidth: CARD_WIDTH,
   cardHeight: CARD_MAX_HEIGHT,

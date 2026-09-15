@@ -174,6 +174,9 @@ export const api = {
   secretTree: (p: string) => get<SecretTree>(`/projects/${p}/secrets/tree`),
   /** The same read, returning an approval instead of throwing: the canvas stops polling a gated tree. */
   secretTreeResult: (p: string) => call<SecretTree>('GET', `/projects/${p}/secrets/tree`),
+  /** One service's host-facing credential bundle. Gated `secrets.read`, so it answers an approval instead of throwing. */
+  credentialsResult: (p: string, sid: string, branch: string) =>
+    call<{ credentials: Record<string, string> }>('GET', `/projects/${p}/services/${sid}/credentials${qs({ branch })}`),
   // Database reads answer 503 `database is sleeping` when the branch database is asleep and
   // never wake it (decision 48); `group` picks one of several postgres services (WP5).
   dbMetrics: (p: string, branch: string, group?: string) =>

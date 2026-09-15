@@ -16,7 +16,7 @@ import {
   Button, CopyButton, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input, SearchInput,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Switch,
 } from '@insforge/ui'
-import { ArrowDownAZ, ArrowUpZA, Check, ChevronDown, Plus, RotateCw, X } from 'lucide-react'
+import { ArrowDownAZ, ArrowUpZA, Check, ChevronDown, Plug, Plus, RotateCw, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { api, obsComponentFor, type Service } from '../../api'
 import { usePoll } from '../../hooks'
@@ -33,6 +33,8 @@ import { DatabasePanel } from '../../pages/DatabaseInsight'
 import { dbPanelKey } from '../../lib/dbWakeGate'
 import { MetricCharts } from '../metrics/MetricCharts'
 import { VolumeCard } from './VolumeCard'
+import { ConnectDatabaseDialog } from './ConnectDatabaseDialog'
+import { isDbConnectEngine } from '../../lib/databaseConnect'
 import { DeleteServiceDialog, RestartServiceDialog } from './ServiceDialogs'
 import { SettingsCard, SettingsRow } from './SettingsRow'
 import { SideTabs, TopTabs } from './Tabs'
@@ -53,6 +55,7 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
   const [approval, setApproval] = useState<PendingApproval>(null)
   const [error, setError] = useState<string>()
   const [restartOpen, setRestartOpen] = useState(false)
+  const [connectOpen, setConnectOpen] = useState(false)
   const tabs = tabsFor(service?.type ?? 'storage')
   const [tab, setTab] = useState<TabId | null>(null)
   const active: TabId = tab ?? (tabs.includes(requestedTab as TabId) ? (requestedTab as TabId) : tabs[0])
@@ -170,6 +173,13 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
                 Restart
               </Button>
             )}
+            {/* The console's Connect, on every database engine: URL, raw client command and CLI in one dialog. */}
+            {isDbConnectEngine(service.type) && (
+              <Button type="button" variant="secondary" className="h-9 shrink-0 gap-1.5" onClick={() => setConnectOpen(true)}>
+                <Plug className="size-4" />
+                Connect
+              </Button>
+            )}
             <button type="button" aria-label="Close" onClick={onClose}
               className="flex size-9 cursor-pointer items-center justify-center border border-border bg-card text-muted-foreground transition-colors hover:bg-alpha-4 hover:text-foreground">
               <X className="size-5" />
@@ -212,6 +222,10 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
         </div>
       </div>
       {restartOpen && <RestartServiceDialog {...ctx} open={restartOpen} onOpenChange={setRestartOpen} />}
+      {connectOpen && isDbConnectEngine(service.type) && (
+        <ConnectDatabaseDialog projectId={projectId} branch={branch} open={connectOpen} onOpenChange={setConnectOpen}
+          service={{ id: service.id, name: service.name, type: service.type }} />
+      )}
       <ApprovalPrompt projectId={projectId} pending={approval} onClose={() => setApproval(null)} />
     </div>
   )

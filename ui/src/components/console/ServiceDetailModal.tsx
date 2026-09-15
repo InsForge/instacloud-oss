@@ -34,24 +34,7 @@ import { DeleteServiceDialog, RestartServiceDialog } from './ServiceDialogs'
 import { SettingsCard, SettingsRow } from './SettingsRow'
 import { SideTabs, TopTabs } from './Tabs'
 import { ServiceTypeIcon } from './ServiceIcon'
-
-/** Is a nested dialog OPEN above this overlay?
- *
- *  Restart, Delete and the approval prompt are the kit's Radix Dialog, which PORTALS to
- *  document.body — outside the overlay's DOM root. So does a Radix Popover: the Metrics tab's time range
- *  picker renders its panel as `role="dialog"` with `data-state="open"`, so it is covered too, and Tab
- *  walks its quick ranges while one Escape closes only the picker. Both the focus trap and the Escape handler have
- *  to stand down for them: the trap because the nested dialog's own buttons look like "focus
- *  outside", and Escape because Radix dismisses on it without guaranteeing the native event is
- *  default-prevented, so one press would close the dialog AND the overlay behind it.
- *
- *  Keyed on `data-state="open"`, not mere presence, so an unrelated dialog element or one still
- *  mounted through a close animation cannot silently disable either guard. */
-function hasOpenNestedDialog(root: HTMLElement | null): boolean {
-  return Array.from(
-    document.querySelectorAll('[role="dialog"][data-state="open"],[role="alertdialog"][data-state="open"]'),
-  ).some((d) => d !== root && !root?.contains(d))
-}
+import { hasOpenNestedDialog } from './nestedDialog'
 
 type Ctx = {
   projectId: string; branch: string; service: Service

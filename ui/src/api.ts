@@ -209,6 +209,10 @@ export const api = {
     call<{ policy: Policy }>('PUT', `/projects/${p}/policy/${action}`, { decision }),
   decide: (p: string, approvalId: string, verdict: 'approve' | 'deny', always = false) =>
     call<{ approval: Approval }>('POST', `/projects/${p}/approvals/${approvalId}/${verdict}`, always ? { always } : undefined),
+  /** Display name only, as on the cloud: every resource keeps its frozen slug. 409 when another project has the name. */
+  renameProject: (p: string, name: string) => call<{ project: Project }>('PATCH', `/projects/${p}`, { name }),
+  /** Governed as `project.delete`, so it can answer an approval (202) instead of the teardown. */
+  deleteProject: (p: string) => call<Teardown>('DELETE', `/projects/${p}`),
 
   // ---- region WP7 ----
   // Types and api methods for the serverless routes (templates, credentials, sleep/wake, domains,

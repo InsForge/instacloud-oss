@@ -13,7 +13,6 @@ import { DatabaseInsight } from './pages/DatabaseInsight'
 import { Operations } from './pages/Operations'
 import { Usage } from './pages/Usage'
 import { Approvals } from './pages/Approvals'
-import { Settings } from './pages/Settings'
 import { QuickStart } from './pages/QuickStart'
 import { Setup } from './pages/Setup'
 import { Login } from './pages/Login'
@@ -109,7 +108,8 @@ export default function App() {
           <Route path="usage" element={<Navigate to="../observability" replace />} />
           <Route path="approvals" element={<Approvals />} />
           <Route path="quick-start" element={<QuickStart />} />
-          <Route path="settings" element={<Settings />} />
+          {/* Settings is the console's panel over the page (`?panel=settings`); the old page's bookmarks open it. */}
+          <Route path="settings" element={<Navigate to="../services?panel=settings" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -8,7 +8,7 @@
 // and have no daemon counterpart; a rename or delete confirms inline rather than in a toast; and the old Settings
 // page's Recent Events card is gone, since the Activities panel is that timeline.
 
-import { useId, useRef, useState, type ReactNode } from 'react'
+import { useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, cn, DialogMessage, Input } from '@insforge/ui'
 import { TriangleAlert } from 'lucide-react'
@@ -17,6 +17,7 @@ import { usePoll } from '../../hooks'
 import { SETTINGS_TABS, settingsTabFrom, withoutPanel, withSettings } from '../../lib/panels'
 import { readDraftName, writeDraftName } from '../../lib/settingsDraft'
 import { afterDelete, DISCLOSE_MESSAGE } from '../../lib/governedDelete'
+import { beginDelete, endDelete, isDeleting, subscribeDeletes } from '../../lib/deleteInFlight'
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog'
 import { highlightUnsavedPanelFooter, PanelModal, PanelSaveFooter } from './PanelModal'
 import { refreshProjectsNow, useProjectName } from './ProjectSwitcher'
@@ -149,10 +150,9 @@ function DeleteProjectSection({ projectId, projectName }: { projectId: string; p
   // and the error stays readable. Cancel still closes, because only the failure's own close is consumed.
   const failed = useRef(false)
   // A delete in flight: Cancel is disabled and every other close is refused until it answers, so the dialog can
-  // neither be dismissed mid-request nor reopened to send a second DELETE. A ref, because the close handler runs
-  // right after the request settles, before a re-render could refresh a state value.
-  const deleting = useRef(false)
-  const [busy, setBusy] = useState(false)
+  // neither be dismissed mid-request nor reopened to send a second DELETE. The lock lives in lib/deleteInFlight.ts,
+  // not in this component, because browser Back and Forward unmount and remount the panel mid-request.
+  const busy = useSyncExternalStore(subscribeDeletes, () => isDeleting(projectId))
 
   const fail = (message: string) => {
     setError(message)
@@ -164,16 +164,13 @@ function DeleteProjectSection({ projectId, projectName }: { projectId: string; p
   const pendingApproval = useRef<string | null>(null)
 
   const remove = async () => {
-    if (deleting.current) return
-    deleting.current = true
-    setBusy(true)
+    if (!beginDelete(projectId)) return
     // What the confirm button said when it was clicked: only a confirm made with "Approve & delete" showing may grant.
     const disclosed = needsApproval
     try {
       await attemptDelete(disclosed)
     } finally {
-      deleting.current = false
-      setBusy(false)
+      endDelete(projectId)
     }
   }
 
@@ -228,7 +225,7 @@ function DeleteProjectSection({ projectId, projectName }: { projectId: string; p
         open={open}
         onOpenChange={(next) => {
           if (!next && failed.current) { failed.current = false; return }
-          if (!next && deleting.current) return
+          if (!next && isDeleting(projectId)) return
           setOpen(next)
         }}
         title="Delete Project"

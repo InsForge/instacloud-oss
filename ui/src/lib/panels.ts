@@ -19,13 +19,15 @@ function withQuery(params: URLSearchParams): string {
   return qs ? `?${qs}` : ''
 }
 
-/** The current query with Settings open on `tab`. General is the default, so it carries no `settings-tab`.
- *  Everything else in the query (an open `?service=` underneath) survives. */
-export function withSettings(search: string, tab: SettingsTab = 'general'): string {
+/** The current query with Settings open. Naming a `tab` switches to it (General carries no `settings-tab`, being
+ *  the default); omitting it keeps whichever tab is already set, as the console's sidebar link does
+ *  (project-sidebar.tsx sets `panel` and never touches `settings-tab`). Everything else in the query (an open
+ *  `?service=` underneath) survives. */
+export function withSettings(search: string, tab?: SettingsTab): string {
   const next = new URLSearchParams(search)
   next.set('panel', 'settings')
   if (tab === 'general') next.delete('settings-tab')
-  else next.set('settings-tab', tab)
+  else if (tab) next.set('settings-tab', tab)
   return withQuery(next)
 }
 

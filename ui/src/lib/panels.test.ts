@@ -11,13 +11,17 @@ describe('settingsTabFrom', () => {
 })
 
 describe('withSettings', () => {
-  it('opens Settings on General without a settings-tab, as the console does', () => {
+  it('opens Settings on General when no tab is set', () => {
     expect(withSettings('')).toBe('?panel=settings')
-    expect(withSettings('?settings-tab=agent-governance')).toBe('?panel=settings')
   })
 
-  it('opens another tab by name', () => {
+  it("keeps the current tab when no tab is named, as the console's sidebar link does", () => {
+    expect(withSettings('?panel=settings&settings-tab=agent-governance')).toBe('?panel=settings&settings-tab=agent-governance')
+  })
+
+  it('switches to a tab by name, General dropping settings-tab', () => {
     expect(withSettings('', 'agent-governance')).toBe('?panel=settings&settings-tab=agent-governance')
+    expect(withSettings('?panel=settings&settings-tab=agent-governance', 'general')).toBe('?panel=settings')
   })
 
   it('keeps an open service detail underneath', () => {

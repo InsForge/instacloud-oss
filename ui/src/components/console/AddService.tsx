@@ -13,7 +13,6 @@
 //   - creates apply now instead of staging into an apply-changes batch
 
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
   Button, cn, Dialog, DialogBody, DialogClose, DialogContent, DialogDivider, DialogFooter, DialogHeader, DialogTitle,
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger,
@@ -29,9 +28,11 @@ import {
 } from '../../lib/serviceNames'
 import { AdvancedSettings, DEFAULT_VOLUME_GIB, FormRow, VolumeFormRow } from './FormRows'
 import { ServiceIcon, ServiceTypeIcon } from './ServiceIcon'
+import { DeployDialog } from '../DeployDialog'
+import { TemplateDeployDialog } from './TemplateDeployDialog'
 
 type CreateFlow = { kind: 'create'; type: ServiceType; label: string; placeholder: string }
-type Flow = CreateFlow | { kind: 'image' } | { kind: 'templates' }
+type Flow = CreateFlow | { kind: 'image' } | { kind: 'templates' } | { kind: 'template-deploy'; code: string }
 
 export const SECTIONS = [
   { category: 'code', label: 'Deploy your code', cols: 'grid-cols-2' },
@@ -61,15 +62,12 @@ type FlowProps = {
   onDone: () => void; onApproval: (p: NonNullable<PendingApproval>) => void
 }
 
-/** `pick` opens a source's dialog (or leaves for the templates gallery); render `dialogs`. */
+/** `pick` opens a source's dialog in place; render `dialogs`. View Templates is the console's Deploy a Template
+ *  dialog, and a picked template continues into the template deploy form. */
 function useAddServiceFlow(props: FlowProps, onClosed?: () => void): { pick: (source: Source) => void; dialogs: ReactNode } {
-  const nav = useNavigate()
   const [flow, setFlow] = useState<Flow | null>(null)
   const close = (open: boolean) => { if (!open) { setFlow(null); onClosed?.() } }
-  const pick = (source: Source) => {
-    if (source.flow.kind === 'templates') nav(`/p/${props.projectId}/${props.branch}/templates`)
-    else setFlow(source.flow)
-  }
+  const pick = (source: Source) => setFlow(source.flow)
   const dialogs = (
     <>
       {flow?.kind === 'create' && (
@@ -77,6 +75,14 @@ function useAddServiceFlow(props: FlowProps, onClosed?: () => void): { pick: (so
           onConnectImage={flow.type === 'compute' ? () => setFlow({ kind: 'image' }) : undefined} />
       )}
       {flow?.kind === 'image' && <DeployImageDialog {...props} open onOpenChange={close} />}
+      {flow?.kind === 'templates' && (
+        <TemplateDeployDialog open projectId={props.projectId} branch={props.branch} onOpenChange={close}
+          onPicked={(code) => setFlow({ kind: 'template-deploy', code })} />
+      )}
+      {flow?.kind === 'template-deploy' && (
+        <DeployDialog projectId={props.projectId} branch={props.branch} services={props.services} initialLane="template"
+          initialTemplateCode={flow.code} onClose={() => close(false)} onDone={props.onDone} onApproval={props.onApproval} />
+      )}
     </>
   )
   return { pick, dialogs }

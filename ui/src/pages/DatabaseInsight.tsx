@@ -4,7 +4,7 @@ import { Button, EmptyState } from '@insforge/ui'
 import { Database, Loader2 } from 'lucide-react'
 import { api } from '../api'
 import { usePoll } from '../hooks'
-import { dbGateView } from '../lib/dbWakeGate'
+import { dbGateView, dbPanelKey } from '../lib/dbWakeGate'
 import { ConsolePage } from '../components/console/ConsolePage'
 
 function fmtBytes(n: number): string {
@@ -204,7 +204,8 @@ export function DatabaseInsight() {
         <EmptyState icon={Database} title="No Postgres in this branch"
           description="Add a postgres service on the Service page and this page fills in." />
       ) : pg ? (
-        <DatabasePanel projectId={projectId} branch={branch} group={pg.name} serviceId={pg.id}
+        // Keyed by the database's full identity: this page stays mounted when the project or branch switches.
+        <DatabasePanel key={dbPanelKey(projectId, branch, pg.id)} projectId={projectId} branch={branch} group={pg.name} serviceId={pg.id}
           footer={
             <div className="flex justify-center">
               <Link to={`/p/${projectId}/${branch}/services?service=${encodeURIComponent(pg.id)}&tab=settings`}>

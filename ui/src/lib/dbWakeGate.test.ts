@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { dbGateView } from './dbWakeGate'
+import { dbGateView, dbPanelKey } from './dbWakeGate'
+
+describe('dbPanelKey', () => {
+  it('changes with the project, the branch and the service, so wake state never carries between databases', () => {
+    const base = dbPanelKey('p1', 'main', 'pg-store')
+    expect(dbPanelKey('p2', 'main', 'pg-store')).not.toBe(base) // same service id in another project
+    expect(dbPanelKey('p1', 'feat', 'pg-store')).not.toBe(base) // another branch of the same project
+    expect(dbPanelKey('p1', 'main', 'pg-events')).not.toBe(base) // another database on the same branch
+    expect(dbPanelKey('p1', 'main', 'pg-store')).toBe(base)
+  })
+})
 
 describe('dbGateView', () => {
   it('shows the content of an awake database', () => {

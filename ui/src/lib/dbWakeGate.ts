@@ -12,6 +12,14 @@
 
 export type DbGateView = 'prompt' | 'connecting' | 'content'
 
+/** The React key a `DatabasePanel` is rendered under: the database's full identity. The panel owns wake state
+ *  (waking, the post-wake hold, a wake error), and both its hosts stay mounted across a change of database: the
+ *  service-detail overlay when another service opens, the Database page when the project or branch switches. A service
+ *  id alone repeats across projects (`pg-store`), so it is not enough. */
+export function dbPanelKey(projectId: string, branch: string, serviceId: string): string {
+  return `${projectId}|${branch}|${serviceId}`
+}
+
 export interface DbGateState {
   /** The latest metrics read answered "database is sleeping". */
   sleeping: boolean

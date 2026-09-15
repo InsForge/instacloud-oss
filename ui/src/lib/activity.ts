@@ -5,16 +5,6 @@
 /** Events per fetch; "Load more" grows the window by another page. */
 export const ACTIVITY_PAGE_SIZE = 50
 
-/** The approvals poll, tagged with the project it read: like the events feed, the poll hook keeps the
- *  previous project's answer across a switch, so an untagged count badges one project with another's queue. */
-export type ApprovalsLoad = { projectId: string; statuses: string[] }
-
-/** How many approvals are waiting on `projectId`: 0 until a load for THIS project has answered. */
-export function pendingFor(load: ApprovalsLoad | undefined, projectId: string): number {
-  if (!load || load.projectId !== projectId) return 0
-  return load.statuses.filter((status) => status === 'pending').length
-}
-
 /** One answered poll, tagged with what it was asked for: the poll hook keeps its last data across a
  *  project change, so an untagged window would go on showing one project's events under another. */
 export type EventsLoad = { projectId: string; limit: number; events: ActivityEvent[] }

@@ -78,9 +78,15 @@ If your app ran on the same machine as your InsForge, it stopped along with it. 
 insta deploy .
 ```
 
-## What does not come over
+## Edge functions
 
-Edge functions. The `deno` container is the one piece with no equivalent here yet, so wait if your app calls them.
+They come over. Your function code lives in the database, so it arrives with everything else, and your agent builds the Deno host as a fourth service and points the backend at it. Ask for them in the same prompt:
+
+```text title="Prompt" wrap
+Migrate my edge functions too, and check one of them runs afterwards.
+```
+
+## What does not come over
 
 Cron jobs are not supported for now. InsForge schedules are not affected: they run in `pg_cron` inside your database and came over with the dump.
 

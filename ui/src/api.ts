@@ -245,6 +245,9 @@ export const api = {
     get<VolumeResult>(`/projects/${p}/services/${sid}/volume${qs({ branch })}`),
   setVolume: (p: string, sid: string, sizeGib: number, branch?: string) =>
     call<VolumeResult & { service?: Service }>('PUT', `/projects/${p}/services/${sid}/volume${qs({ branch })}`, { sizeGib }),
+  /** Deletes the /data volume and its data on every branch; gated `service.remove`, so it can answer an approval. */
+  removeVolume: (p: string, sid: string, branch?: string) =>
+    call<VolumeResult & { service?: Service; removed?: boolean }>('DELETE', `/projects/${p}/services/${sid}/volume${qs({ branch })}`),
   dbInstance: (p: string, branch: string, group?: string) =>
     get<DbInstance>(`/projects/${p}/database/instance${qs({ branch, group })}`),
   dbSettings: (p: string, branch: string, patch: { scaleToZero?: boolean; idleTimeout?: number; cpu?: string; memory?: string; volumeSize?: string }, group?: string) =>

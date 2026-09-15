@@ -13,13 +13,15 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  Button, CopyButton, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch,
+  Button, CopyButton, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input, SearchInput,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Switch,
 } from '@insforge/ui'
-import { RotateCw, X } from 'lucide-react'
+import { ArrowDownAZ, ArrowUpZA, Check, ChevronDown, Plus, RotateCw, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { api, obsComponentFor, type Service } from '../../api'
 import { usePoll } from '../../hooks'
-import { effectiveVariables } from '../../lib/effectiveVariables'
+import { filterAndSort, groupSecrets, serviceSecretRows, SORT_LABELS, type SecretRow, type SortOrder } from '../../lib/secretRows'
+import { SecretDialog, SecretsTable } from './SecretParts'
 import { MANAGED_TYPES, tabsFor, TAB_LABELS as LABELS, type TabId } from '../../lib/serviceTabs'
 import { LOWER_KEBAB_NAME_ERROR, SERVICE_NAME_RE } from '../../lib/serviceNames'
 import { useAuth } from '../AuthGate'
@@ -189,7 +191,7 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
                 <MetricCharts key={service.id} projectId={projectId} component={obsComponentFor(service.type)!} branch={branch}
                   group={service.name} lineName={service.name} />
               )}
-              {active === 'variables' && <VariablesTab projectId={projectId} branch={branch} service={service} />}
+              {active === 'variables' && <VariablesTab projectId={projectId} branch={branch} service={service} onApproval={setApproval} />}
               {active === 'runtime' && runtimeComponent && (
                 <LogsPanel projectId={projectId} branch={branch} component={runtimeComponent} service={service} />
               )}
@@ -205,32 +207,78 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
   )
 }
 
-/** The names this service can read, never the values (those stay behind `insta secrets`). A
- *  database or bucket lists what it mints; an app receives every service's credentials in its
- *  environment plus the project's and this environment's own secrets. */
-function VariablesTab({ projectId, branch, service }: { projectId: string; branch: string; service: Service }) {
-  const { data: tree, error } = usePoll(() => api.secretTree(projectId), [projectId], 15000)
-  const env = tree?.branches.find((b) => b.name === branch)
-  // Keyed by name in `effectiveVariables`, not appended here: the container receives ONE value
-  // per name, and the same name may legitimately exist at several scopes.
-  const rows = effectiveVariables(tree, env, service)
+/** The console's Variables tab (insta-frontend secrets/service-variables-tab.tsx): a search + sort toolbar with Add
+ *  Variable over a Name / Source / Value table of what belongs to this service: what it mints, what is bound to it,
+ *  and the user secrets bound to it. Shared secrets stay on the Secrets page's Shared tab, as on the console. A save
+ *  or delete applies at once and names this service, so it never touches another service's copy of the name. */
+function VariablesTab({ projectId, branch, service, onApproval }: {
+  projectId: string; branch: string; service: Service; onApproval: (p: NonNullable<PendingApproval>) => void
+}) {
+  const { data: tree, error, reload } = usePoll(() => api.secretTree(projectId), [projectId], 15000)
+  const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<SortOrder>('az')
+  const [dialog, setDialog] = useState<{ editing: SecretRow | null } | null>(null)
+  const [actionError, setActionError] = useState<string>()
+  const key = `${service.type}/${service.name}`
+  const groups = tree ? groupSecrets(tree, branch).services : []
+  const group = groups.find((g) => g.key === key) ?? { key, type: service.type, name: service.name, rows: [] }
+  const query = search.trim().toLowerCase()
+  const rows = filterAndSort(serviceSecretRows(tree, branch, service), query, sort)
+
+  const remove = async (row: SecretRow) => {
+    setActionError(undefined)
+    const r = await api.unsetSecret(projectId, row.name, branch, key)
+    if (r.kind === 'approval') return onApproval({ ...r, retry: () => { void remove(row) } })
+    if (r.kind === 'error') return setActionError(r.error)
+    reload()
+  }
+
+  const emptyMessage = error
+    ? 'Variables are unavailable right now.'
+    : query ? 'No variables match your search.' : 'No variables for this service yet.'
+
   return (
     <div className="flex flex-col gap-3">
-      <div className="overflow-hidden border border-border bg-card">
-        <div className="flex items-center gap-6 border-b border-border bg-alpha-4 px-4 py-3 text-[13px] text-muted-foreground">
-          <span className="min-w-0 flex-2">Name</span>
-          <span className="min-w-0 flex-1">Source</span>
-        </div>
-        {rows.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-muted-foreground">{error ? error.message : tree ? 'No variables yet.' : 'Loading…'}</p>
-        ) : rows.map((r) => (
-          <div key={r.name} className="flex items-center gap-6 border-b border-border px-4 py-2.5 last:border-b-0">
-            <span className="min-w-0 flex-2 truncate font-mono text-[13px]">{r.name}</span>
-            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{r.source}</span>
-          </div>
-        ))}
+      <div className="flex items-center gap-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search variables" className="w-64" debounceTime={0} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="secondary" size="sm" className="h-8 gap-1.5">
+              {sort === 'az' ? <ArrowDownAZ className="size-4 text-muted-foreground" /> : <ArrowUpZA className="size-4 text-muted-foreground" />}
+              {SORT_LABELS[sort]}
+              <ChevronDown className="size-4 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {(Object.keys(SORT_LABELS) as SortOrder[]).map((order) => (
+              <DropdownMenuItem key={order} onSelect={() => setSort(order)}>
+                <Check className={order === sort ? 'size-4 shrink-0' : 'invisible size-4 shrink-0'} />
+                {SORT_LABELS[order]}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button variant="primary" size="sm" className="ml-auto h-8 gap-1.5" onClick={() => setDialog({ editing: null })}>
+          <Plus className="size-4" />
+          Add Variable
+        </Button>
       </div>
+
+      {!tree && !error ? (
+        <Skeleton className="h-64 rounded-lg" />
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <SecretsTable rows={rows} emptyMessage={emptyMessage} noun="Variable"
+            onEdit={(row) => setDialog({ editing: row })} onDelete={(row) => { void remove(row) }} />
+        </div>
+      )}
+      <ErrorNote error={actionError} />
       <p className="text-xs text-muted-foreground">Names only. Values stay behind <span className="font-mono">insta secrets</span>.</p>
+
+      {dialog && (
+        <SecretDialog projectId={projectId} branch={branch} services={groups} editing={dialog.editing} noun="Variable"
+          fixedService={group} onClose={() => setDialog(null)} onDone={reload} onApproval={onApproval} />
+      )}
     </div>
   )
 }

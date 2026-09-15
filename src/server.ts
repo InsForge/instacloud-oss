@@ -876,11 +876,14 @@ export function buildServer(
     catch (e) { return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) }) }
   })
 
+  // `service` (`<type>/<name>`, as PUT takes it) removes only the copy bound to that service, as the console's
+  // Variables tab deletes it; `unbound=true` removes only the branch's unbound copy. With neither, every row with
+  // that name and branch goes, as before.
   app.delete('/projects/:id/secrets/:name', async (req, reply) => {
     const { id, name } = req.params as { id: string; name: string }
-    const branch = (req.query as { branch?: string }).branch ?? null
+    const { branch, service, unbound } = req.query as { branch?: string; service?: string; unbound?: string }
     if (!gated(id, 'secrets.write', reply)) return reply
-    engine.unsetUserSecret(id, name, branch)
+    engine.unsetUserSecret(id, name, branch ?? null, service ?? (unbound === 'true' ? null : undefined))
     return { ok: true }
   })
 

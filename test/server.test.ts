@@ -607,6 +607,26 @@ test('secrets tree: minted creds under their service; user secrets grouped by bi
   expect(main.services.find((s: { name: string }) => s.name === 'api').secrets).toEqual(['API_KEY'])
 })
 
+// A service's Variables tab deletes a variable naming that service, and the Secrets page's Shared tab an unbound one
+// with `unbound=true`. Either narrows the delete to that copy: a name that has since been rebound elsewhere survives.
+test('DELETE /secrets/:name with service or unbound removes only that copy', async () => {
+  const id = await createProject()
+  await post(`/projects/${id}/services`, { type: 'compute', name: 'api' })
+  await post(`/projects/${id}/services`, { type: 'compute', name: 'worker' })
+  await put(`/projects/${id}/secrets/API_KEY`, { value: 'v', branch: 'main', service: 'compute/api' })
+  const bound = async () => (await get(`/projects/${id}/secrets/tree`)).json()
+    .branches.find((b: { name: string }) => b.name === 'main')
+    .services.find((s: { name: string }) => s.name === 'api').secrets as string[]
+
+  await app.inject({ method: 'DELETE', url: `/projects/${id}/secrets/API_KEY?branch=main&service=compute/worker` })
+  expect(await bound()).toEqual(['API_KEY'])
+  await app.inject({ method: 'DELETE', url: `/projects/${id}/secrets/API_KEY?branch=main&unbound=true` })
+  expect(await bound()).toEqual(['API_KEY'])
+  const res = await app.inject({ method: 'DELETE', url: `/projects/${id}/secrets/API_KEY?branch=main&service=compute/api` })
+  expect(res.statusCode).toBe(200)
+  expect(await bound()).toEqual([])
+})
+
 // `secrets` merges platform-minted credentials with the user secrets bound to that service, and
 // the two have different reach: a minted credential goes to EVERY compute group in the branch, a
 // bound one only to its own service. Without `minted` a caller cannot answer "what can this app

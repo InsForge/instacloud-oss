@@ -3006,7 +3006,11 @@ export class Engine {
   async runtimeMetrics(projectId: string, opts: { component: ObservedComponent; branchName?: string; group?: string; window?: MetricsWindow }): Promise<observe.MetricsResult> {
     const { project, branch } = this.branchOrThrow(projectId, opts.branchName)
     const targets = this.observedTargets(project, branch, opts.component, opts.group)
-    if (!targets.length) return { source: 'docker-stats', series: [], note: 'nothing deployed on this branch' }
+    // Scoped to one service, say so: "nothing deployed on this branch" was wrong for an undeployed app whose branch
+    // runs a database and a cache.
+    if (!targets.length) {
+      return { source: 'docker-stats', series: [], note: opts.group ? 'nothing deployed for this service' : 'nothing deployed on this branch' }
+    }
     const now = Math.floor(Date.now() / 1000)
     const win = opts.window ?? { from: now - DEFAULT_WINDOW_SEC, to: now, step: DEFAULT_STEP_SEC }
     const containers = targets.map((t) => t.container)

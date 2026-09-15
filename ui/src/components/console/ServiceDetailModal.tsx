@@ -30,6 +30,7 @@ import { DomainsSection } from '../DomainsSection'
 import { ErrorNote, hrefFor } from '../ui'
 import { LogsPanel } from '../../pages/Logs'
 import { DatabasePanel } from '../../pages/DatabaseInsight'
+import { dbPanelKey } from '../../lib/dbWakeGate'
 import { MetricCharts } from '../metrics/MetricCharts'
 import { VolumeCard } from './VolumeCard'
 import { DeleteServiceDialog, RestartServiceDialog } from './ServiceDialogs'
@@ -183,7 +184,16 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
             <div id="service-detail-panel" role="tabpanel" aria-labelledby={`service-detail-panel-tab-${active}`}
               className="flex min-w-0 flex-1 flex-col gap-3">
               <ErrorNote error={error} />
-              {active === 'database' && <DatabasePanel projectId={projectId} branch={branch} group={service.name} serviceId={service.id} />}
+              {/* Keyed by the database's full identity (lib/dbWakeGate.ts): the overlay stays mounted when another service
+                  opens, and the gate's wake state must not follow you to it. A service id alone repeats across projects. */}
+              {active === 'database' && (
+                <DatabasePanel key={dbPanelKey(projectId, branch, service.id)} projectId={projectId} branch={branch} group={service.name} serviceId={service.id}
+                  footer={
+                    <div className="flex justify-center">
+                      <Button type="button" variant="secondary" onClick={() => selectTab('settings')}>Service settings</Button>
+                    </div>
+                  } />
+              )}
               {/* The console's Metrics tab, with its time range picker for every service type. */}
               {active === 'metrics' && obsComponentFor(service.type) && (
                 // Keyed by service: the overlay stays mounted when another service is opened, and a

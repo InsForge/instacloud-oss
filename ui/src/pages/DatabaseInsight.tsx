@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Button, EmptyState } from '@insforge/ui'
 import { Database, Loader2 } from 'lucide-react'
 import { api } from '../api'
 import { usePoll } from '../hooks'
+import { dbGateView, dbPanelKey } from '../lib/dbWakeGate'
 import { ConsolePage } from '../components/console/ConsolePage'
 
 function fmtBytes(n: number): string {
@@ -40,7 +41,8 @@ function isSleeping(e: Error | undefined): boolean {
  *  Database tab both render it.
  *
  *  Asleep, it is the console's instance gate (insta-frontend database/instance-gate.tsx): "Instance is suspended"
- *  with Wake and browse, and "Connecting to the database…" while the wake runs. Self-host divergence: the console
+ *  with Wake and browse, then "Connecting to the database…" from the click until the first read after the wake
+ *  answers, which then decides (lib/dbWakeGate.ts). Self-host divergence: the console
  *  wakes by letting its queries through; the daemon's reads never wake a database, so the button asks for the wake
  *  explicitly (`POST …/services/:sid/wake`) and the reads resume once it is up. No billing sentence: nothing is
  *  billed here. */
@@ -53,23 +55,28 @@ export function DatabasePanel({ projectId, branch, group, serviceId, footer }: {
   const { data: activity } = usePoll(() => api.dbActivity(projectId, branch, group), [projectId, branch, group], { intervalMs: 10000, enabled: !sleeping })
   const { data: stats } = usePoll(() => api.dbQueryStats(projectId, branch, group), [projectId, branch, group], { intervalMs: 15000, enabled: !sleeping })
   const [waking, setWaking] = useState(false)
+  const [awaitingRead, setAwaitingRead] = useState(false)
   const [wakeError, setWakeError] = useState<string>()
+  // The hold ends when the metrics poll delivers its next answer, data or error; that answer decides what shows.
+  useEffect(() => { setAwaitingRead(false) }, [metricsPoll.data, metricsPoll.error])
 
   const wake = async () => {
     if (!serviceId) return
     setWaking(true); setWakeError(undefined)
     const r = await api.wakeService(projectId, serviceId, branch)
+    if (r.kind === 'error') { setWaking(false); return setWakeError(r.error) }
+    if (r.kind === 'approval') { setWaking(false); return setWakeError('Waking this database needs an approval first.') }
+    setAwaitingRead(true)
     setWaking(false)
-    if (r.kind === 'error') return setWakeError(r.error)
-    if (r.kind === 'approval') return setWakeError('Waking this database needs an approval first.')
     reload()
   }
 
-  if (sleeping || waking) {
+  const view = dbGateView({ sleeping, waking, awaitingRead, wakeError })
+  if (view !== 'content') {
     return (
       <div className="flex flex-col gap-4">
         <div className="rounded-lg border border-border bg-card">
-          {waking ? (
+          {view === 'connecting' ? (
             <div className="flex items-center justify-center gap-2 px-6 py-16 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
               Connecting to the database…
@@ -197,7 +204,8 @@ export function DatabaseInsight() {
         <EmptyState icon={Database} title="No Postgres in this branch"
           description="Add a postgres service on the Service page and this page fills in." />
       ) : pg ? (
-        <DatabasePanel projectId={projectId} branch={branch} group={pg.name} serviceId={pg.id}
+        // Keyed by the database's full identity: this page stays mounted when the project or branch switches.
+        <DatabasePanel key={dbPanelKey(projectId, branch, pg.id)} projectId={projectId} branch={branch} group={pg.name} serviceId={pg.id}
           footer={
             <div className="flex justify-center">
               <Link to={`/p/${projectId}/${branch}/services?service=${encodeURIComponent(pg.id)}&tab=settings`}>

@@ -10,6 +10,7 @@ import { registerAuth } from './auth'
 import { loadConfig, type Config } from './config'
 import { LifecycleFailedError } from './engine'
 import { SuppliedCertWatch, suppliedFiles } from './router/certs'
+import { classifyWakeError } from './router/wake'
 import type { Engine, Teardown } from './engine'
 import * as govern from './govern'
 import { isManagedDbType, parseServiceId } from './manageddb'
@@ -489,7 +490,15 @@ export function buildServer(
       if (target.kind === 'compute') {
         return reply.code(400).send({ error: `${sid} is a compute service: wake it with start (insta compute start), which also clears a stop` })
       }
-      await engine.wake(key, { door: 'api' })
+      // A wake that could not finish is not a bad request. The router lane's codes (router/http.ts `failed`): 504 when
+      // it timed out, 503 when the service is stopped, has no container, the daemon is shutting down, or it could not be
+      // woken, so a client can tell "coming up, retry" from "do not retry".
+      try {
+        await engine.wake(key, { door: 'api' })
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e)
+        return reply.code(classifyWakeError(e) === 'timeout' ? 504 : 503).send({ error: m })
+      }
       return { state: engine.stateOf(key) }
     } catch (e) { const m = e instanceof Error ? e.message : String(e); return reply.code(errCode(m, e)).send({ error: m }) }
   })

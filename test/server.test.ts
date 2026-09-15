@@ -1585,6 +1585,32 @@ test('group picks one postgres service out of several, for logs and for metrics'
   vi.mocked(dockerFn).mockImplementation(fakeDocker)
 })
 
+// A wake that could not finish answers the router lane's codes, not 400: 504 when it timed out, 503 otherwise, so a
+// client can tell "coming up, retry" from "do not retry".
+test('POST /services/:sid/wake answers 504 for a wake that timed out and 503 for one that could not finish', async () => {
+  const id = await createProject()
+  const services = (await get(`/projects/${id}/services?branch=main`)).json().services as Array<{ id: string; type: string }>
+  const pg = services.find((s) => s.type === 'postgres')!
+  const wake = vi.spyOn(engine, 'wake')
+  try {
+    wake.mockRejectedValueOnce(new Error('this request timed out after 60 s waiting for the service to wake'))
+    const timedOut = await post(`/projects/${id}/services/${pg.id}/wake?branch=main`, {})
+    expect(timedOut.statusCode).toBe(504)
+    expect(timedOut.json().error).toMatch(/timed out/)
+
+    wake.mockRejectedValueOnce(new Error('could not make room to wake the service'))
+    const noRoom = await post(`/projects/${id}/services/${pg.id}/wake?branch=main`, {})
+    expect(noRoom.statusCode).toBe(503)
+
+    // Resolution errors keep their codes: a branch that does not exist is still 404, and never reaches the wake.
+    const calls = wake.mock.calls.length
+    expect((await post(`/projects/${id}/services/${pg.id}/wake?branch=nope`, {})).statusCode).toBe(404)
+    expect(wake.mock.calls.length).toBe(calls)
+  } finally {
+    wake.mockRestore()
+  }
+})
+
 // The Database tab's Wake and browse. A dashboard read never wakes a database, so the tab asks for the wake: through
 // the scheduler's api door, on the key the scheduler knows the service by. Something with nothing to schedule is 404.
 test('POST /services/:sid/wake wakes a sleeping database through the api door, 404s what has nothing to wake, and refuses compute', async () => {

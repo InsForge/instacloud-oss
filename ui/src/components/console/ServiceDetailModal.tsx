@@ -183,7 +183,16 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
             <div id="service-detail-panel" role="tabpanel" aria-labelledby={`service-detail-panel-tab-${active}`}
               className="flex min-w-0 flex-1 flex-col gap-3">
               <ErrorNote error={error} />
-              {active === 'database' && <DatabasePanel projectId={projectId} branch={branch} group={service.name} serviceId={service.id} />}
+              {/* Keyed by service, like MetricCharts and VolumeCard: the overlay stays mounted when another service
+                  opens, and the gate's wake state must not follow you to it. */}
+              {active === 'database' && (
+                <DatabasePanel key={service.id} projectId={projectId} branch={branch} group={service.name} serviceId={service.id}
+                  footer={
+                    <div className="flex justify-center">
+                      <Button type="button" variant="secondary" onClick={() => selectTab('settings')}>Service settings</Button>
+                    </div>
+                  } />
+              )}
               {/* The console's Metrics tab, with its time range picker for every service type. */}
               {active === 'metrics' && obsComponentFor(service.type) && (
                 // Keyed by service: the overlay stays mounted when another service is opened, and a

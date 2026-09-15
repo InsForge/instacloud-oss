@@ -1,7 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Button, EmptyState } from '@insforge/ui'
-import { Database, Moon } from 'lucide-react'
+import { Database, Loader2 } from 'lucide-react'
 import { api } from '../api'
 import { usePoll } from '../hooks'
 import { ConsolePage } from '../components/console/ConsolePage'
@@ -37,22 +37,56 @@ function isSleeping(e: Error | undefined): boolean {
 
 /** Point-in-time insight for one Postgres service: the same SQL signals the cloud serves
  *  (pg_stat_activity / pg_stat_database / pg_stat_statements). The page and a Postgres service's
- *  Database tab both render it. */
-export function DatabasePanel({ projectId, branch, group, footer }: {
-  projectId: string; branch: string; group?: string; footer?: React.ReactNode
+ *  Database tab both render it.
+ *
+ *  Asleep, it is the console's instance gate (insta-frontend database/instance-gate.tsx): "Instance is suspended"
+ *  with Wake and browse, and "Connecting to the database…" while the wake runs. Self-host divergence: the console
+ *  wakes by letting its queries through; the daemon's reads never wake a database, so the button asks for the wake
+ *  explicitly (`POST …/services/:sid/wake`) and the reads resume once it is up. No billing sentence: nothing is
+ *  billed here. */
+export function DatabasePanel({ projectId, branch, group, serviceId, footer }: {
+  projectId: string; branch: string; group?: string; serviceId?: string; footer?: React.ReactNode
 }) {
   const metricsPoll = usePoll(() => api.dbMetrics(projectId, branch, group), [projectId, branch, group], { intervalMs: 10000 })
   const sleeping = isSleeping(metricsPoll.error)
   const { data: metrics, error, reload } = metricsPoll
   const { data: activity } = usePoll(() => api.dbActivity(projectId, branch, group), [projectId, branch, group], { intervalMs: 10000, enabled: !sleeping })
   const { data: stats } = usePoll(() => api.dbQueryStats(projectId, branch, group), [projectId, branch, group], { intervalMs: 15000, enabled: !sleeping })
+  const [waking, setWaking] = useState(false)
+  const [wakeError, setWakeError] = useState<string>()
 
-  if (sleeping) {
+  const wake = async () => {
+    if (!serviceId) return
+    setWaking(true); setWakeError(undefined)
+    const r = await api.wakeService(projectId, serviceId, branch)
+    setWaking(false)
+    if (r.kind === 'error') return setWakeError(r.error)
+    if (r.kind === 'approval') return setWakeError('Waking this database needs an approval first.')
+    reload()
+  }
+
+  if (sleeping || waking) {
     return (
       <div className="flex flex-col gap-4">
-        <EmptyState icon={Moon} title="Postgres is sleeping"
-          description="It wakes on the next connection. Turn off Scale to Zero in the service settings to keep it warm."
-          action={{ label: 'Check again', onClick: reload }} />
+        <div className="rounded-lg border border-border bg-card">
+          {waking ? (
+            <div className="flex items-center justify-center gap-2 px-6 py-16 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Connecting to the database…
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
+              <p className="text-sm font-medium">Instance is suspended</p>
+              <p className="max-w-md text-sm text-muted-foreground">
+                Browsing data wakes the database. It suspends again on its own after it goes idle.
+              </p>
+              {serviceId
+                ? <Button onClick={() => { void wake() }}>Wake and browse</Button>
+                : <Button variant="secondary" onClick={reload}>Check again</Button>}
+              {wakeError && <p className="text-sm text-destructive">{wakeError}</p>}
+            </div>
+          )}
+        </div>
         {footer}
       </div>
     )
@@ -163,7 +197,7 @@ export function DatabaseInsight() {
         <EmptyState icon={Database} title="No Postgres in this branch"
           description="Add a postgres service on the Service page and this page fills in." />
       ) : pg ? (
-        <DatabasePanel projectId={projectId} branch={branch} group={pg.name}
+        <DatabasePanel projectId={projectId} branch={branch} group={pg.name} serviceId={pg.id}
           footer={
             <div className="flex justify-center">
               <Link to={`/p/${projectId}/${branch}/services?service=${encodeURIComponent(pg.id)}&tab=settings`}>

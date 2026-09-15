@@ -607,6 +607,58 @@ test('secrets tree: minted creds under their service; user secrets grouped by bi
   expect(main.services.find((s: { name: string }) => s.name === 'api').secrets).toEqual(['API_KEY'])
 })
 
+// A service's Variables tab deletes a variable naming that service, and the Secrets page's Shared tab an unbound one
+// with `unbound=true`. Either narrows the delete to that copy: a name that has since been rebound elsewhere survives.
+test('DELETE /secrets/:name with service or unbound removes only that copy', async () => {
+  const id = await createProject()
+  await post(`/projects/${id}/services`, { type: 'compute', name: 'api' })
+  await post(`/projects/${id}/services`, { type: 'compute', name: 'worker' })
+  await put(`/projects/${id}/secrets/API_KEY`, { value: 'v', branch: 'main', service: 'compute/api' })
+  const bound = async () => (await get(`/projects/${id}/secrets/tree`)).json()
+    .branches.find((b: { name: string }) => b.name === 'main')
+    .services.find((s: { name: string }) => s.name === 'api').secrets as string[]
+
+  await app.inject({ method: 'DELETE', url: `/projects/${id}/secrets/API_KEY?branch=main&service=compute/worker` })
+  expect(await bound()).toEqual(['API_KEY'])
+  await app.inject({ method: 'DELETE', url: `/projects/${id}/secrets/API_KEY?branch=main&unbound=true` })
+  expect(await bound()).toEqual(['API_KEY'])
+  const res = await app.inject({ method: 'DELETE', url: `/projects/${id}/secrets/API_KEY?branch=main&service=compute/api` })
+  expect(res.statusCode).toBe(200)
+  expect(await bound()).toEqual([])
+})
+
+// `unbound=true` takes the branch's unbound copy and leaves a same-named project-wide one, which the branch then
+// falls back to. A narrowing the route cannot read exactly is a 400 that deletes nothing: without a branch it used to
+// reach the project-wide row, and a repeated or mis-cased `unbound` fell back to the broad delete.
+test('DELETE /secrets/:name narrowing needs a branch and one exact value, or deletes nothing', async () => {
+  const id = await createProject()
+  await post(`/projects/${id}/services`, { type: 'compute', name: 'api' })
+  await put(`/projects/${id}/secrets/SHARED`, { value: 'proj' })
+  await put(`/projects/${id}/secrets/SHARED`, { value: 'branch', branch: 'main' })
+  await put(`/projects/${id}/secrets/API_KEY`, { value: 'v', branch: 'main', service: 'compute/api' })
+  const main = async () => (await get(`/projects/${id}/secrets?branch=main`)).json().secrets as Record<string, string>
+  const del = (qs: string) => app.inject({ method: 'DELETE', url: `/projects/${id}/secrets/${qs}` })
+
+  for (const qs of [
+    'SHARED?unbound=true',
+    'API_KEY?service=compute/api',
+    'API_KEY?branch=main&unbound=TRUE',
+    'API_KEY?branch=main&unbound=true&unbound=true',
+    'API_KEY?branch=main&service=compute/api&service=compute/api',
+    'API_KEY?branch=main&service=compute/api&unbound=true',
+    'API_KEY?branch=main&service=',
+  ]) {
+    expect((await del(qs)).statusCode, qs).toBe(400)
+  }
+  expect((await main()).SHARED).toBe('branch')
+  expect((await get(`/projects/${id}/secrets/tree`)).json().projectWide).toEqual(['SHARED'])
+  expect((await main()).API_KEY).toBe('v')
+
+  expect((await del('SHARED?branch=main&unbound=true')).statusCode).toBe(200)
+  expect((await main()).SHARED).toBe('proj')
+  expect((await get(`/projects/${id}/secrets/tree`)).json().projectWide).toEqual(['SHARED'])
+})
+
 // `secrets` merges platform-minted credentials with the user secrets bound to that service, and
 // the two have different reach: a minted credential goes to EVERY compute group in the branch, a
 // bound one only to its own service. Without `minted` a caller cannot answer "what can this app

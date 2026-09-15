@@ -190,8 +190,14 @@ export const api = {
   setSecret: (p: string, name: string, value: string, branch?: string, service?: string) =>
     call<{ ok: boolean }>('PUT', `/projects/${p}/secrets/${encodeURIComponent(name)}`,
       { value, ...(branch ? { branch } : {}), ...(branch && service ? { service } : {}) }),
-  unsetSecret: (p: string, name: string, branch?: string) =>
-    call<{ ok: boolean }>('DELETE', `/projects/${p}/secrets/${encodeURIComponent(name)}${qs({ branch })}`),
+  /** With a `branch`, `service` removes only the copy bound to that service (`<type>/<name>`) and `null` only the
+   *  unbound copy; omitted, every copy of the name in that scope goes. */
+  unsetSecret: (p: string, name: string, branch?: string, service?: string | null) =>
+    call<{ ok: boolean }>('DELETE', `/projects/${p}/secrets/${encodeURIComponent(name)}${qs({
+      branch,
+      service: branch && service ? service : undefined,
+      unbound: branch && service === null ? true : undefined,
+    })}`),
   renameService: (p: string, sid: string, name: string, branch?: string) =>
     call<{ service: Service }>('POST', `/projects/${p}/services/${sid}/rename${qs({ branch })}`, { name }),
   lifecycle: (p: string, sid: string, verb: 'start' | 'stop' | 'suspend' | 'restart', branch: string) =>

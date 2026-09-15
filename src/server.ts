@@ -876,11 +876,25 @@ export function buildServer(
     catch (e) { return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) }) }
   })
 
+  // `service` (`<type>/<name>`, as PUT takes it) removes only the copy bound to that service, as the console's
+  // Variables tab deletes it; `unbound=true` removes only the branch's unbound copy. With neither, every row with
+  // that name and branch goes, as before.
+  //
+  // Both narrow a BRANCH delete, so both refuse to run without one, and a narrowing the route cannot read exactly
+  // is a 400, never the broad delete: without a branch, `unbound=true` meant the project-wide row; a repeated or
+  // mis-cased `unbound` fell back to every copy. Checked before the gate so a malformed request queues no approval.
   app.delete('/projects/:id/secrets/:name', async (req, reply) => {
     const { id, name } = req.params as { id: string; name: string }
-    const branch = (req.query as { branch?: string }).branch ?? null
+    const { branch, service, unbound } = req.query as { branch?: unknown; service?: unknown; unbound?: unknown }
+    if (service !== undefined || unbound !== undefined) {
+      if (typeof branch !== 'string' || !branch) return reply.code(400).send({ error: 'service and unbound narrow a branch delete: pass branch' })
+      if (service !== undefined && unbound !== undefined) return reply.code(400).send({ error: 'pass service or unbound, not both' })
+      if (service !== undefined && (typeof service !== 'string' || !service)) return reply.code(400).send({ error: 'service must be one <type>/<name>' })
+      if (unbound !== undefined && unbound !== 'true') return reply.code(400).send({ error: 'unbound takes only true' })
+    }
     if (!gated(id, 'secrets.write', reply)) return reply
-    engine.unsetUserSecret(id, name, branch)
+    engine.unsetUserSecret(id, name, (branch as string | undefined) ?? null,
+      typeof service === 'string' ? service : unbound === 'true' ? null : undefined)
     return { ok: true }
   })
 

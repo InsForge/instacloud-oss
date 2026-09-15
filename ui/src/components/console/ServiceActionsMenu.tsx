@@ -1,7 +1,9 @@
 // The console's row kebab (insta-frontend services/service-actions-menu.tsx): Rename Service,
 // Restart Service (compute only), Delete Service. Restart sits between the two on purpose, moving
-// Delete further from Rename. Self-host divergence: the console stages rename and delete into its
-// apply-changes batch; the daemon applies them immediately, so the dialogs call the API directly.
+// Delete further from Rename; like Delete, it is styled destructive. Self-host divergences: the console stages
+// rename and delete into its apply-changes batch, while the daemon applies them immediately, so the dialogs call
+// the API directly; and a compute service leads with Deploy Image, since the daemon deploys an image directly
+// where the console deploys through that batch.
 
 import { useState } from 'react'
 import { Button, cn, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@insforge/ui'
@@ -36,7 +38,7 @@ export function ServiceActionsMenu({ projectId, branch, service, onDone, onError
           )}
           <DropdownMenuItem onSelect={() => setRenameOpen(true)}>Rename Service</DropdownMenuItem>
           {service.type === 'compute' && (
-            <DropdownMenuItem onSelect={() => setRestartOpen(true)}>Restart Service</DropdownMenuItem>
+            <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setRestartOpen(true)}>Restart Service</DropdownMenuItem>
           )}
           <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setDeleteOpen(true)}>
             Delete Service

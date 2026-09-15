@@ -6,9 +6,9 @@
 //
 // Self-host divergences: no staged "Will be added" or template ghost cards (the daemon applies creates
 // and template deploys immediately, so there is nothing staged to draw); a volume is the only attachment
-// row (the daemon has no PgBouncer) and there are no "+ Add" slots under a card (attaching happens in the
-// Volume tab); no region in the footer (one node); no `?focus=` glide (no dashboard flow links to it).
-// Cards also open with Enter/Space, as the list rows do.
+// row (the daemon has no PgBouncer), and its "+ Add Volume" slot opens the Volume tab rather than staging the
+// add; no region in the footer (one node); no `?focus=` glide (no dashboard flow links to it). Cards also open
+// with Enter/Space, as the list rows do.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { cn } from '@insforge/ui'
@@ -17,9 +17,9 @@ import { api, type RuntimeHealthRow, type Service } from '../../api'
 import { usePoll } from '../../hooks'
 import {
   CARD_HEIGHT, CARD_MAX_HEIGHT, CARD_WIDTH, DOT_SPACING, DRAG_THRESHOLD, FAN_MAX, FIT_PADDING, LAYOUT_METRICS, PORT_Y, WIRE_DASH,
-  autoFit, cardHeight, clampScale, clearPositions, loadPositions, positionsKey, savePositions, snapToGrid, type Camera,
+  ADD_ROW_SPACE, autoFit, cardHeight, clampScale, clearPositions, loadPositions, positionsKey, savePositions, snapToGrid, type Camera,
 } from '../../lib/canvasLayout'
-import { attachmentsFor, type Attachment } from '../../lib/serviceAttachments'
+import { addableFor, attachmentsFor, type AddableAttachment, type Attachment } from '../../lib/serviceAttachments'
 import { edgeFans, edgeGeometry, layoutGraph, type Point, type ServiceLink } from '../../lib/serviceGraph'
 import { deriveStatus, healthFor } from '../../lib/status'
 import type { PendingApproval } from '../ApprovalPrompt'
@@ -331,6 +331,8 @@ export function ServiceCanvas({ projectId, branch, services, links, health, isWa
               onOpen={() => onOpen(service)}
               attachments={attachmentsFor(service)}
               onOpenAttachment={(att) => onOpen(service, att.tab ?? undefined)}
+              addable={addableFor(service)}
+              onAddAttachment={(att) => onOpen(service, att.tab)}
               onPointerDown={(e) => onCardPointerDown(e, service, point)}
               onPointerMove={onCardPointerMove}
               onPointerUp={onCardPointerUp}
@@ -360,7 +362,7 @@ function CanvasControl({ label, onClick, children }: { label: string; onClick: (
   )
 }
 
-function ServiceCard({ point, service, mark, status, actions, onOpen, attachments, onOpenAttachment, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: {
+function ServiceCard({ point, service, mark, status, actions, onOpen, attachments, onOpenAttachment, addable, onAddAttachment, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: {
   point: Point
   service: Service
   mark: ReactNode
@@ -370,6 +372,9 @@ function ServiceCard({ point, service, mark, status, actions, onOpen, attachment
   /** What is mounted, drawn as rows inside the card below its footer (lib/serviceAttachments.ts). */
   attachments: Attachment[]
   onOpenAttachment: (att: Attachment) => void
+  /** What the service could still mount: hover-revealed "+ Add" slots under the card. */
+  addable: AddableAttachment[]
+  onAddAttachment: (att: AddableAttachment) => void
   onPointerDown: (e: PointerEvent<HTMLDivElement>) => void
   onPointerMove: (e: PointerEvent<HTMLDivElement>) => void
   onPointerUp: (e: PointerEvent<HTMLDivElement>) => void
@@ -385,8 +390,11 @@ function ServiceCard({ point, service, mark, status, actions, onOpen, attachment
   }
   return (
     // Named hover group (`/node`): ServiceActionsMenu declares a bare `group` of its own, and an unnamed
-    // one here would light its kebab up from anywhere on the card.
-    <div className="group/node absolute select-none" style={{ left: point.x, top: point.y, width: CARD_WIDTH }}>
+    // one here would light its kebab up from anywhere on the card. The shell, not the card, is the group the
+    // "+ Add" slots watch, and while there are slots it pads itself by the row's space: hovering a slot then keeps
+    // its own group lit, and the 8px gap between card and slot belongs to the group rather than to neither.
+    <div className="group/node absolute select-none"
+      style={{ left: point.x, top: point.y, width: CARD_WIDTH, paddingBottom: addable.length > 0 ? ADD_ROW_SPACE : undefined }}>
       <div
         role="button"
         tabIndex={0}
@@ -444,6 +452,27 @@ function ServiceCard({ point, service, mark, status, actions, onOpen, attachment
           </div>
         )}
       </div>
+      {addable.length > 0 && (
+        // What could still be mounted, revealed on hover or keyboard focus 8px clear of the card: equal-width
+        // buttons in the card's own chrome. Opacity, not `invisible`, so the buttons stay in the focus order;
+        // pointer-events-none keeps a click off a button nobody can see. A press must not pan the canvas beneath.
+        <div
+          className="pointer-events-none absolute bottom-0 left-0 flex w-full gap-2 opacity-0 transition-opacity group-focus-within/node:pointer-events-auto group-focus-within/node:opacity-100 group-hover/node:pointer-events-auto group-hover/node:opacity-100"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {addable.map((att) => (
+            <button
+              key={att.kind}
+              type="button"
+              onClick={() => onAddAttachment(att)}
+              className="relative isolate flex h-8 flex-1 cursor-pointer items-center justify-center border border-border bg-card p-1.5 text-sm font-medium text-muted-foreground after:pointer-events-none after:absolute after:inset-0 after:-z-10 after:content-[''] hover:text-foreground hover:after:bg-alpha-4"
+            >
+              <Plus className="size-5 shrink-0" />
+              <span className="truncate px-1">Add {att.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

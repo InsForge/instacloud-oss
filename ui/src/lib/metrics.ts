@@ -376,6 +376,15 @@ const ZERO_FILL_CARDS: Record<MetricComponent, ZeroFillSpec[]> = {
   mongodb: [CPU_SPEC, MEMORY_SPEC],
 }
 
+/** The component's cards with NO lines, for a view with nothing to measure (the daemon's `note`): the console draws
+ *  its empty charts there, axes and "—", rather than a blank panel. No line, not a zero line: a zero would claim a
+ *  reading of an idle service that does not exist. */
+export function emptyMetricCards(component: MetricComponent): MetricCardData[] {
+  return ZERO_FILL_CARDS[component].map((spec) => ({
+    id: spec.id, title: spec.title, kind: spec.kind, unit: spec.unit ?? '', lines: [],
+  }))
+}
+
 /**
  * Ensure a component's known cards always render: cards the daemon returned
  * pass through, missing ones become a flat zero line across the query window. An

@@ -1585,6 +1585,31 @@ test('group picks one postgres service out of several, for logs and for metrics'
   vi.mocked(dockerFn).mockImplementation(fakeDocker)
 })
 
+// The Database tab's Wake and browse. A dashboard read never wakes a database, so the tab asks for the wake: through
+// the scheduler's api door, on the key the scheduler knows the service by. Something with nothing to schedule is 404.
+test('POST /services/:sid/wake wakes a sleeping database through the api door, and 404s what has nothing to wake', async () => {
+  const id = await createProject()
+  const services = (await get(`/projects/${id}/services?branch=main`)).json().services as Array<{ id: string; type: string }>
+  const pg = services.find((s) => s.type === 'postgres')!
+  const storage = services.find((s) => s.type === 'storage')!
+  const target = engine.serviceTargets().find((t) => t.serviceId === pg.id)
+  expect(target).toBeDefined()
+  const wake = vi.spyOn(engine, 'wake').mockResolvedValue(undefined)
+  try {
+    const res = await post(`/projects/${id}/services/${pg.id}/wake?branch=main`, {})
+    expect(res.statusCode).toBe(200)
+    expect(wake).toHaveBeenCalledTimes(1)
+    expect(wake).toHaveBeenCalledWith(target!.key, { door: 'api' })
+
+    const none = await post(`/projects/${id}/services/${storage.id}/wake?branch=main`, {})
+    expect(none.statusCode).toBe(404)
+    expect((await post('/projects/nope/services/pg-db/wake', {})).statusCode).toBe(404)
+    expect(wake).toHaveBeenCalledTimes(1)
+  } finally {
+    wake.mockRestore()
+  }
+})
+
 test('metrics endpoint answers in the cloud series names (cpu_cores in vCPU, memory_used_bytes), labelled by service', async () => {
   const id = await createProject()
   await post(`/projects/${id}/deploy`, { image: 'app:1', branch: 'main', port: 3000 })

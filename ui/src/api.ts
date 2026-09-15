@@ -202,6 +202,9 @@ export const api = {
     call<{ service: Service }>('POST', `/projects/${p}/services/${sid}/rename${qs({ branch })}`, { name }),
   lifecycle: (p: string, sid: string, verb: 'start' | 'stop' | 'suspend' | 'restart', branch: string) =>
     call<{ service?: Service; state?: string }>('POST', `/projects/${p}/services/${sid}/${verb}${qs({ branch })}`),
+  /** Wake a sleeping service (any type) and wait for it to be ready: the Database tab's Wake and browse. */
+  wakeService: (p: string, sid: string, branch: string) =>
+    call<{ state?: string }>('POST', `/projects/${p}/services/${sid}/wake${qs({ branch })}`),
   setAccess: (p: string, sid: string, isPublic: boolean, branch: string) =>
     call<{ service?: Service }>('PUT', `/projects/${p}/services/${sid}/access`, { public: isPublic, branch }),
 

@@ -183,7 +183,7 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
             <div id="service-detail-panel" role="tabpanel" aria-labelledby={`service-detail-panel-tab-${active}`}
               className="flex min-w-0 flex-1 flex-col gap-3">
               <ErrorNote error={error} />
-              {active === 'database' && <DatabasePanel projectId={projectId} branch={branch} group={service.name} />}
+              {active === 'database' && <DatabasePanel projectId={projectId} branch={branch} group={service.name} serviceId={service.id} />}
               {/* The console's Metrics tab, with its time range picker for every service type. */}
               {active === 'metrics' && obsComponentFor(service.type) && (
                 // Keyed by service: the overlay stays mounted when another service is opened, and a

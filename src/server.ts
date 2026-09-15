@@ -469,6 +469,24 @@ export function buildServer(
     })
   }
 
+  // Wake one sleeping service now: the console's "Wake and browse" on a suspended database. A dashboard read never
+  // wakes a database (decision 48), and start/stop/suspend are compute's, so without this the Database tab could only
+  // wait for some other connection. The scheduler's api door, as `insta compute start` uses: it takes the service's
+  // operation lock and waits for readiness. Ungated like the lifecycle verbs.
+  app.post('/projects/:id/services/:sid/wake', async (req, reply) => {
+    const { id, sid } = req.params as { id: string; sid: string }
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    try {
+      const { branch, serviceId } = engine.resolveSid(id, sid, (req.query as { branch?: string }).branch)
+      const key = engine.serviceKey(branch, serviceId)
+      if (!engine.serviceTargets().some((t) => t.key === key)) {
+        return reply.code(404).send({ error: `service not found: ${sid} has nothing to wake on this branch` })
+      }
+      await engine.wake(key, { door: 'api' })
+      return { state: engine.stateOf(key) }
+    } catch (e) { const m = e instanceof Error ? e.message : String(e); return reply.code(errCode(m, e)).send({ error: m }) }
+  })
+
   // Not folded into the verb loop above: a restart is a redeploy, not a desired-state flip, so it
   // takes the deploy path (fresh env) rather than the adapter's lifecycle ops — and therefore the
   // `deploy` gate that POST /deploy stands behind. The verbs above change whether the service runs;

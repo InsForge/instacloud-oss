@@ -1585,6 +1585,17 @@ test('group picks one postgres service out of several, for logs and for metrics'
   vi.mocked(dockerFn).mockImplementation(fakeDocker)
 })
 
+// A service's Metrics tab asks with `group`. With nothing deployed for it, the note used to say "nothing deployed on
+// this branch" even while the branch ran a database, which the tab then showed as its reason.
+test('metrics with nothing to measure name the service when asked for one, and the branch when not', async () => {
+  const id = await createProject()
+  const scoped = (await get(`/projects/${id}/metrics?component=compute&branch=main&group=web`)).json()
+  expect(scoped.series).toEqual([])
+  expect(scoped.note).toBe('nothing deployed for this service')
+  const branch = (await get(`/projects/${id}/metrics?component=compute&branch=main`)).json()
+  expect(branch.note).toBe('nothing deployed on this branch')
+})
+
 test('metrics endpoint answers in the cloud series names (cpu_cores in vCPU, memory_used_bytes), labelled by service', async () => {
   const id = await createProject()
   await post(`/projects/${id}/deploy`, { image: 'app:1', branch: 'main', port: 3000 })

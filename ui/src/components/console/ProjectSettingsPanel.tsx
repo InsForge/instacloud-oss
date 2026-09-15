@@ -176,8 +176,11 @@ function DeleteProjectSection({ projectId, projectName }: { projectId: string; p
 
   const grantAndRetry = async (approvalId: string) => {
     const grant = await api.decide(projectId, approvalId, 'approve')
-    if (grant.kind === 'error') return fail(grant.error)
+    // Whether or not the grant went through, this approval is spent for the next confirm: another caller may have
+    // decided it already (the daemon answers 404), and retrying that dead id would block every later confirm. The
+    // next confirm then sends a fresh DELETE, which raises a new approval if one is still required.
     pendingApproval.current = null
+    if (grant.kind === 'error') return fail(grant.error)
     const retried = await api.deleteProject(projectId)
     if (retried.kind === 'error') return fail(retried.error)
     if (retried.kind === 'approval') return fail('The delete still needs approval. Open Notifications to approve it.')

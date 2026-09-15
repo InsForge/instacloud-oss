@@ -24,12 +24,19 @@ export const API_TOKEN_ENV = 'INSTA_API_TOKEN'
 
 const INSTALL = 'npm install -g insta'
 
-/** The one CLI line the "CLI" chip copies: install, point at this daemon, link this project. */
+/** The setup as one shell command per step: install, point at this daemon, link this project. The Service page's
+ *  connect-agent panel gives each its own copy row, as the console does: `&&` is a syntax error in Windows PowerShell
+ *  5.1, and a multi-line paste loses queued lines on shells without bracketed paste. */
+export function cliSteps(projectId: string, mode: RunMode, apiUrl: string): string[] {
+  const point = mode === 'server'
+    ? `insta login --api-key "$${API_TOKEN_ENV}" --api-url ${apiUrl}`
+    : `export INSTA_API_URL=${apiUrl}`
+  return [INSTALL, point, `insta project link ${projectId}`]
+}
+
+/** The one CLI line the "CLI" chip copies: the same steps, chained. */
 export function cliLine(projectId: string, mode: RunMode, apiUrl: string): string {
-  const link = `insta project link ${projectId}`
-  return mode === 'server'
-    ? `${INSTALL} && insta login --api-key "$${API_TOKEN_ENV}" --api-url ${apiUrl} && ${link}`
-    : `${INSTALL} && export INSTA_API_URL=${apiUrl} && ${link}`
+  return cliSteps(projectId, mode, apiUrl).join(' && ')
 }
 
 /** The one prompt the "Prompt" chip copies, for a coding agent to run the same setup. */

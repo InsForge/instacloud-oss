@@ -1,4 +1,5 @@
 import { type ReactNode } from 'react'
+import { templateCategoryLabel } from '../lib/templatePicker'
 import {
   Button,
   cn,
@@ -164,10 +165,9 @@ export function TemplateLogo({ src, name, className }: { src?: string | null; na
   )
 }
 
-/** The cloud's category label: `ai-agent` -> `AI agent`, otherwise dashes to spaces. */
+/** The cloud's category label ("AI Agent", "LLM", "Automation"), shared with the Deploy a Template picker. */
 export function categoryLabel(category: string): string {
-  if (category === 'ai-agent') return 'AI agent'
-  return category.replace(/-/g, ' ')
+  return templateCategoryLabel(category)
 }
 
 /** Sleeping hint for the database page. */

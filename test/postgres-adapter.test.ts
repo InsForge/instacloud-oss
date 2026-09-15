@@ -203,7 +203,8 @@ test('readiness needs the row a live server sends: an empty answer is not ready'
     on: (args) => (args.includes('select 1') ? (answers++ < 2 ? '' : '1') : undefined),
   })
   await pgWaitReady('io-demo-main-pg-db', 10_000, exec)
-  expect(answers).toBe(3)
+  // 4 total: two empty (not ready), one '1' (first ready, triggers settle), one '1' (settle confirms).
+  expect(answers).toBe(4)
   // Each not-ready round re-checks that the container is still alive before it sleeps.
   expect(calls.filter((a) => a[0] === 'inspect').length).toBe(2)
 })

@@ -16,6 +16,7 @@ import { api, type Decision } from '../../api'
 import { usePoll } from '../../hooks'
 import { SETTINGS_TABS, settingsTabFrom, withoutPanel, withSettings } from '../../lib/panels'
 import { readDraftName, writeDraftName } from '../../lib/settingsDraft'
+import { afterDelete, DISCLOSE_MESSAGE } from '../../lib/governedDelete'
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog'
 import { highlightUnsavedPanelFooter, PanelModal, PanelSaveFooter } from './PanelModal'
 import { refreshProjectsNow, useProjectName } from './ProjectSwitcher'
@@ -147,27 +148,62 @@ function DeleteProjectSection({ projectId, projectName }: { projectId: string; p
   // The confirm dialog closes once its action resolves; a failed delete marks itself here so that close is skipped
   // and the error stays readable. Cancel still closes, because only the failure's own close is consumed.
   const failed = useRef(false)
+  // A delete in flight: Cancel is disabled and every other close is refused until it answers, so the dialog can
+  // neither be dismissed mid-request nor reopened to send a second DELETE. A ref, because the close handler runs
+  // right after the request settles, before a re-render could refresh a state value.
+  const deleting = useRef(false)
+  const [busy, setBusy] = useState(false)
 
   const fail = (message: string) => {
     setError(message)
     failed.current = true
   }
 
+  // An approval the daemon asked for on an earlier, undisclosed confirm: the next confirm grants THIS one rather
+  // than raising another (lib/governedDelete.ts).
+  const pendingApproval = useRef<string | null>(null)
+
   const remove = async () => {
-    setError(null)
-    let result = await api.deleteProject(projectId)
-    if (result.kind === 'approval') {
-      // project.delete is governed. Whoever can confirm the delete here can also grant it, so the confirm covers
-      // both, as on the console: grant the single-use approval, then retry the delete, which consumes it.
-      setGated(true)
-      const grant = await api.decide(projectId, result.approvalId, 'approve')
-      if (grant.kind === 'error') return fail(grant.error)
-      result = await api.deleteProject(projectId)
+    if (deleting.current) return
+    deleting.current = true
+    setBusy(true)
+    // What the confirm button said when it was clicked: only a confirm made with "Approve & delete" showing may grant.
+    const disclosed = needsApproval
+    try {
+      await attemptDelete(disclosed)
+    } finally {
+      deleting.current = false
+      setBusy(false)
     }
-    if (result.kind === 'error') return fail(result.error)
-    if (result.kind === 'approval') return fail('The delete still needs approval. Open Notifications to approve it.')
+  }
+
+  const grantAndRetry = async (approvalId: string) => {
+    const grant = await api.decide(projectId, approvalId, 'approve')
+    if (grant.kind === 'error') return fail(grant.error)
+    pendingApproval.current = null
+    const retried = await api.deleteProject(projectId)
+    if (retried.kind === 'error') return fail(retried.error)
+    if (retried.kind === 'approval') return fail('The delete still needs approval. Open Notifications to approve it.')
+    finish()
+  }
+
+  const finish = () => {
     refreshProjectsNow()
     navigate('/')
+  }
+
+  const attemptDelete = async (disclosed: boolean) => {
+    setError(null)
+    // A second confirm after a disclosure grants the approval the first one raised.
+    if (disclosed && pendingApproval.current) return grantAndRetry(pendingApproval.current)
+    const result = await api.deleteProject(projectId)
+    const next = afterDelete(result.kind === 'approval' ? { kind: 'approval', approvalId: result.approvalId } : result.kind === 'error' ? result : { kind: 'ok' }, disclosed)
+    if (next.do === 'done') return finish()
+    if (next.do === 'fail') return fail(next.message)
+    if (next.do === 'grant') return grantAndRetry(next.approvalId)
+    pendingApproval.current = next.approvalId
+    setGated(true)
+    fail(DISCLOSE_MESSAGE)
   }
 
   return (
@@ -183,7 +219,7 @@ function DeleteProjectSection({ projectId, projectName }: { projectId: string; p
           </p>
         </div>
         <Button type="button" variant="destructive" size="sm" className="shrink-0 self-end @min-[600px]:self-center"
-          onClick={() => { setError(null); setGated(false); setOpen(true) }}>
+          onClick={() => { setError(null); setGated(pendingApproval.current !== null); failed.current = false; setOpen(true) }}>
           Delete Project
         </Button>
       </section>
@@ -192,6 +228,7 @@ function DeleteProjectSection({ projectId, projectName }: { projectId: string; p
         open={open}
         onOpenChange={(next) => {
           if (!next && failed.current) { failed.current = false; return }
+          if (!next && deleting.current) return
           setOpen(next)
         }}
         title="Delete Project"
@@ -212,6 +249,7 @@ function DeleteProjectSection({ projectId, projectName }: { projectId: string; p
         }
         confirmText={needsApproval ? 'Approve & delete' : 'Delete'}
         cancelText="Cancel"
+        isLoading={busy}
         onConfirm={remove}
       />
     </>

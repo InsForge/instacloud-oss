@@ -1587,7 +1587,7 @@ test('group picks one postgres service out of several, for logs and for metrics'
 
 // The Database tab's Wake and browse. A dashboard read never wakes a database, so the tab asks for the wake: through
 // the scheduler's api door, on the key the scheduler knows the service by. Something with nothing to schedule is 404.
-test('POST /services/:sid/wake wakes a sleeping database through the api door, and 404s what has nothing to wake', async () => {
+test('POST /services/:sid/wake wakes a sleeping database through the api door, 404s what has nothing to wake, and refuses compute', async () => {
   const id = await createProject()
   const services = (await get(`/projects/${id}/services?branch=main`)).json().services as Array<{ id: string; type: string }>
   const pg = services.find((s) => s.type === 'postgres')!
@@ -1604,6 +1604,16 @@ test('POST /services/:sid/wake wakes a sleeping database through the api door, a
     const none = await post(`/projects/${id}/services/${storage.id}/wake?branch=main`, {})
     expect(none.statusCode).toBe(404)
     expect((await post('/projects/nope/services/pg-db/wake', {})).statusCode).toBe(404)
+    expect(wake).toHaveBeenCalledTimes(1)
+
+    // Compute is refused: the api door would wake a durably STOPPED app without clearing its stop intent. `start` does.
+    await post(`/projects/${id}/deploy`, { image: 'app:1', branch: 'main', port: 3000 })
+    const app = ((await get(`/projects/${id}/services?branch=main`)).json().services as Array<{ id: string; type: string }>)
+      .find((s) => s.type === 'compute')!
+    expect(engine.serviceTargets().some((t) => t.serviceId === app.id)).toBe(true)
+    const compute = await post(`/projects/${id}/services/${app.id}/wake?branch=main`, {})
+    expect(compute.statusCode).toBe(400)
+    expect(compute.json().error).toMatch(/start/)
     expect(wake).toHaveBeenCalledTimes(1)
   } finally {
     wake.mockRestore()

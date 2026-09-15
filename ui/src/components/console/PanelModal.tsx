@@ -115,7 +115,8 @@ export function PanelModal({ title, sidebar, bodyClassName, closeOnOutsideClick 
   }, [])
 
   return (
-    <div ref={panelRef} className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={title}>
+    // `data-state="open"` lets an overlay underneath (a service detail) see this one on top (nestedDialog.ts).
+    <div ref={panelRef} className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={title} data-state="open">
       <div className="absolute inset-0 bg-black/80" onClick={closeOnOutsideClick ? requestClose : undefined} />
       {/* Anchored to the center of the page; height capped so at least 64px of backdrop stays above and below. */}
       <div className={cn(

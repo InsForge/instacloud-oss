@@ -140,7 +140,8 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
   const ctx: Ctx = { projectId, branch, service, onDone: reload, onError: setError, onApproval: setApproval }
 
   return (
-    <div ref={overlayRef} className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={service.name}>
+    // `data-state="open"`, like a Radix dialog, so an overlay stacked on this one can see it (nestedDialog.ts).
+    <div ref={overlayRef} className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={service.name} data-state="open">
       <div className="absolute inset-0 bg-black/80" onClick={onClose} />
       <div className="absolute inset-x-6 top-16 bottom-16 mx-auto flex max-w-[1440px] flex-col overflow-hidden border border-border bg-semantic-1 shadow-[0px_8px_12px_0px_rgba(0,0,0,0.24)]">
         <div className="flex shrink-0 items-center gap-3 px-4 py-4">

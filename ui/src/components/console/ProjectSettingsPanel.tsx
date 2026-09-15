@@ -16,7 +16,7 @@ import { api, type Decision } from '../../api'
 import { usePoll } from '../../hooks'
 import { SETTINGS_TABS, settingsTabFrom, withoutPanel, withSettings } from '../../lib/panels'
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog'
-import { PanelModal, PanelSaveFooter } from './PanelModal'
+import { highlightUnsavedPanelFooter, PanelModal, PanelSaveFooter } from './PanelModal'
 import { refreshProjectsNow, useProjectName } from './ProjectSwitcher'
 
 export function ProjectSettingsPanel({ projectId }: { projectId: string }) {
@@ -34,6 +34,8 @@ export function ProjectSettingsPanel({ projectId }: { projectId: string }) {
           <nav aria-label="Project settings" className="flex gap-1.5 overflow-x-auto px-3 pb-2 sm:flex-col">
             {SETTINGS_TABS.map((tab) => (
               <Link key={tab.id} to={`${pathname}${withSettings(search, tab.id)}`} aria-current={active.id === tab.id ? 'page' : undefined}
+                // Leaving General unmounts its draft, so a tab switch gets the same unsaved-changes guard as closing.
+                onClick={(event) => { if (active.id !== tab.id && highlightUnsavedPanelFooter(document)) event.preventDefault() }}
                 className={cn(
                   'flex shrink-0 items-center gap-3 rounded p-1.5 text-sm leading-5 transition-colors hover:bg-alpha-4 focus-visible:outline-2 focus-visible:outline-ring',
                   active.id === tab.id ? 'bg-alpha-8 text-foreground' : 'text-muted-foreground',

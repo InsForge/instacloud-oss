@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react'
 import { Button, cn } from '@insforge/ui'
 import { Check, Copy } from 'lucide-react'
 import { copyText } from '../../lib/clipboard'
+import { copyRowKey, isCopyConfirmed } from '../../lib/copyConfirm'
 
 const ASSET = '/quick-start/'
 
@@ -20,16 +21,12 @@ const MODES = [
 ] as const
 type Mode = (typeof MODES)[number]['key']
 
-function CopyRowButton({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false)
-  useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), 2000)
-    return () => clearTimeout(timer)
-  }, [copied])
+/** A row's copy button. It holds no state of its own: the panel says whether this row is the one that was copied
+ *  (lib/copyConfirm.ts), so a Use CLI / Use Prompt switch cannot leave "Copied" on text that was never copied. */
+function CopyRowButton({ text, label, copied, onCopied }: { text: string; label: string; copied: boolean; onCopied: () => void }) {
   return (
     <Button variant="secondary" size="sm" type="button" className="h-8 shrink-0 gap-1.5" aria-label={copied ? `${label} copied` : label}
-      onClick={async () => { if (await copyText(text)) setCopied(true) }}>
+      onClick={async () => { if (await copyText(text)) onCopied() }}>
       {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
       {copied ? 'Copied' : 'Copy'}
     </Button>
@@ -61,6 +58,13 @@ export function ConnectAgentPanel({ prompt, cli, title = 'Connect Your Coding Ag
 }) {
   const [mode, setMode] = useState<Mode>(leadWith)
   const rows = mode === 'cli' ? cli : [prompt]
+  // The key of the row that was copied, cleared after two seconds.
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  useEffect(() => {
+    if (copiedKey === null) return
+    const timer = setTimeout(() => setCopiedKey(null), 2000)
+    return () => clearTimeout(timer)
+  }, [copiedKey])
   return (
     <div className={cn('flex w-[592px] max-w-full flex-col gap-3 border border-border bg-card p-3 shadow-[0px_8px_6px_rgba(0,0,0,0.04)]', className)}>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -80,12 +84,13 @@ export function ConnectAgentPanel({ prompt, cli, title = 'Connect Your Coding Ag
       </div>
       <div className="flex flex-col gap-2">
         {rows.map((row, i) => (
-          <div key={i} className="flex items-center gap-2 border border-border bg-alpha-4 p-3">
+          <div key={copyRowKey(mode, row)} className="flex items-center gap-2 border border-border bg-alpha-4 p-3">
             <p className="min-w-0 flex-1 truncate font-mono text-sm text-foreground" title={row}>
               {rows.length > 1 && <span className="text-muted-foreground select-none">{i + 1}. </span>}
               {row}
             </p>
-            <CopyRowButton text={row} label={rows.length > 1 ? `Copy step ${i + 1}: ${row}` : `Copy: ${row}`} />
+            <CopyRowButton text={row} label={rows.length > 1 ? `Copy step ${i + 1}: ${row}` : `Copy: ${row}`}
+              copied={isCopyConfirmed(copiedKey, mode, row)} onCopied={() => setCopiedKey(copyRowKey(mode, row))} />
           </div>
         ))}
       </div>

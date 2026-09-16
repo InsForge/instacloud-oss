@@ -73,13 +73,10 @@ access, and the daemon does not verify the signed assertion the CLI attaches to 
 
 ## Backups
 
-The backups API routes answer `501` with a hint to `pg_dump` the database, and there is
-no `insta backup` command yet. Until the backups milestone, back up the whole data directory:
-`state.json`, `pg/`, `md/` (Redis, MySQL and MongoDB, which a backup of only `pg/` and `vol/`
-silently loses), `vol/`, `garage/`, and `edge/` and `caddy/` (the internal CA and issued
-certificates), plus a `pg_dump "$(insta db url --group <name>)"` per Postgres service per branch
-(`--group` can be left out only when a branch has one). The exact
-procedure is [upgrade and backups](https://docs.instacloud.com/self-hosting/upgrade).
+The backups API routes answer `501` with a hint that names the documented path, and there is
+no `insta backup` command yet. Until the backups milestone: `pg_dump "$(insta db url)"` per
+branch, a tar of `vol/` and the Garage directories under the data directory. See
+[upgrade and backups](https://docs.instacloud.com/self-hosting/upgrade).
 
 ## MCP tools
 

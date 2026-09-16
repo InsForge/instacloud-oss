@@ -31,7 +31,7 @@ until something asks for it. Two details:
 
 ## Backups
 
-The backups API routes answer `501` today, with a hint to `pg_dump` the database, and there is no
+The backups API routes answer `501` today, with a hint that names this page, and there is no
 `insta backup` command, so this procedure is the only one there is. Follow it exactly: the parts
 that look optional are the parts that decide whether the archive is worth anything.
 
@@ -47,25 +47,14 @@ that look optional are the parts that decide whether the archive is worth anythi
 | `edge/`, `caddy/` | the internal CA and issued certificates | the `io-edge` container |
 
 `md/` is the one an earlier version of this page left out, and a backup that omits it loses every
-managed database while appearing to succeed. `metrics-history.json`, the dashboard's three days of
-chart history, is left out on purpose: it is disposable and refills from live samples.
+managed database while appearing to succeed.
 
-**The databases**, one dump per Postgres service per branch, which is the copy you should trust.
-With one Postgres on a branch, `insta db url` finds it; with several it refuses to guess, so name
-each one with `--group`. Every file below holds a whole database or the box's secrets, so they all go
-into one directory only you can read, whatever mode an older file of the same name had:
+**The databases**, one dump per branch, which is the copy you should trust:
 
 ```bash
-umask 077
-B=backup-$(date +%Y%m%d-%H%M%S) && mkdir -m 700 "$B"
-pg_dump "$(insta db url)" > "$B/main.sql"                             # the branch's only Postgres
-pg_dump "$(insta db url --branch feat)" > "$B/feat.sql"
-pg_dump "$(insta db url --group db --branch main)" > "$B/main-db.sql" # one line per service when there are several
-pg_dump "$(insta db url --group analytics --branch main)" > "$B/main-analytics.sql"
-sudo cp /etc/instacloud/instad.env "$B/"                              # INSTA_OSS_SECRET and every setting, not in the archive
+pg_dump "$(insta db url)" > main.sql
+pg_dump "$(insta db url --branch feat)" > feat.sql
 ```
-
-`insta services list` names the Postgres services on the current branch.
 
 **Everything else.** Stop EVERY writer first, not just the daemon: the branch containers and the
 object store keep writing to `md/`, `vol/` and `garage/` while `tar` reads them, and an archive
@@ -73,47 +62,37 @@ taken over a running container is torn for that service even when the file list 
 
 ```bash
 cd /etc/instacloud
-umask 077                                             # the archive holds credentials and certificates
 docker compose stop                                   # instad, the edge AND garage
 docker ps -q --filter 'name=^io-' | xargs -r docker stop   # every branch container
-rm -f instacloud-data.tgz.tmp                         # a fresh file, so umask applies
-tar -C /var/lib/instacloud -czf instacloud-data.tgz.tmp state.json pg md vol garage edge caddy
-chmod 600 instacloud-data.tgz.tmp && mv instacloud-data.tgz.tmp instacloud-data.tgz   # private even over an older archive
+tar -C /var/lib/instacloud -czf instacloud-data.tgz state.json pg md vol garage edge caddy
 docker compose start
 insta compute start <group>                           # per group you had running, or let traffic wake them
 ```
 
-The paths assume the default data directory; with `--data-dir` use yours (`INSTA_OSS_DATA_DIR` in
-`/etc/instacloud/instad.env`). Treat the archive like a credential: it carries every service's credentials, data and
-certificates (`instad.env` is copied into the dump directory above), so encrypt any copy that leaves the box.
-
-The `docker ps` line is the one people skip. Branch containers are not part of the compose stack, so
+The middle line is the one people skip. Branch containers are not part of the compose stack, so
 `docker compose stop` does not touch them; the filter matches every container this daemon owns,
 because they are all named `io-<ref>-…`. Services that were asleep stay asleep and cost nothing.
 
 **What the archive is and is not.** With every writer stopped it is a consistent point-in-time
-copy of the whole data directory. If you cannot stop the branch containers (you have traffic to serve), the
+copy of the whole box. If you cannot stop the branch containers (you have traffic to serve), the
 archive is still consistent for `state.json` and for any service that was ASLEEP at the time, and
 NOT for a service that was running: for those, use the `pg_dump` above for Postgres, and accept
 that a running Redis, MySQL or MongoDB is captured mid-write. There is no third option today.
 
-**Restore.** Restoring from the archive is not supported yet
-([#139](https://github.com/InsForge/instacloud-oss/issues/139)). The archive carries `state.json`
-and the data, but not the Docker containers and networks `state.json` points at, and a wake does
-not recreate a missing container: it fails instead. That holds on a new machine, and on this one
-for any service, branch or project deleted since the backup. Keep the archive as a cold copy.
-
-The supported recovery is the dumps. Recreate the project and its services with `insta`, then load
-each Postgres dump into its service:
+**Restore, on a clean machine:**
 
 ```bash
-insta project create demo
-insta services add postgres db
-psql "$(insta db url --group db)" < backup-<stamp>/main-db.sql       # one line per Postgres service per branch
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sh            # same INSTA_OSS_DOMAIN as the old box
+cd /etc/instacloud && docker compose stop
+tar -C /var/lib/instacloud -xzf instacloud-data.tgz
+docker compose start
+psql "$(insta db url)" < main.sql                     # per branch, if you restored from dumps
 ```
 
-Redis, MySQL, MongoDB and bucket contents do not come back this way; export them with their own
-tools too.
+Restore the archive BEFORE the first `insta` command: the daemon reads `state.json` at boot, and
+a daemon that has already written its own empty one will overwrite what you untar. Keep the
+domain the same, or every minted hostname in `state.json` points at a name that no longer
+resolves to this box.
 
 ## Growing the data disk
 

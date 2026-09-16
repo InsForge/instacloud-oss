@@ -155,11 +155,14 @@ const CLI_VERBS = [
 // Commands that do not exist. `insta policy` was RETIRED from the CLI (insta-cli's
 // test/retired-policy.test.ts pins "unknown command 'policy'"); opt-in approval is the dashboard's
 // policy matrix or PUT /projects/:id/policy/:action. It was being recommended to operators anyway.
-const INVENTED = ['compute domain add', 'tokens list', 'insta tokens', 'insta policy']
+const INVENTED = ['compute domain add', 'insta compute domain`', 'insta compute domain ', 'tokens list', 'insta tokens', 'insta policy']
 
-test('the README names no command that does not exist', () => {
-  const text = readFileSync(join(root, 'README.md'), 'utf8')
-  expect(INVENTED.filter((v) => text.includes(v))).toEqual([])
+test('the README and the docs pages name no command that does not exist', () => {
+  for (const rel of ['README.md', ...mdxPages()]) {
+    // "There is no `insta tokens` command" is the correct way to mention one, so it is not a hit.
+    const text = readFileSync(join(root, rel), 'utf8').replace(/\bno `[^`]+` command/g, '')
+    expect(INVENTED.filter((v) => text.includes(v)), rel).toEqual([])
+  }
 })
 
 test('COMPATIBILITY names every new route by its real verb', () => {

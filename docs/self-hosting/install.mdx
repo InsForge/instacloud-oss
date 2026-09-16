@@ -13,9 +13,11 @@ Server mode wants a machine you can point DNS at:
   anything rather than failing on the image pull
 - root: pipe the one-liner to `sudo sh` (the script itself calls `sudo` for nothing, and a
   non-root run stops at once with the command to use)
-- inbound TCP 80 and 443 allowed in the cloud firewall or security group, plus 5432 (and the other
-  database lanes) for clients outside the box. The installer opens a host firewall it finds
-  active, but it cannot see your provider's, and certificates are issued through 80 and 443
+- inbound TCP 80 and 443 allowed in the cloud firewall or security group, and 5432 only if
+  Postgres clients outside the box need it. Keep Redis (6379), MongoDB (27017) and the MySQL lane
+  range closed at the provider: those lanes are for containers on the box, and the installer's own
+  firewall rules leave them private. It opens a host firewall it finds active, but it cannot see
+  your provider's, and certificates are issued through 80 and 443
 - 2 vCPU, 2 GiB RAM, 15 GiB free disk. A first install refuses a box under the memory or disk
   minimum and says which one; an upgrade of a box that is already installed warns and continues.
   One vCPU is a warning either way: it runs, and every deploy and fork is slow

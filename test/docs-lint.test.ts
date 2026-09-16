@@ -92,6 +92,15 @@ test('the internal-CA guidance names the variable every client reads, S3 include
 
   const domains = readFileSync(join(root, 'docs/self-hosting/domains.mdx'), 'utf8')
   for (const v of vars) expect(domains, `docs/self-hosting/domains.mdx omits ${v}`).toContain(v)
+  // Clients run off the box, where the server's /var/lib/instacloud/edge/ca.pem does not exist: every
+  // client line points at the copy the page fetches first, never at the server path.
+  const clientLines = domains.split('\n').filter((l) => vars.some((v) => l.includes(`${v} `) || l.includes(`${v}=`)))
+  expect(clientLines.length).toBeGreaterThanOrEqual(vars.length)
+  for (const l of clientLines) {
+    expect(l, l).toContain('instacloud-ca.pem')
+    expect(l, l).not.toContain('/var/lib/instacloud/edge/ca.pem')
+  }
+  expect(domains).toMatch(/ssh \S+@<box> sudo cat \/var\/lib\/instacloud\/edge\/ca\.pem > \.\/instacloud-ca\.pem/)
 
   // ...and the smoke script exports what it tells operators to export.
   const smoke = readFileSync(join(root, 'e2e/server-smoke.sh'), 'utf8')

@@ -5,24 +5,6 @@ description: "The gaps people run into most often, and what to reach for instead
 
 InstaCloud is young and some things are not here yet. Below are the ones people run into most often, with the way through where there is one. If something is blocking you and it is not here, say so on [Discord](https://discord.com/invite/MPxwj5xVvW). What people are actually stuck on is how this gets shorter.
 
-## No cron jobs
-
-Nothing in the CLI or the MCP server schedules work, so a job that has to run every night has nowhere of its own to live.
-
-If your project has a Postgres service, `pg_cron` covers most of it. It is preloaded and already pointed at your database, so a schedule is one statement:
-
-```sql
-create extension if not exists pg_cron;
-
-select cron.schedule(
-  'nightly-cleanup',
-  '0 3 * * *',
-  $$delete from sessions where expires_at < now()$$
-);
-```
-
-That handles anything you can express as SQL. Add the `http` extension and a scheduled statement can call your own service, which is how application work runs on a timer today.
-
 ## Sleep is one dial per service
 
 A service either scales to zero or it does not. There is no schedule behind the dial and no per-route rule.
@@ -35,6 +17,26 @@ insta db always-on on             # keep Postgres warm
 ```
 
 An explicit setting wins on every branch. Billing is actual usage either way, so the choice is about cold starts rather than cost.
+
+## Cron jobs
+
+There is no scheduler to point a job at, so the schedule lives inside something you run, and that runs into the dial above.
+
+A scheduler inside your container, node-cron or APScheduler or Celery beat, only fires while the machine is up. On your default branch it keeps time. On any other branch, or on a service you scaled to zero, it does not: a suspended machine has no process to fire the job, and only real traffic wakes a service, never a clock. The job does not run late, it does not run at all.
+
+`pg_cron` is the sturdier answer, and it carries the same condition. It is preloaded and already pointed at your database, so a schedule is one statement:
+
+```sql
+create extension if not exists pg_cron;
+
+select cron.schedule(
+  'nightly-cleanup',
+  '0 3 * * *',
+  $$delete from sessions where expires_at < now()$$
+);
+```
+
+Postgres scales to zero by default, and a suspended instance fires nothing either, so `insta db always-on on` is what makes the schedule actually run. With the `http` extension a scheduled statement can then call your own service, which is how application work runs on a timer today.
 
 ## A volume costs you three things
 
@@ -62,12 +64,6 @@ insta branch switch feat-x
 insta deploy .
 ```
 
-Self-hosted InstaCloud OSS redeploys the parent's image for you.
-
 ## The branch boundary is separation, not authorization
 
 A branch keeps work off `main`, but it is not a permission. Any command taking `--branch main` still reaches `main` from inside a branch. If an agent is running commands for you, set policy on the actions that matter rather than trusting the boundary to hold.
-
-## Self-hosting
-
-InstaCloud OSS runs the same way with a few commands missing, `services scale` and `services upgrade` among them, and `insta secrets bind` answering 501 because every container already receives its services' credentials under their own names. [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md) is the command-by-command list.

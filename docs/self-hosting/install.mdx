@@ -194,9 +194,11 @@ Postgres containers against empty directories.
 | `--print-domain-note` | | print whether the automatic domain resolves to this box, and exit |
 | `-y` | | assume yes |
 
-Every `INSTA_OSS_*` variable in the environment when you run the script is passed through into
-`instad.env`, so the idle and sleep knobs can be set at install time. They are all listed on the
-[sleep and wake](/self-hosting/sleep) page.
+Every `INSTA_OSS_*` variable the script runs with is passed through into `instad.env`, so the idle
+and sleep knobs can be set at install time. They are all listed on the
+[sleep and wake](/self-hosting/sleep) page. Put them after `sudo`, as below: `sudo` resets the
+environment it inherits, so a variable you only `export` in your shell never reaches the script, and
+the install succeeds with the defaults instead.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo INSTA_OSS_IDLE_COMPUTE_SEC=900 sh -s -- --domain example.com --email ops@example.com

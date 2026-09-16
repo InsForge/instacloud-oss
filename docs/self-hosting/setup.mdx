@@ -97,7 +97,7 @@ script: it either creates the admin or fails loudly.
 With `INSTA_OSS_TLS=internal`, copy the root off the box first (for example
 `ssh ubuntu@<box> sudo cat /var/lib/instacloud/edge/ca.pem > ./instacloud-ca.pem`, since root SSH is
 usually off and the data directory is root-only), then add
-`--cacert ./instacloud-ca.pem` to the curls and `NODE_EXTRA_CA_CERTS=./instacloud-ca.pem` to the
+`--cacert ./instacloud-ca.pem` to the curls and `NODE_EXTRA_CA_CERTS=$PWD/instacloud-ca.pem` to the
 CLI: the path on the box does not exist on the machine you run them from. See
 [domains and TLS](/self-hosting/domains).
 

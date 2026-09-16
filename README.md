@@ -111,6 +111,7 @@ has no domain and no TLS.
 $ cd ~/my-app                       # the CLI links the project to your cwd
 $ insta project create demo
 created project 4496c3e1-… (demo)
+  resources:
   linked ./.insta/project.json (branch main)
 
 $ insta services add postgres db

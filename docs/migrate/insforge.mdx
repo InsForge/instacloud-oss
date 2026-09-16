@@ -102,14 +102,12 @@ Migrate my edge functions too, and check one of them runs before I switch over.
 
 ## What does not come over
 
-InsForge schedules are not affected by the move: they run in `pg_cron` inside your database and came over with the dump.
-
 Coming from a hosted project, more stays behind, all of it what InsForge ran on your behalf. Analytics answers 501 here and keeps its history in InsForge's own PostHog, and your usage and billing record stays with the old account. The AI gateway and the web scraper ran on InsForge's credentials, so both need yours. And social login moves onto your own OAuth app. Google and GitHub, the two InsForge sets up by default, key identities on an id that is the same whichever app asks, so those users keep their accounts. Apple scopes that id to the developer team, so check it before you move: its users would arrive as new accounts.
+
+Your schedules are not among them: they run in `pg_cron` inside your database and came over with the dump.
 
 ## Limitations
 
-A few things are not here yet, cron jobs among them. [Limitations](/limitations/overview) is the current list, and worth the minute before you commit.
+A few things are not here yet. [Limitations](/limitations/overview) is the current list, and worth the minute before you commit.
 
-And that is it. Every InstaCloud action your agent took is a command you can run yourself, in the [CLI reference](/reference/cli/overview). The inspection on the other side used `docker compose` and `pg_dump`.
-
-Once you are settled in, [database branching](/postgres/branching) is the part most people came for: one command clones your database, storage and apps, data included, so work an agent does *on its branch* stays there. The branch boundary is separation, not authorization: any command taking `--branch` still reaches `main`, so set policy for the actions that matter. Stuck anywhere? Come to [Discord](https://discord.com/invite/MPxwj5xVvW).
+Stuck anywhere? Come to [Discord](https://discord.com/invite/MPxwj5xVvW).

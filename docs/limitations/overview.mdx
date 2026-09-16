@@ -24,7 +24,3 @@ You pick a region when you create a service, and `insta services scale` adds rep
 ## A branch clones data, not running code
 
 `insta branch create` forks Postgres and storage copy-on-write, so the branch opens holding the parent's rows and objects. Its compute service has a URL and nothing on it until you `insta deploy`.
-
-## The branch boundary is separation, not authorization
-
-A branch keeps work off `main`, but any command taking `--branch main` still reaches `main` from inside one. If an agent runs commands for you, set policy on the actions that matter.

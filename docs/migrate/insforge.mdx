@@ -25,14 +25,20 @@ ACCESS_ANON_KEY=anon_...
 POSTGRES_DB=insforge
 ```
 
-A hosted InsForge project has no `.env` and no local directory. Its keys come from `npx -y @insforge/cli secrets get JWT_SECRET`, one at a time, and there is no separate `ENCRYPTION_KEY` because it runs on `JWT_SECRET` for both. Everything else below is the same.
+A hosted project has no `.env`. The same values live in its secret store, minus `ENCRYPTION_KEY`, which it does not have because it runs on `JWT_SECRET` for both. Your agent pipes each one from `@insforge/cli` straight into InstaCloud, never to your terminal.
 
 ### 1. Point a coding agent at your InsForge
 
-Work in the directory `setup.sh` created, since its `.env` and `deploy/` folder are what the migration reads. Give your agent the skill there:
+Work where your agent can read the project. Self-hosted, that is the directory `setup.sh` created, whose `.env` and `deploy/` folder the migration reads. Hosted, any directory you link:
 
 ```bash
-cd ~/insforge
+cd ~/insforge                                              # self-hosted
+npx -y @insforge/cli login && npx -y @insforge/cli link    # hosted
+```
+
+Then install the skill:
+
+```bash
 npx -y insta@latest setup agent
 ```
 
@@ -50,16 +56,18 @@ Or click **Create Project** in the [console](https://console.instacloud.com). A 
 
 ### 3. Ask your agent to migrate
 
-Stop everything that writes, and leave Postgres running for the copy:
+Files and database are two halves of one state, so nothing may write to either while they are copied. Self-hosted, stop the writers and leave Postgres running for the copy:
 
 ```bash
 docker compose stop insforge postgrest deno
 ```
 
-Files and database are two halves of one state, and nothing may write to either while they are copied. A hosted project has no equivalent command, so stop the writes in your app instead and keep the window short. If InsForge runs on another machine, bring its `.env`, `deploy/` folder and `storage-data` volume here first. Then hand over:
+That stops InsForge, not your app, so stop anything else on the machine that writes through it. If InsForge runs elsewhere, bring its `.env`, `deploy/` folder and `storage-data` volume here first.
+
+A hosted project cannot be stopped at all. Freeze writes in your app, keep the window short, and have your agent check your schedules first, since `pg_cron` keeps firing inside the database either way and a project whose schedules write application rows cannot be copied cleanly. Then hand over:
 
 ```text title="Prompt" wrap
-Migrate my InsForge in ~/insforge to InstaCloud: the database, its users and the storage files. Keep the secrets from its .env. Follow the insta skill's migration runbook, and stop before I switch my app over.
+Migrate my InsForge to InstaCloud: the database, its users and the storage files. Carry its existing keys over without printing them. Follow the insta skill's migration runbook, and stop before I switch my app over.
 ```
 
 It will ask you to approve anything that touches production, and it moves the files before the database, because the list of files lives in the database.
@@ -69,12 +77,12 @@ It will ask you to approve anything that touches production, and it moves the fi
 ### 4. Switch your app over
 
 ```text title="Prompt" wrap
-Give me the new InsForge URL, and confirm the anon key and API key match the ones in my .env without printing either value.
+Give me the new InsForge URL, and confirm the anon key and API key came over unchanged, without printing either value.
 ```
 
-Change `baseUrl` in your `createClient` call to that URL. Nothing else in it changes. Leave the old stack stopped rather than deleted, so you can go back to it.
+Change `baseUrl` in your `createClient` call to that URL. Nothing else in it changes. Leave the old InsForge stopped rather than deleted, so you can go back to it.
 
-If your app ran on the same machine, it stopped along with your InsForge. Bringing it here is optional and separate from the migration, and with a Dockerfile it is [one command](/deploy/overview):
+Your app is separate from the migration. Stopping InsForge did not stop it, so stop it yourself before you cut over. Bringing it here afterwards is optional, and with a Dockerfile it is [one command](/deploy/overview):
 
 ```bash
 insta deploy .
@@ -94,7 +102,7 @@ Migrate my edge functions too, and check one of them runs before I switch over.
 
 Cron jobs are not supported for now. InsForge schedules are not affected: they run in `pg_cron` inside your database and came over with the dump.
 
-Coming from a hosted project, three more stay behind. Analytics answers 501 here, and its history stays in InsForge's own PostHog. So does your usage and billing record. Social login moves onto your own OAuth app, which costs your users nothing on the two InsForge sets up by default: Google and GitHub both key an identity on an id that is the same whichever app asks. Check Apple before you move, because it scopes that id to the developer team, so its users would arrive as new accounts.
+Coming from a hosted project, more stays behind, all of it what InsForge ran on your behalf. Analytics answers 501 here and keeps its history in InsForge's own PostHog, and your usage and billing record stays with the old account. The AI gateway and the web scraper ran on InsForge's credentials, so both need yours. And social login moves onto your own OAuth app. Google and GitHub, the two InsForge sets up by default, key identities on an id that is the same whichever app asks, so those users keep their accounts. Apple scopes that id to the developer team, so check it before you move: its users would arrive as new accounts.
 
 And that is it. Every InstaCloud action your agent took is a command you can run yourself, in the [CLI reference](/reference/cli/overview). The inspection on the other side used `docker compose` and `pg_dump`.
 

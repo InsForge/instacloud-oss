@@ -168,6 +168,10 @@ test('COMPATIBILITY names every new route by its real verb', () => {
   expect(INVENTED.filter((v) => text.includes(v))).toEqual([])
   // `insta backup` does not exist, so the only allowed mention is the one that says so.
   expect(text).toMatch(/no `insta backup` command/)
+  // Its backup summary names the same roots the upgrade page archives, so it cannot drift into a
+  // shorter list that restores without the managed databases or the certificates.
+  const backups = text.slice(text.indexOf('## Backups'), text.indexOf('\n## ', text.indexOf('## Backups') + 1))
+  for (const root_ of ['state.json', 'pg/', 'md/', 'vol/', 'garage/', 'edge/', 'caddy/']) expect(backups, root_).toContain(`\`${root_}\``)
 })
 
 // The backup page is the ONLY documented recovery path (the backups API answers 501), so what it
@@ -175,6 +179,13 @@ test('COMPATIBILITY names every new route by its real verb', () => {
 // from it, which loses every managed database from a backup that appears to succeed.
 test('the backup procedure covers every data root the code writes, and stops the writers first', () => {
   const page = readFileSync(join(root, 'docs/self-hosting/upgrade.mdx'), 'utf8')
+  // A wake fails on a missing container (scheduler NoContainerError) and nothing rebuilds one from
+  // state.json, on a new machine or for anything deleted since the backup, so the page may not
+  // carry an archive restore procedure until #139 lands one. The dumps are the recovery it offers.
+  expect(page).toMatch(/Restoring from the archive is not supported yet/)
+  expect(page).toContain('https://github.com/InsForge/instacloud-oss/issues/139')
+  expect(page).not.toMatch(/tar [^\n]*-x/)
+  expect(page).toMatch(/psql "\$\(insta db url --group [^)]+\)" </)
   const tarLine = page.split('\n').find((l) => l.startsWith('tar -C /var/lib/instacloud -czf'))
   expect(tarLine, 'the page must carry one tar line').toBeDefined()
 
@@ -198,9 +209,35 @@ test('the backup procedure covers every data root the code writes, and stops the
   expect(branches).toBeGreaterThan(compose)
   expect(tar).toBeGreaterThan(branches)
 
-  // And the restore side, which the page did not have at all.
-  expect(page).toContain('Restore, on a clean machine')
-  expect(page).toContain('tar -C /var/lib/instacloud -xzf')
+  // The dumps hold whole databases and instad.env holds INSTA_OSS_SECRET: every one is written into a
+  // fresh mode-700 directory under umask 077, so no older file's looser mode can expose it.
+  const dumpUmask = page.indexOf('umask 077')
+  const privateDir = page.indexOf('mkdir -m 700 "$B"')
+  const dumps = page.split('\n').filter((l) => l.startsWith('pg_dump '))
+  expect(dumps.length).toBeGreaterThan(0)
+  expect(privateDir).toBeGreaterThan(dumpUmask)
+  expect(page.indexOf('pg_dump ')).toBeGreaterThan(privateDir)
+  for (const l of dumps) expect(l, l).toMatch(/> "\$B\//)
+  expect(page).toMatch(/cp \/etc\/instacloud\/instad\.env "\$B\/"/)
+  // A --tls custom pair is mounted from its own host directory, outside the data directory, so the
+  // archive never holds it: the dump directory copies both files, following symlinks.
+  const tlsLoop = page.indexOf('for k in INSTA_OSS_TLS_CERT_FILE INSTA_OSS_TLS_KEY_FILE; do')
+  expect(tlsLoop).toBeGreaterThan(privateDir)
+  expect(page.indexOf('sudo cp -L "$f" "$B/"', tlsLoop)).toBeGreaterThan(tlsLoop)
+
+  // The archive holds every credential on the box, so it is created private: under umask 077, into
+  // a fresh temp file (umask never tightens a file that already exists), chmod 600, then renamed
+  // over any older archive, whose looser mode would otherwise survive the rewrite.
+  const umask = page.indexOf('umask 077')
+  expect(umask).toBeGreaterThan(0)
+  expect(tar).toBeGreaterThan(umask)
+  expect(tarLine).toMatch(/-czf instacloud-data\.tgz\.tmp /)
+  const fresh = page.indexOf('rm -f instacloud-data.tgz.tmp')
+  expect(fresh).toBeGreaterThan(umask)
+  expect(tar).toBeGreaterThan(fresh)
+  const seal = page.indexOf('chmod 600 instacloud-data.tgz.tmp && mv instacloud-data.tgz.tmp instacloud-data.tgz')
+  expect(seal).toBeGreaterThan(tar)
+
   // It says what the archive is NOT consistent for, rather than overclaiming.
   expect(page).toMatch(/NOT for a service that was running/)
 })

@@ -32,8 +32,10 @@ A hosted project has no `.env`. The same values live in its secret store, minus 
 Work where your agent can read the project. Self-hosted, that is the directory `setup.sh` created, whose `.env` and `deploy/` folder the migration reads. Hosted, any directory you link:
 
 ```bash
-cd ~/insforge                                              # self-hosted
-npx -y @insforge/cli login && npx -y @insforge/cli link    # hosted
+cd ~/insforge                  # self-hosted
+
+npx -y @insforge/cli login     # hosted
+npx -y @insforge/cli link
 ```
 
 Then install the skill:

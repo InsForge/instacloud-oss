@@ -69,6 +69,7 @@ taken over a running container is torn for that service even when the file list 
 
 ```bash
 cd /etc/instacloud
+umask 077                                             # the archive holds credentials and certificates
 docker compose stop                                   # instad, the edge AND garage
 docker ps -q --filter 'name=^io-' | xargs -r docker stop   # every branch container
 tar -C /var/lib/instacloud -czf instacloud-data.tgz state.json pg md vol garage edge caddy
@@ -76,7 +77,11 @@ docker compose start
 insta compute start <group>                           # per group you had running, or let traffic wake them
 ```
 
-The middle line is the one people skip. Branch containers are not part of the compose stack, so
+The paths assume the default data directory; with `--data-dir` use yours (`INSTA_OSS_DATA_DIR` in
+`/etc/instacloud/instad.env`). Treat the archive like a credential: it carries every secret, database
+and certificate on the box, so encrypt any copy that leaves it.
+
+The `docker ps` line is the one people skip. Branch containers are not part of the compose stack, so
 `docker compose stop` does not touch them; the filter matches every container this daemon owns,
 because they are all named `io-<ref>-…`. Services that were asleep stay asleep and cost nothing.
 
@@ -86,28 +91,14 @@ archive is still consistent for `state.json` and for any service that was ASLEEP
 NOT for a service that was running: for those, use the `pg_dump` above for Postgres, and accept
 that a running Redis, MySQL or MongoDB is captured mid-write. There is no third option today.
 
-**Restore.** The archive restores onto the box it came from, where the branch containers and
-networks still exist. Stop every writer, then move the current data roots aside before you
-extract: `tar` overwrites the files the archive carries but never deletes the ones created after
-the backup, and a Postgres or Garage directory holding both generations is corrupt.
+**Restore.** Restoring from the archive is not supported yet
+([#139](https://github.com/InsForge/instacloud-oss/issues/139)). The archive carries `state.json`
+and the data, but not the Docker containers and networks `state.json` points at, and a wake does
+not recreate a missing container: it fails instead. That holds on a new machine, and on this one
+for any service, branch or project deleted since the backup. Keep the archive as a cold copy.
 
-```bash
-cd /etc/instacloud && docker compose stop
-docker ps -q --filter 'name=^io-' | xargs -r docker stop
-cd /var/lib/instacloud && mkdir pre-restore            # same filesystem, so the moves copy nothing
-for d in state.json pg md vol garage edge caddy; do [ -e "$d" ] && mv "$d" pre-restore/; done
-tar -C /var/lib/instacloud -xzf /path/to/instacloud-data.tgz
-cd /etc/instacloud && docker compose start
-```
-
-Once the restored box answers, delete `/var/lib/instacloud/pre-restore`. A service created after
-the backup has a container but no row in the restored `state.json`; remove it with
-`docker rm -f` by name (`io-<ref>-…`).
-
-A restore onto a clean machine is not supported yet. The archive carries `state.json` and the data,
-but not the Docker containers and networks `state.json` points at, and a wake does not recreate a
-missing container: it fails instead. On a new machine, install, recreate the projects and services
-with `insta`, and load each Postgres dump into its service:
+The supported recovery is the dumps. Recreate the project and its services with `insta`, then load
+each Postgres dump into its service:
 
 ```bash
 insta project create demo
@@ -116,7 +107,7 @@ psql "$(insta db url --group db)" < main-db.sql       # one line per Postgres se
 ```
 
 Redis, MySQL, MongoDB and bucket contents do not come back this way; export them with their own
-tools before you move.
+tools too.
 
 ## Growing the data disk
 

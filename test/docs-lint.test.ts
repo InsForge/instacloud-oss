@@ -185,9 +185,12 @@ test('COMPATIBILITY names every new route by its real verb', () => {
 test('the backup procedure covers every data root the code writes, and stops the writers first', () => {
   const page = readFileSync(join(root, 'docs/self-hosting/upgrade.mdx'), 'utf8')
   // A wake fails on a missing container (scheduler NoContainerError) and nothing rebuilds one from
-  // state.json, so the page may not promise an archive restore onto a clean machine.
-  expect(page).not.toMatch(/Restore, on a clean machine/)
-  expect(page).toMatch(/A restore onto a clean machine is not supported yet/)
+  // state.json, on a new machine or for anything deleted since the backup, so the page may not
+  // carry an archive restore procedure until #139 lands one. The dumps are the recovery it offers.
+  expect(page).toMatch(/Restoring from the archive is not supported yet/)
+  expect(page).toContain('https://github.com/InsForge/instacloud-oss/issues/139')
+  expect(page).not.toMatch(/tar [^\n]*-x/)
+  expect(page).toMatch(/psql "\$\(insta db url --group [^)]+\)" </)
   const tarLine = page.split('\n').find((l) => l.startsWith('tar -C /var/lib/instacloud -czf'))
   expect(tarLine, 'the page must carry one tar line').toBeDefined()
 
@@ -211,23 +214,11 @@ test('the backup procedure covers every data root the code writes, and stops the
   expect(branches).toBeGreaterThan(compose)
   expect(tar).toBeGreaterThan(branches)
 
-  // And the restore side: onto the same box, with every writer stopped before the untar.
-  const restore = page.indexOf('**Restore.**')
-  const untar = page.indexOf('tar -C /var/lib/instacloud -xzf')
-  expect(restore).toBeGreaterThan(tar)
-  expect(page.indexOf("docker ps -q --filter 'name=^io-'", restore)).toBeGreaterThan(restore)
-  const stopped = page.indexOf("docker ps -q --filter 'name=^io-'", restore)
-  expect(untar).toBeGreaterThan(stopped)
-  // ...and every data root moved out of the way before the untar: tar never deletes files newer than
-  // the archive, so extracting over live roots leaves two generations of a database in one directory.
-  const moveLine = page.split('\n').find((l) => l.includes('mv "$d" pre-restore/'))
-  expect(moveLine, 'the restore must move the current roots aside').toBeDefined()
-  const moved = page.indexOf(moveLine as string, restore)
-  expect(moved).toBeGreaterThan(stopped)
-  expect(untar).toBeGreaterThan(moved)
-  for (const root_ of [...roots, 'state.json', 'garage', 'edge', 'caddy']) {
-    expect(moveLine, root_).toMatch(new RegExp(`\\s${root_.replace('.', '\\.')}(\\s|;)`))
-  }
+  // The archive holds every credential on the box, so it is created private.
+  const umask = page.indexOf('umask 077')
+  expect(umask).toBeGreaterThan(0)
+  expect(tar).toBeGreaterThan(umask)
+
   // It says what the archive is NOT consistent for, rather than overclaiming.
   expect(page).toMatch(/NOT for a service that was running/)
 })

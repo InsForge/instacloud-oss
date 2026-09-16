@@ -52,13 +52,17 @@ chart history, is left out on purpose: it is disposable and refills from live sa
 
 **The databases**, one dump per Postgres service per branch, which is the copy you should trust.
 With one Postgres on a branch, `insta db url` finds it; with several it refuses to guess, so name
-each one with `--group`:
+each one with `--group`. Every file below holds a whole database or the box's secrets, so they all go
+into one directory only you can read, whatever mode an older file of the same name had:
 
 ```bash
-pg_dump "$(insta db url)" > main.sql                                  # the branch's only Postgres
-pg_dump "$(insta db url --branch feat)" > feat.sql
-pg_dump "$(insta db url --group db --branch main)" > main-db.sql      # one line per service when there are several
-pg_dump "$(insta db url --group analytics --branch main)" > main-analytics.sql
+umask 077
+B=backup-$(date +%Y%m%d-%H%M%S) && mkdir -m 700 "$B"
+pg_dump "$(insta db url)" > "$B/main.sql"                             # the branch's only Postgres
+pg_dump "$(insta db url --branch feat)" > "$B/feat.sql"
+pg_dump "$(insta db url --group db --branch main)" > "$B/main-db.sql" # one line per service when there are several
+pg_dump "$(insta db url --group analytics --branch main)" > "$B/main-analytics.sql"
+sudo cp /etc/instacloud/instad.env "$B/"                              # INSTA_OSS_SECRET and every setting, not in the archive
 ```
 
 `insta services list` names the Postgres services on the current branch.
@@ -80,15 +84,15 @@ insta compute start <group>                           # per group you had runnin
 ```
 
 The paths assume the default data directory; with `--data-dir` use yours (`INSTA_OSS_DATA_DIR` in
-`/etc/instacloud/instad.env`). Treat the archive like a credential: it carries every secret, database
-and certificate on the box, so encrypt any copy that leaves it.
+`/etc/instacloud/instad.env`). Treat the archive like a credential: it carries every service's credentials, data and
+certificates (`instad.env` is copied into the dump directory above), so encrypt any copy that leaves the box.
 
 The `docker ps` line is the one people skip. Branch containers are not part of the compose stack, so
 `docker compose stop` does not touch them; the filter matches every container this daemon owns,
 because they are all named `io-<ref>-…`. Services that were asleep stay asleep and cost nothing.
 
 **What the archive is and is not.** With every writer stopped it is a consistent point-in-time
-copy of the whole box. If you cannot stop the branch containers (you have traffic to serve), the
+copy of the whole data directory. If you cannot stop the branch containers (you have traffic to serve), the
 archive is still consistent for `state.json` and for any service that was ASLEEP at the time, and
 NOT for a service that was running: for those, use the `pg_dump` above for Postgres, and accept
 that a running Redis, MySQL or MongoDB is captured mid-write. There is no third option today.
@@ -105,7 +109,7 @@ each Postgres dump into its service:
 ```bash
 insta project create demo
 insta services add postgres db
-psql "$(insta db url --group db)" < main-db.sql       # one line per Postgres service per branch
+psql "$(insta db url --group db)" < backup-<stamp>/main-db.sql       # one line per Postgres service per branch
 ```
 
 Redis, MySQL, MongoDB and bucket contents do not come back this way; export them with their own

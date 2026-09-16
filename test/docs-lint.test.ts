@@ -214,6 +214,17 @@ test('the backup procedure covers every data root the code writes, and stops the
   expect(branches).toBeGreaterThan(compose)
   expect(tar).toBeGreaterThan(branches)
 
+  // The dumps hold whole databases and instad.env holds INSTA_OSS_SECRET: every one is written into a
+  // fresh mode-700 directory under umask 077, so no older file's looser mode can expose it.
+  const dumpUmask = page.indexOf('umask 077')
+  const privateDir = page.indexOf('mkdir -m 700 "$B"')
+  const dumps = page.split('\n').filter((l) => l.startsWith('pg_dump '))
+  expect(dumps.length).toBeGreaterThan(0)
+  expect(privateDir).toBeGreaterThan(dumpUmask)
+  expect(page.indexOf('pg_dump ')).toBeGreaterThan(privateDir)
+  for (const l of dumps) expect(l, l).toMatch(/> "\$B\//)
+  expect(page).toMatch(/cp \/etc\/instacloud\/instad\.env "\$B\/"/)
+
   // The archive holds every credential on the box, so it is created private: under umask 077, into
   // a fresh temp file (umask never tightens a file that already exists), chmod 600, then renamed
   // over any older archive, whose looser mode would otherwise survive the rewrite.

@@ -77,7 +77,8 @@ The backups API routes answer `501` with a hint to `pg_dump` the database, and t
 no `insta backup` command yet. Until the backups milestone, back up the whole data directory:
 `state.json`, `pg/`, `md/` (Redis, MySQL and MongoDB, which a backup of only `pg/` and `vol/`
 silently loses), `vol/`, `garage/`, and `edge/` and `caddy/` (the internal CA and issued
-certificates), plus a `pg_dump "$(insta db url)"` per branch. The exact
+certificates), plus a `pg_dump "$(insta db url --group <name>)"` per Postgres service per branch
+(`--group` can be left out only when a branch has one). The exact
 procedure is [upgrade and backups](https://docs.instacloud.com/self-hosting/upgrade).
 
 ## MCP tools

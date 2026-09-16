@@ -47,14 +47,21 @@ that look optional are the parts that decide whether the archive is worth anythi
 | `edge/`, `caddy/` | the internal CA and issued certificates | the `io-edge` container |
 
 `md/` is the one an earlier version of this page left out, and a backup that omits it loses every
-managed database while appearing to succeed.
+managed database while appearing to succeed. `metrics-history.json`, the dashboard's three days of
+chart history, is left out on purpose: it is disposable and refills from live samples.
 
-**The databases**, one dump per branch, which is the copy you should trust:
+**The databases**, one dump per Postgres service per branch, which is the copy you should trust.
+With one Postgres on a branch, `insta db url` finds it; with several it refuses to guess, so name
+each one with `--group`:
 
 ```bash
-pg_dump "$(insta db url)" > main.sql
+pg_dump "$(insta db url)" > main.sql                                  # the branch's only Postgres
 pg_dump "$(insta db url --branch feat)" > feat.sql
+pg_dump "$(insta db url --group db --branch main)" > main-db.sql      # one line per service when there are several
+pg_dump "$(insta db url --group analytics --branch main)" > main-analytics.sql
 ```
+
+`insta services list` names the Postgres services on the current branch.
 
 **Everything else.** Stop EVERY writer first, not just the daemon: the branch containers and the
 object store keep writing to `md/`, `vol/` and `garage/` while `tar` reads them, and an archive
@@ -86,7 +93,7 @@ curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/instal
 cd /etc/instacloud && docker compose stop
 tar -C /var/lib/instacloud -xzf instacloud-data.tgz
 docker compose start
-psql "$(insta db url)" < main.sql                     # per branch, if you restored from dumps
+psql "$(insta db url)" < main.sql                     # per Postgres service per branch (--group <name> when a branch has several), if you restored from dumps
 ```
 
 Restore the archive BEFORE the first `insta` command: the daemon reads `state.json` at boot, and

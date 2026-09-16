@@ -54,8 +54,8 @@ chart history, is left out on purpose: it is disposable and refills from live sa
 the copy you should trust, plus `instad.env` and any custom TLS pair, none of which are in the
 archive. The `insta` commands act on the project this directory is linked to, so run the block once
 for EVERY project on the box (`insta project list` names them), each time from a directory linked to
-that project with `insta project link <id>`: each run writes its own `backup-<project>-<stamp>`
-directory, and a box with two projects needs both. Within a project the block asks the daemon which
+that project with `insta project link <id>`: each run writes its own `backup-<project id>-<stamp>`
+directory (the project's name is kept in its `project` file), and a box with two projects needs both. Within a project the block asks the daemon which
 branches exist and which Postgres services each one carries, so it runs unedited whatever the
 layout, and writes each dump to `<branch>/<service>.sql`.
 Everything goes into a fresh directory only you can read, whatever mode an older file of the same
@@ -72,7 +72,7 @@ projects=$(insta project list --json)
 name=$(printf '%s' "$projects" | jq -r --arg id "$pid" '.[] | select(.id == $id) | .name')
 [ -n "$name" ] || { echo "project $pid not found" >&2; exit 1; }
 umask 077
-B=backup-$name-$(date +%Y%m%d-%H%M%S)                 # one directory per project
+B=backup-$pid-$(date +%Y%m%d-%H%M%S)                  # one directory per project, by id: a display name may hold a /
 mkdir -m 700 "$B"                                     # refuses a directory that already exists
 echo "$name" > "$B/project"
 sudo cp /etc/instacloud/instad.env "$B/instad.env"    # the secrets first: INSTA_OSS_SECRET and every setting
@@ -108,7 +108,7 @@ set -eu                                               # a failed tar never repla
 [ "$(id -u)" = 0 ] || { echo 'run as root: sudo -i' >&2; exit 1; }   # before anything is stopped
 cd /etc/instacloud
 umask 077                                             # the archive holds credentials and certificates
-trap 'rm -f instacloud-data.tgz.tmp; docker compose start' EXIT   # set before the first stop: the stack comes back whatever happens
+trap 'rc=$?; rm -f instacloud-data.tgz.tmp; docker compose start || { echo "the stack did not restart: run docker compose start" >&2; rc=1; }; exit $rc' EXIT   # set before the first stop: the stack comes back, and a failed restart fails the block
 docker compose stop                                   # instad, the edge AND garage
 ids=$(docker ps -q --filter 'name=^io-')              # every branch container; a failed listing stops the block
 [ -z "$ids" ] || docker stop $ids
@@ -153,7 +153,7 @@ links the directory it runs in), and set the first line to that directory:
 ```bash
 (
 set -eu
-B=../backup-demo-20260916-120000                      # edit: one directory the backup block printed
+B=../backup-4496c3e1-0000-0000-0000-000000000000-20260916-120000   # edit: one directory the backup block printed
 insta project create "$(cat "$B/project")"            # the project the backup was taken from
 old=$(cat "$B/default-branch")
 new=$(insta branch list --json | jq -r '.[] | select(.is_default) | .name')

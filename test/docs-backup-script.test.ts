@@ -26,7 +26,7 @@ while [ $# -gt 0 ]; do
 done
 def=$(cat "$box/.default" 2>/dev/null || echo main)
 case $cmd in
-  "project create") set -- $pos; mkdir -p "$box/main"; echo main > "$box/.default"; echo "p-$1 $1" > "$box/.project" ;;
+  "project create") nm=$(echo $pos); id=p-$(printf '%s' "$nm" | tr -cd 'a-z0-9'); mkdir -p "$box/main"; echo main > "$box/.default"; echo "$id $nm" > "$box/.project" ;;
   "status")
     if [ -f "$box/.project" ]; then read -r id nm < "$box/.project"; printf '{"project":{"projectId":"%s","branch":"main"}}\n' "$id"
     else printf '{"project":null}\n'; fi ;;
@@ -60,6 +60,8 @@ case $cmd in
     echo "postgres://stub/$b/$g" ;;
 esac`
 
+const projectId = (name: string) => `p-${name.replace(/[^a-z0-9]/g, '')}`
+
 function sandbox(layout: Record<string, string[]> = { main: ['db'] }, project = 'demo') {
   const root = mkdtempSync(join(tmpdir(), 'io-backup-doc-'))
   const bin = join(root, 'bin'), etc = join(root, 'etc'), data = join(root, 'data'), work = join(root, 'work')
@@ -74,13 +76,13 @@ function sandbox(layout: Record<string, string[]> = { main: ['db'] }, project = 
   // Only `id -u` is faked, and only when a case asks: the archive block's root check. `id -g` and the dump
   // block's chown see the real user, so ownership is exercised for real.
   stub('id', `if [ "$1" = -u ] && [ -n "\${FAKE_UID:-}" ]; then echo "$FAKE_UID"; else exec ${which('id')} "$@"; fi`)
-  stub('docker', `echo "docker $*" >> "${root}/docker.log"\nif [ -n "\${FAIL_STOP:-}" ] && [ "$1 $2" = "compose stop" ]; then exit 1; fi\nif [ -n "\${FAIL_PS:-}" ] && [ "$1" = ps ]; then exit 1; fi\nif [ "$1" = ps ] && [ -n "\${BRANCH_IDS:-}" ]; then echo "$BRANCH_IDS"; fi\nif [ -n "\${FAIL_BRANCH_STOP:-}" ] && [ "$1" = stop ]; then exit 1; fi`)
+  stub('docker', `echo "docker $*" >> "${root}/docker.log"\nif [ -n "\${FAIL_STOP:-}" ] && [ "$1 $2" = "compose stop" ]; then exit 1; fi\nif [ -n "\${FAIL_PS:-}" ] && [ "$1" = ps ]; then exit 1; fi\nif [ "$1" = ps ] && [ -n "\${BRANCH_IDS:-}" ]; then echo "$BRANCH_IDS"; fi\nif [ -n "\${FAIL_BRANCH_STOP:-}" ] && [ "$1" = stop ]; then exit 1; fi\nif [ -n "\${FAIL_START:-}" ] && [ "$1 $2" = "compose start" ]; then exit 1; fi`)
   stub('tar', `if [ -n "\${FAIL_TAR:-}" ]; then echo partial > "$4"; exit 2; fi\nexec ${which('tar')} "$@"`)
   const setBox = (l: Record<string, string[]>) => {
     rmSync(join(root, 'box'), { recursive: true, force: true })
     mkdirSync(join(root, 'box'))
     writeFileSync(join(root, 'box/.default'), 'main\n')
-    if (project) writeFileSync(join(root, 'box/.project'), `p-${project} ${project}\n`)
+    if (project) writeFileSync(join(root, 'box/.project'), `${projectId(project)} ${project}\n`)
     for (const [branch, services] of Object.entries(l)) {
       mkdirSync(join(root, 'box', branch))
       for (const svc of services) writeFileSync(join(root, 'box', branch, svc), '')
@@ -114,7 +116,7 @@ test('the dump block runs unedited on a default box, secrets private, both halve
   writeFileSync(join(s.etc, 'instad.env'),
     `INSTA_OSS_TLS=custom\nINSTA_OSS_TLS_CERT_FILE=${join(s.root, 'certs/tls.pem')}\nINSTA_OSS_TLS_KEY_FILE=${join(s.root, 'keys/tls.pem')}\n`)
   expect(s.run(dumpBlock as string, s.work)).toBe(0)
-  const B = join(s.work, `backup-demo-${STAMP}`)
+  const B = join(s.work, `backup-p-demo-${STAMP}`)
   expect(statSync(B).mode & 0o777).toBe(0o700)
   for (const f of ['main/db.sql', 'instad.env', 'tls-cert.pem', 'tls-key.pem']) expect(existsSync(join(B, f)), f).toBe(true)
   expect(readFileSync(join(B, 'default-branch'), 'utf8').trim()).toBe('main')
@@ -132,7 +134,7 @@ test('the dump block dumps exactly what each branch carries, one directory per b
   const s = sandbox(DIVERGENT)
   writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
   expect(s.run(dumpBlock as string, s.work)).toBe(0)
-  const B = join(s.work, `backup-demo-${STAMP}`)
+  const B = join(s.work, `backup-p-demo-${STAMP}`)
   for (const f of ['main/db.sql', 'main/analytics.sql', 'feat/db.sql', 'a/b-c.sql', 'a-b/c.sql']) expect(existsSync(join(B, f)), f).toBe(true)
   expect(existsSync(join(B, 'feat/analytics.sql'))).toBe(false)
   expect(readFileSync(join(B, 'a/b-c.sql'), 'utf8')).toContain('postgres://stub/a/b-c')
@@ -144,13 +146,13 @@ test('a dump that fails stops the block but still leaves the secrets in the back
   const s = sandbox()
   writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
   expect(s.run(dumpBlock as string, s.work, { FAIL_DUMP: '1' })).toBeGreaterThan(0)
-  expect(existsSync(join(s.work, `backup-demo-${STAMP}`, 'instad.env'))).toBe(true)
+  expect(existsSync(join(s.work, `backup-p-demo-${STAMP}`, 'instad.env'))).toBe(true)
 })
 
 test('the dump block stops, writing nothing, when the backup directory already exists', () => {
   const s = sandbox()
   writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
-  const B = join(s.work, `backup-demo-${STAMP}`)
+  const B = join(s.work, `backup-p-demo-${STAMP}`)
   mkdirSync(B, { mode: 0o755 }); writeFileSync(join(B, 'main.sql'), 'OLD', { mode: 0o644 })
   expect(s.run(dumpBlock as string, s.work)).toBeGreaterThan(0)
   expect(readFileSync(join(B, 'main.sql'), 'utf8')).toBe('OLD')
@@ -214,7 +216,7 @@ test('the recovery block rebuilds exactly the dumped layout, clones nothing, and
     // A new machine: no project yet.
     rmSync(join(s.root, 'box'), { recursive: true, force: true }); mkdirSync(join(s.root, 'box'))
     writeFileSync(join(s.root, 'calls.log'), '')
-    const recovery = (recoveryBlock as string).replace(/^B=\S+/m, `B=backup-demo-${STAMP}`)
+    const recovery = (recoveryBlock as string).replace(/^B=\S+/m, `B=backup-p-demo-${STAMP}`)
     expect(s.run(recovery, s.work), `recovery ${JSON.stringify(layout)}`).toBe(0)
 
     expect(s.box()).toEqual(before)
@@ -252,7 +254,34 @@ test('the dump block is per project: it refuses an unlinked directory and names 
   s.setBox({ main: ['events'] })
   writeFileSync(join(s.root, 'box/.project'), 'p-blog blog\n')
   expect(s.run(dumpBlock as string, s.work)).toBe(0)
-  expect(readdirSync(s.work).sort()).toEqual([`backup-blog-${STAMP}`, `backup-shop-${STAMP}`])
-  expect(existsSync(join(s.work, `backup-shop-${STAMP}`, 'main/db.sql'))).toBe(true)
-  expect(existsSync(join(s.work, `backup-blog-${STAMP}`, 'main/events.sql'))).toBe(true)
+  expect(readdirSync(s.work).sort()).toEqual([`backup-p-blog-${STAMP}`, `backup-p-shop-${STAMP}`])
+  expect(existsSync(join(s.work, `backup-p-shop-${STAMP}`, 'main/db.sql'))).toBe(true)
+  expect(existsSync(join(s.work, `backup-p-blog-${STAMP}`, 'main/events.sql'))).toBe(true)
+})
+
+// A backup whose restart failed leaves the daemon, the edge and Garage stopped: the block must not report success.
+test('the archive block fails when the stack does not come back, even after a good archive', () => {
+  const s = sandbox()
+  for (const f of ['state.json']) writeFileSync(join(s.data, f), '{}')
+  for (const d of ['pg', 'md', 'vol', 'garage', 'edge', 'caddy']) mkdirSync(join(s.data, d))
+  expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '0', FAIL_START: '1' })).toBeGreaterThan(0)
+  expect(s.log('docker.log')).toContain('docker compose start')
+  expect(readFileSync(join(s.etc, 'instacloud-data.tgz')).subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]))
+  // ...and a tar failure is still reported when the restart also fails.
+  expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '0', FAIL_START: '1', FAIL_TAR: '1' })).toBeGreaterThan(0)
+})
+
+// A project's display name is free text (`src/engine.ts` rename allows a /), so it names nothing on disk.
+test('a project whose name holds a / backs up under its id and is recreated under its name', () => {
+  const s = sandbox({ main: ['db'] }, 'sales/eu')
+  writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
+  expect(s.run(dumpBlock as string, s.work)).toBe(0)
+  const B = join(s.work, `backup-${projectId('sales/eu')}-${STAMP}`)
+  expect(existsSync(join(B, 'main/db.sql'))).toBe(true)
+  expect(readFileSync(join(B, 'project'), 'utf8').trim()).toBe('sales/eu')
+
+  rmSync(join(s.root, 'box'), { recursive: true, force: true }); mkdirSync(join(s.root, 'box'))
+  const recovery = (recoveryBlock as string).replace(/^B=\S+/m, `B=backup-${projectId('sales/eu')}-${STAMP}`)
+  expect(s.run(recovery, s.work)).toBe(0)
+  expect(readFileSync(join(s.root, 'box/.project'), 'utf8').trim()).toBe(`${projectId('sales/eu')} sales/eu`)
 })

@@ -24,11 +24,3 @@ Services reach each other over their public HTTPS URLs. Compute listens on one H
 ## One region per service
 
 You pick a region when you create a service, and `insta services scale` adds replicas in that same region. Multi-region replication is not here yet.
-
-## No environment per pull request
-
-You create a branch and deploy to it yourself. Nothing opens one when a pull request does, or tears it down when the pull request closes.
-
-## A branch clones data, not running code
-
-`insta branch create` forks Postgres and storage copy-on-write, so the branch opens holding the parent's rows and objects. Its compute service has a URL and nothing on it until you `insta deploy`.

@@ -72,7 +72,9 @@ cd /etc/instacloud
 umask 077                                             # the archive holds credentials and certificates
 docker compose stop                                   # instad, the edge AND garage
 docker ps -q --filter 'name=^io-' | xargs -r docker stop   # every branch container
-tar -C /var/lib/instacloud -czf instacloud-data.tgz state.json pg md vol garage edge caddy
+rm -f instacloud-data.tgz.tmp                         # a fresh file, so umask applies
+tar -C /var/lib/instacloud -czf instacloud-data.tgz.tmp state.json pg md vol garage edge caddy
+chmod 600 instacloud-data.tgz.tmp && mv instacloud-data.tgz.tmp instacloud-data.tgz   # private even over an older archive
 docker compose start
 insta compute start <group>                           # per group you had running, or let traffic wake them
 ```

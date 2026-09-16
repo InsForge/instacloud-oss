@@ -214,10 +214,18 @@ test('the backup procedure covers every data root the code writes, and stops the
   expect(branches).toBeGreaterThan(compose)
   expect(tar).toBeGreaterThan(branches)
 
-  // The archive holds every credential on the box, so it is created private.
+  // The archive holds every credential on the box, so it is created private: under umask 077, into
+  // a fresh temp file (umask never tightens a file that already exists), chmod 600, then renamed
+  // over any older archive, whose looser mode would otherwise survive the rewrite.
   const umask = page.indexOf('umask 077')
   expect(umask).toBeGreaterThan(0)
   expect(tar).toBeGreaterThan(umask)
+  expect(tarLine).toMatch(/-czf instacloud-data\.tgz\.tmp /)
+  const fresh = page.indexOf('rm -f instacloud-data.tgz.tmp')
+  expect(fresh).toBeGreaterThan(umask)
+  expect(tar).toBeGreaterThan(fresh)
+  const seal = page.indexOf('chmod 600 instacloud-data.tgz.tmp && mv instacloud-data.tgz.tmp instacloud-data.tgz')
+  expect(seal).toBeGreaterThan(tar)
 
   // It says what the archive is NOT consistent for, rather than overclaiming.
   expect(page).toMatch(/NOT for a service that was running/)

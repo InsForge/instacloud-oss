@@ -3,7 +3,7 @@ title: "Compute"
 description: "Run any container in a microVM, always on or scaling to zero."
 ---
 
-A compute service runs your container — web app, API, worker — in an isolated microVM with its own URL. Production stays warm, branch services sleep when idle, and billing is actual usage either way.
+A compute service runs your container — web app, API, worker — in an isolated microVM with its own URL. Services stay warm by default, you can opt any of them into sleeping when idle, and billing is actual usage either way.
 
 ```bash
 insta services add compute app
@@ -33,7 +33,7 @@ Any plan can attach the default 1 Gi; larger sizes are paid and plan-capped. Vol
 
 ## Lifecycle
 
-Compute on your default branch is always-on. On every other branch it scales to zero, and an idle machine suspends until the next request wakes it in seconds. Control the lifecycle directly:
+New compute services are always-on and never scale to zero, on every branch. Opt one into scale-to-zero and an idle machine suspends until the next request wakes it in seconds. Control the lifecycle directly:
 
 ```bash
 insta compute status    # desired vs actual state

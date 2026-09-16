@@ -7,7 +7,7 @@ We are working to turn long-term plans into short-term releases, and some of it 
 
 ## Schedules stop on a sleeping service
 
-A service that scales to zero has no process while it sleeps and nothing wakes it on a timer, so a cron loop or queue worker inside your container just stops. Keep it always-on, or move the schedule into `pg_cron` with `insta db always-on on`.
+A service that scales to zero has no process while it sleeps and nothing wakes it on a timer, so a cron loop or queue worker inside your container just stops. Keep it always-on if it has to keep time. We may add scheduling at the platform level later.
 
 ## Volumes pin a service to one machine
 

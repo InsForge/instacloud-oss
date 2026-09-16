@@ -70,6 +70,7 @@ cert=$(sudo sed -n 's/^INSTA_OSS_TLS_CERT_FILE=//p' /etc/instacloud/instad.env)
 key=$(sudo sed -n 's/^INSTA_OSS_TLS_KEY_FILE=//p' /etc/instacloud/instad.env)
 [ -z "$cert" ] || sudo cp -L "$cert" "$B/tls-cert.pem" # --tls custom: the pair lives outside the data directory
 [ -z "$key" ] || sudo cp -L "$key" "$B/tls-key.pem"
+sudo chown -R "$(id -u):$(id -g)" "$B"               # yours to read and move, still mode 600
 echo "backup written to $B"
 )
 ```
@@ -90,7 +91,8 @@ cd /etc/instacloud
 umask 077                                             # the archive holds credentials and certificates
 trap 'rm -f instacloud-data.tgz.tmp; docker compose start' EXIT   # set before the first stop: the stack comes back whatever happens
 docker compose stop                                   # instad, the edge AND garage
-docker ps -q --filter 'name=^io-' | xargs -r docker stop   # every branch container
+ids=$(docker ps -q --filter 'name=^io-')              # every branch container; a failed listing stops the block
+[ -z "$ids" ] || docker stop $ids
 rm -f instacloud-data.tgz.tmp                         # a fresh file, so umask applies
 tar -C /var/lib/instacloud -czf instacloud-data.tgz.tmp state.json pg md vol garage edge caddy
 chmod 600 instacloud-data.tgz.tmp                     # private even over an older archive

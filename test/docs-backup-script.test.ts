@@ -25,8 +25,11 @@ function sandbox() {
   stub('pg_dump', 'echo "DUMP $1"')
   stub('sudo', 'exec "$@"')
   stub('date', `echo ${STAMP}`)
-  stub('id', 'echo "${FAKE_UID:-0}"')
-  stub('docker', `echo "docker $*" >> "${root}/docker.log"\nif [ -n "\${FAIL_STOP:-}" ] && [ "$1 $2" = "compose stop" ]; then exit 1; fi`)
+  const realId = execFileSync('sh', ['-c', 'command -v id']).toString().trim()
+  // Only `id -u` is faked, and only when a case asks: the archive block's root check. `id -g` and the dump block's
+  // chown see the real user, so ownership is exercised for real.
+  stub('id', `if [ "$1" = -u ] && [ -n "\${FAKE_UID:-}" ]; then echo "$FAKE_UID"; else exec ${realId} "$@"; fi`)
+  stub('docker', `echo "docker $*" >> "${root}/docker.log"\nif [ -n "\${FAIL_STOP:-}" ] && [ "$1 $2" = "compose stop" ]; then exit 1; fi\nif [ -n "\${FAIL_PS:-}" ] && [ "$1" = ps ]; then exit 1; fi`)
   stub('tar', `if [ -n "\${FAIL_TAR:-}" ]; then echo partial > "$4"; exit 2; fi\nexec ${realTar} "$@"`)
   const run = (block: string, cwd: string, extra: Record<string, string> = {}) => {
     const script = block.replaceAll('/etc/instacloud', etc).replaceAll('/var/lib/instacloud', data)
@@ -77,18 +80,24 @@ test('the archive block keeps the last good archive when tar fails, and restarts
   expect(existsSync(join(s.root, 'docker.log'))).toBe(false)
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')
 
-  expect(s.run(archiveBlock as string, s.work, { FAIL_TAR: '1' })).not.toBe(0)
+  expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '0', FAIL_TAR: '1' })).not.toBe(0)
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')
   expect(existsSync(join(s.etc, 'instacloud-data.tgz.tmp'))).toBe(false)
   expect(readFileSync(join(s.root, 'docker.log'), 'utf8')).toContain('docker compose start')
 
   // A stop that fails partway (some services already down) still brings the stack back.
   writeFileSync(join(s.root, 'docker.log'), '')
-  expect(s.run(archiveBlock as string, s.work, { FAIL_STOP: '1' })).not.toBe(0)
+  expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '0', FAIL_STOP: '1' })).not.toBe(0)
   expect(readFileSync(join(s.root, 'docker.log'), 'utf8')).toMatch(/docker compose stop\ndocker compose start/)
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')
 
-  expect(s.run(archiveBlock as string, s.work)).toBe(0)
+  // A failed branch-container listing must not let tar read files those containers may still be writing.
+  writeFileSync(join(s.root, 'docker.log'), '')
+  expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '0', FAIL_PS: '1' })).not.toBe(0)
+  expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')
+  expect(readFileSync(join(s.root, 'docker.log'), 'utf8')).toContain('docker compose start')
+
+  expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '0' })).toBe(0)
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz')).subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]))
   expect(statSync(join(s.etc, 'instacloud-data.tgz')).mode & 0o777).toBe(0o600)
   expect(existsSync(join(s.etc, 'instacloud-data.tgz.tmp'))).toBe(false)

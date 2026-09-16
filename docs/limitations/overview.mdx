@@ -9,10 +9,6 @@ We are working to turn long-term plans into short-term releases, and some of it 
 
 A service that scales to zero has no process while it sleeps and nothing wakes it on a timer, so a cron loop or queue worker inside your container just stops. Keep it always-on if it has to keep time. We may add scheduling at the platform level later.
 
-## Volumes pin a service to one machine
-
-Attach a `/data` volume and the machine count is fixed at 1, scale-to-zero stops the machine instead of suspending it, and the volume never detaches. It only deletes, taking the data with it. For user uploads a [storage service](/storage/overview) is the better tool.
-
 ## No private network
 
 Services reach each other over their public HTTPS URLs. Compute listens on one HTTP port with no raw TCP, so a container speaking a wire protocol of its own runs fine and nothing else can reach it. Use the managed Postgres, Redis, MySQL and MongoDB types for that.

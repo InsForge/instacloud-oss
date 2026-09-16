@@ -216,7 +216,18 @@ test('the backup procedure covers every data root the code writes, and stops the
   const untar = page.indexOf('tar -C /var/lib/instacloud -xzf')
   expect(restore).toBeGreaterThan(tar)
   expect(page.indexOf("docker ps -q --filter 'name=^io-'", restore)).toBeGreaterThan(restore)
-  expect(untar).toBeGreaterThan(page.indexOf("docker ps -q --filter 'name=^io-'", restore))
+  const stopped = page.indexOf("docker ps -q --filter 'name=^io-'", restore)
+  expect(untar).toBeGreaterThan(stopped)
+  // ...and every data root moved out of the way before the untar: tar never deletes files newer than
+  // the archive, so extracting over live roots leaves two generations of a database in one directory.
+  const moveLine = page.split('\n').find((l) => l.includes('mv "$d" pre-restore/'))
+  expect(moveLine, 'the restore must move the current roots aside').toBeDefined()
+  const moved = page.indexOf(moveLine as string, restore)
+  expect(moved).toBeGreaterThan(stopped)
+  expect(untar).toBeGreaterThan(moved)
+  for (const root_ of [...roots, 'state.json', 'garage', 'edge', 'caddy']) {
+    expect(moveLine, root_).toMatch(new RegExp(`\\s${root_.replace('.', '\\.')}(\\s|;)`))
+  }
   // It says what the archive is NOT consistent for, rather than overclaiming.
   expect(page).toMatch(/NOT for a service that was running/)
 })

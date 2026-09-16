@@ -87,14 +87,22 @@ NOT for a service that was running: for those, use the `pg_dump` above for Postg
 that a running Redis, MySQL or MongoDB is captured mid-write. There is no third option today.
 
 **Restore.** The archive restores onto the box it came from, where the branch containers and
-networks still exist:
+networks still exist. Stop every writer, then move the current data roots aside before you
+extract: `tar` overwrites the files the archive carries but never deletes the ones created after
+the backup, and a Postgres or Garage directory holding both generations is corrupt.
 
 ```bash
 cd /etc/instacloud && docker compose stop
 docker ps -q --filter 'name=^io-' | xargs -r docker stop
-tar -C /var/lib/instacloud -xzf instacloud-data.tgz
-docker compose start
+cd /var/lib/instacloud && mkdir pre-restore            # same filesystem, so the moves copy nothing
+for d in state.json pg md vol garage edge caddy; do [ -e "$d" ] && mv "$d" pre-restore/; done
+tar -C /var/lib/instacloud -xzf /path/to/instacloud-data.tgz
+cd /etc/instacloud && docker compose start
 ```
+
+Once the restored box answers, delete `/var/lib/instacloud/pre-restore`. A service created after
+the backup has a container but no row in the restored `state.json`; remove it with
+`docker rm -f` by name (`io-<ref>-…`).
 
 A restore onto a clean machine is not supported yet. The archive carries `state.json` and the data,
 but not the Docker containers and networks `state.json` points at, and a wake does not recreate a

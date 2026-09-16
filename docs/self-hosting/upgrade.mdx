@@ -50,18 +50,17 @@ that look optional are the parts that decide whether the archive is worth anythi
 managed database while appearing to succeed. `metrics-history.json`, the dashboard's three days of
 chart history, is left out on purpose: it is disposable and refills from live samples.
 
-**The databases and the box's secrets.** One dump per Postgres service per branch, which is the
-copy you should trust, plus `instad.env` and any custom TLS pair, none of which are in the archive.
+**The databases and the box's secrets.** One dump per Postgres service on every branch, which is
+the copy you should trust, plus `instad.env` and any custom TLS pair, none of which are in the
+archive. The block asks the daemon which branches exist and which Postgres services each one
+carries, so it runs unedited whatever the layout, and writes each dump to `<branch>/<service>.sql`.
 Everything goes into a fresh directory only you can read, whatever mode an older file of the same
-name had. The block runs as written on a default install (one branch, one Postgres); edit the two
-lists at the top when you have more. With several Postgres services on a branch, `insta db url`
-refuses to guess, so `SERVICES` names them all; `insta services list` shows them.
+name had. It needs `jq`.
 
 ```bash
 (
 set -eu                                               # any failure stops the block
-BRANCHES="main"                                       # edit: every branch to back up, e.g. "main feat"
-SERVICES=""                                           # edit: empty for one Postgres per branch, else e.g. "db analytics"
+command -v jq >/dev/null || { echo 'needs jq (apt install jq)' >&2; exit 1; }
 umask 077
 B=backup-$(date +%Y%m%d-%H%M%S)
 mkdir -m 700 "$B"                                     # refuses a directory that already exists
@@ -71,12 +70,16 @@ key=$(sudo sed -n 's/^INSTA_OSS_TLS_KEY_FILE=//p' /etc/instacloud/instad.env)
 [ -z "$cert" ] || sudo cp -L "$cert" "$B/tls-cert.pem" # --tls custom: the pair lives outside the data directory
 [ -z "$key" ] || sudo cp -L "$key" "$B/tls-key.pem"
 sudo chown -R "$(id -u):$(id -g)" "$B"               # yours to read and move, still mode 600
-for br in $BRANCHES; do
-  if [ -z "$SERVICES" ]; then
-    u=$(insta db url --branch "$br"); pg_dump "$u" > "$B/$br.sql"
-  else
-    for g in $SERVICES; do u=$(insta db url --group "$g" --branch "$br"); pg_dump "$u" > "$B/$br-$g.sql"; done
-  fi
+list=$(insta branch list --json)                      # a failed listing stops the block
+printf '%s' "$list" | jq -r '.[] | select(.is_default) | .name' > "$B/default-branch"
+branches=$(printf '%s' "$list" | jq -r '.[].name')
+for br in $branches; do
+  mkdir -m 700 "$B/$br"
+  svc=$(insta services list --json --branch "$br")
+  names=$(printf '%s' "$svc" | jq -r '.[] | select(.type == "postgres") | .name')
+  for g in $names; do
+    u=$(insta db url --group "$g" --branch "$br"); pg_dump "$u" > "$B/$br/$g.sql"
+  done
 done
 echo "backup written to $B"
 )
@@ -129,28 +132,35 @@ not recreate a missing container: it fails instead. That holds on a new machine,
 for any service, branch or project deleted since the backup. Keep the archive as a cold copy.
 
 The supported recovery is the dumps, in this order. `insta branch create` clones its parent's
-current data, so create every service and then every branch while they are all still empty, and
-only then load anything: a dump loaded into `main` first would be cloned into `feat` and collide
-with `feat.sql`. Each load stops at its first SQL error and rolls back, rather than finishing with
-half a database. Set the three lines at the top to the directory the backup printed and the same
-lists it used:
+current data, so create every branch first, while the new project has no services at all, then add
+each Postgres service on exactly the branches that carried it, and only then load anything. Each
+load stops at its first SQL error and rolls back, rather than finishing with half a database. The
+backup's default branch is restored into the new project's default branch. Set the two lines at the
+top:
 
 ```bash
 (
 set -eu
 B=backup-20260916-120000                              # edit: the directory the backup block printed
-BRANCHES="main"                                       # edit: the same lists the backup used
-SERVICES=""
 insta project create demo                             # edit: the project name
-if [ -z "$SERVICES" ]; then insta services add postgres db
-else for g in $SERVICES; do insta services add postgres "$g"; done; fi   # every Postgres service first, while empty
-for br in $BRANCHES; do [ "$br" = main ] || insta branch create "$br"; done   # then every branch, so each forks empty databases
-for br in $BRANCHES; do
-  if [ -z "$SERVICES" ]; then
-    u=$(insta db url --branch "$br"); psql -v ON_ERROR_STOP=1 --single-transaction "$u" < "$B/$br.sql"
-  else
-    for g in $SERVICES; do u=$(insta db url --group "$g" --branch "$br"); psql -v ON_ERROR_STOP=1 --single-transaction "$u" < "$B/$br-$g.sql"; done
-  fi
+old=$(cat "$B/default-branch")
+new=$(insta branch list --json | jq -r '.[] | select(.is_default) | .name')
+target() { if [ "$1" = "$old" ]; then echo "$new"; else echo "$1"; fi; }
+for d in "$B"/*/; do br=$(basename "$d")               # 1. every branch, while nothing is there to clone
+  [ "$br" = "$old" ] && continue
+  [ "$br" != "$new" ] || { echo "branch $br would collide with the new default branch" >&2; exit 1; }
+  insta branch create "$br" --from "$new"
+done
+for d in "$B"/*/; do br=$(basename "$d")               # 2. each service on the branches that had it
+  for f in "$d"*.sql; do [ -e "$f" ] || continue
+    insta services add postgres "$(basename "$f" .sql)" --branch "$(target "$br")"
+  done
+done
+for d in "$B"/*/; do br=$(basename "$d")               # 3. then the data
+  for f in "$d"*.sql; do [ -e "$f" ] || continue
+    u=$(insta db url --group "$(basename "$f" .sql)" --branch "$(target "$br")")
+    psql -v ON_ERROR_STOP=1 --single-transaction "$u" < "$f"
+  done
 done
 )
 ```

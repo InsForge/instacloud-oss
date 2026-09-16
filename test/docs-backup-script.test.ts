@@ -1,54 +1,93 @@
-// The backup page's two shell blocks, EXECUTED rather than grepped: a text check cannot tell whether a
-// failed mkdir or tar stops the block, so each block runs under `sh` against stub `insta`, `pg_dump`,
-// `sudo`, `docker`, `date` and `tar`, with /etc/instacloud and /var/lib/instacloud pointed at temp dirs.
+// The backup page's shell blocks, EXECUTED rather than grepped: a text check cannot tell whether a failed
+// mkdir or tar stops a block, or whether a restore rebuilds the layout it dumped, so each block runs under
+// `sh` against stubs. `insta` is a small stateful daemon: branches and their Postgres services are
+// directories and marker files under box/, so a branch create clones its parent's services and a
+// `db url` for a service the branch does not carry fails, as on the real daemon.
 import { test, expect } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const page = readFileSync(join(__dirname, '..', 'docs/self-hosting/upgrade.mdx'), 'utf8')
 const blocks = [...page.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1])
 const dumpBlock = blocks.find((b) => b.includes('mkdir -m 700 "$B"'))
-// Only the subshell: the trailing `insta compute start <group>` line is a placeholder, not a command.
-const archiveBlock = blocks.find((b) => b.includes('-czf instacloud-data.tgz.tmp'))?.split('\n)\n')[0].concat('\n)\n')
+const archiveBlock = blocks.find((b) => b.includes('-czf instacloud-data.tgz.tmp'))
+const recoveryBlock = blocks.find((b) => b.includes('insta branch create') && b.includes('psql '))
 
 const STAMP = '20260916-000000'
 
-function sandbox() {
+const INSTA_STUB = String.raw`box="$ROOT/box"
+echo "insta $*" >> "$ROOT/calls.log"
+cmd="$1 $2"; shift 2
+br=""; g=""; from=""; pos=""
+while [ $# -gt 0 ]; do
+  case $1 in --branch) br=$2; shift 2 ;; --group) g=$2; shift 2 ;; --from) from=$2; shift 2 ;; --json) shift ;; *) pos="$pos $1"; shift ;; esac
+done
+def=$(cat "$box/.default" 2>/dev/null || echo main)
+case $cmd in
+  "project create") mkdir -p "$box/main"; echo main > "$box/.default" ;;
+  "branch list")
+    printf '['; sep=''
+    for d in "$box"/*/; do n=$(basename "$d"); isd=false; [ "$n" = "$def" ] && isd=true
+      printf '%s{"name":"%s","is_default":%s}' "$sep" "$n" "$isd"; sep=','; done
+    printf ']\n' ;;
+  "branch create")
+    set -- $pos; n=$1; [ -n "$from" ] || from=$def; p=$box/$from
+    [ -d "$box/$n" ] && { echo "branch \"$n\" already exists" >&2; exit 1; }
+    [ -z "$(ls "$p")" ] || echo "$n cloned $(ls "$p" | tr '\n' ' ')" >> "$ROOT/clones.log"
+    mkdir "$box/$n"; for f in "$p"/*; do [ -e "$f" ] && touch "$box/$n/$(basename "$f")"; done; true ;;
+  "services list")
+    b=$br; [ -n "$b" ] || b=$def; [ -d "$box/$b" ] || { echo "branch not found: $b" >&2; exit 1; }
+    printf '['; sep=''
+    for f in "$box/$b"/*; do [ -e "$f" ] || continue; printf '%s{"type":"postgres","name":"%s"}' "$sep" "$(basename "$f")"; sep=','; done
+    printf '%s{"type":"compute","name":"web"}]\n' "$sep" ;;
+  "services add")
+    set -- $pos; b=$br; [ -n "$b" ] || b=$def
+    [ -d "$box/$b" ] || { echo "branch not found: $b" >&2; exit 1; }
+    [ -e "$box/$b/$2" ] && { echo "service already exists on this branch" >&2; exit 1; }
+    touch "$box/$b/$2" ;;
+  "db url")
+    b=$br; [ -n "$b" ] || b=$def; [ -d "$box/$b" ] || { echo "branch not found: $b" >&2; exit 1; }
+    [ -n "$g" ] || { echo "multiple postgres services - specify one" >&2; exit 1; }
+    [ -e "$box/$b/$g" ] || { echo "postgres service not found: $g" >&2; exit 1; }
+    echo "postgres://stub/$b/$g" ;;
+esac`
+
+function sandbox(layout: Record<string, string[]> = { main: ['db'] }) {
   const root = mkdtempSync(join(tmpdir(), 'io-backup-doc-'))
   const bin = join(root, 'bin'), etc = join(root, 'etc'), data = join(root, 'data'), work = join(root, 'work')
   for (const d of [bin, etc, data, work]) mkdirSync(d, { recursive: true })
   const stub = (name: string, body: string) => { writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`); chmodSync(join(bin, name), 0o755) }
-  const realTar = execFileSync('sh', ['-c', 'command -v tar']).toString().trim()
-  // Like the daemon: `db url` answers only for a branch in BOX_BRANCHES, and with several services (BOX_SERVICES)
-  // only when --group names one; every call is logged, so a case can check what ran in which order.
-  stub('insta', [
-    `echo "insta $*" >> "${root}/calls.log"`,
-    'if [ "$1 $2" = "db url" ]; then',
-    '  shift 2; br=main; g=""',
-    '  while [ $# -gt 0 ]; do case $1 in --branch) br=$2; shift 2 ;; --group) g=$2; shift 2 ;; *) shift ;; esac; done',
-    '  case " ${BOX_BRANCHES:-main} " in *" $br "*) ;; *) echo "branch not found: $br" >&2; exit 1 ;; esac',
-    '  set -- ${BOX_SERVICES:-db}',
-    '  if [ -z "$g" ] && [ $# -gt 1 ]; then echo "multiple postgres services - specify one" >&2; exit 1; fi',
-    '  if [ -n "$g" ]; then case " ${BOX_SERVICES:-db} " in *" $g "*) ;; *) echo "postgres service not found: $g" >&2; exit 1 ;; esac; fi',
-    '  echo "postgres://stub/$br/${g:-$1}"',
-    'fi',
-  ].join('\n'))
-  stub('psql', `echo "psql $* <" >> "${root}/calls.log"; cat > /dev/null`)
-  stub('pg_dump', 'echo "DUMP $1"')
+  const which = (cmd: string) => execFileSync('sh', ['-c', `command -v ${cmd}`]).toString().trim()
+  stub('insta', INSTA_STUB)
+  stub('pg_dump', 'if [ -n "${FAIL_DUMP:-}" ]; then exit 1; fi\necho "DUMP $1"')
+  stub('psql', `echo "psql $*" >> "${root}/calls.log"; cat > /dev/null`)
   stub('sudo', 'exec "$@"')
   stub('date', `echo ${STAMP}`)
-  const realId = execFileSync('sh', ['-c', 'command -v id']).toString().trim()
-  // Only `id -u` is faked, and only when a case asks: the archive block's root check. `id -g` and the dump block's
-  // chown see the real user, so ownership is exercised for real.
-  stub('id', `if [ "$1" = -u ] && [ -n "\${FAKE_UID:-}" ]; then echo "$FAKE_UID"; else exec ${realId} "$@"; fi`)
+  // Only `id -u` is faked, and only when a case asks: the archive block's root check. `id -g` and the dump
+  // block's chown see the real user, so ownership is exercised for real.
+  stub('id', `if [ "$1" = -u ] && [ -n "\${FAKE_UID:-}" ]; then echo "$FAKE_UID"; else exec ${which('id')} "$@"; fi`)
   stub('docker', `echo "docker $*" >> "${root}/docker.log"\nif [ -n "\${FAIL_STOP:-}" ] && [ "$1 $2" = "compose stop" ]; then exit 1; fi\nif [ -n "\${FAIL_PS:-}" ] && [ "$1" = ps ]; then exit 1; fi\nif [ "$1" = ps ] && [ -n "\${BRANCH_IDS:-}" ]; then echo "$BRANCH_IDS"; fi\nif [ -n "\${FAIL_BRANCH_STOP:-}" ] && [ "$1" = stop ]; then exit 1; fi`)
-  stub('tar', `if [ -n "\${FAIL_TAR:-}" ]; then echo partial > "$4"; exit 2; fi\nexec ${realTar} "$@"`)
+  stub('tar', `if [ -n "\${FAIL_TAR:-}" ]; then echo partial > "$4"; exit 2; fi\nexec ${which('tar')} "$@"`)
+  const setBox = (l: Record<string, string[]>) => {
+    rmSync(join(root, 'box'), { recursive: true, force: true })
+    mkdirSync(join(root, 'box'))
+    writeFileSync(join(root, 'box/.default'), 'main\n')
+    for (const [branch, services] of Object.entries(l)) {
+      mkdirSync(join(root, 'box', branch))
+      for (const svc of services) writeFileSync(join(root, 'box', branch, svc), '')
+    }
+  }
+  const box = (): string[] => readdirSync(join(root, 'box'), { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .flatMap((e) => { const svcs = readdirSync(join(root, 'box', e.name)); return svcs.length ? svcs.map((svc) => `${e.name}/${svc}`) : [`${e.name}/`] })
+    .sort()
+  setBox(layout)
   const run = (block: string, cwd: string, extra: Record<string, string> = {}) => {
     const script = block.replaceAll('/etc/instacloud', etc).replaceAll('/var/lib/instacloud', data)
     try {
-      execFileSync('sh', ['-c', script], { cwd, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...extra }, stdio: 'pipe' })
+      execFileSync('sh', ['-c', script], { cwd, env: { ...process.env, ROOT: root, PATH: `${bin}:${process.env.PATH}`, ...extra }, stdio: 'pipe' })
       return 0
     } catch (e) {
       // A spawn error has no exit status; count it as a failure the case did not intend, never as success.
@@ -56,45 +95,47 @@ function sandbox() {
       return typeof status === 'number' ? status : -1
     }
   }
-  return { root, etc, data, work, run }
+  const log = (name: string) => (existsSync(join(root, name)) ? readFileSync(join(root, name), 'utf8') : '')
+  return { root, etc, data, work, run, setBox, box, log }
 }
 
-// The page's lists, as the reader would edit them.
-const edit = (block: string, branches: string, services: string) =>
-  block.replace(/^BRANCHES="[^"]*"/m, `BRANCHES="${branches}"`).replace(/^SERVICES="[^"]*"/m, `SERVICES="${services}"`)
-
-test('the dump block runs as written on a default box, and keeps both halves of a same-named TLS pair privately', () => {
+test('the dump block runs unedited on a default box, secrets private, both halves of a same-named TLS pair kept', () => {
   expect(dumpBlock, 'the page must carry the dump block').toBeDefined()
   const s = sandbox()
   mkdirSync(join(s.root, 'certs')); mkdirSync(join(s.root, 'keys'))
   writeFileSync(join(s.root, 'certs/tls.pem'), 'CERT'); writeFileSync(join(s.root, 'keys/tls.pem'), 'KEY')
   writeFileSync(join(s.etc, 'instad.env'),
     `INSTA_OSS_TLS=custom\nINSTA_OSS_TLS_CERT_FILE=${join(s.root, 'certs/tls.pem')}\nINSTA_OSS_TLS_KEY_FILE=${join(s.root, 'keys/tls.pem')}\n`)
-  // Verbatim: one branch, one Postgres.
   expect(s.run(dumpBlock as string, s.work)).toBe(0)
   const B = join(s.work, `backup-${STAMP}`)
   expect(statSync(B).mode & 0o777).toBe(0o700)
-  for (const f of ['main.sql', 'instad.env', 'tls-cert.pem', 'tls-key.pem']) expect(existsSync(join(B, f)), f).toBe(true)
+  for (const f of ['main/db.sql', 'instad.env', 'tls-cert.pem', 'tls-key.pem']) expect(existsSync(join(B, f)), f).toBe(true)
+  expect(readFileSync(join(B, 'default-branch'), 'utf8').trim()).toBe('main')
   expect(readFileSync(join(B, 'tls-cert.pem'), 'utf8')).toBe('CERT')
   expect(readFileSync(join(B, 'tls-key.pem'), 'utf8')).toBe('KEY')
-  expect(statSync(join(B, 'main.sql')).mode & 0o077).toBe(0)
+  expect(statSync(join(B, 'main/db.sql')).mode & 0o077).toBe(0)
 })
 
-test('the dump block with edited lists dumps every service on every branch by --group', () => {
-  const s = sandbox()
+// Branches carry different services, and `a` + `b-c` and `a-b` + `c` are both valid names: a flat
+// `<branch>-<service>.sql` would write one file for both.
+const DIVERGENT = { main: ['analytics', 'db'], feat: ['db'], a: ['b-c'], 'a-b': ['c'], empty: [] }
+
+test('the dump block dumps exactly what each branch carries, one directory per branch, no name collisions', () => {
+  const s = sandbox(DIVERGENT)
   writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
-  const env = { BOX_BRANCHES: 'main feat', BOX_SERVICES: 'db analytics' }
-  expect(s.run(edit(dumpBlock as string, 'main feat', 'db analytics'), s.work, env)).toBe(0)
+  expect(s.run(dumpBlock as string, s.work)).toBe(0)
   const B = join(s.work, `backup-${STAMP}`)
-  for (const f of ['main-db.sql', 'main-analytics.sql', 'feat-db.sql', 'feat-analytics.sql', 'instad.env']) expect(existsSync(join(B, f)), f).toBe(true)
-  expect(readFileSync(join(B, 'feat-analytics.sql'), 'utf8')).toContain('postgres://stub/feat/analytics')
+  for (const f of ['main/db.sql', 'main/analytics.sql', 'feat/db.sql', 'a/b-c.sql', 'a-b/c.sql']) expect(existsSync(join(B, f)), f).toBe(true)
+  expect(existsSync(join(B, 'feat/analytics.sql'))).toBe(false)
+  expect(readFileSync(join(B, 'a/b-c.sql'), 'utf8')).toContain('postgres://stub/a/b-c')
+  expect(readFileSync(join(B, 'a-b/c.sql'), 'utf8')).toContain('postgres://stub/a-b/c')
+  expect(existsSync(join(B, 'empty'))).toBe(true)
 })
 
-test('a dump that fails still leaves the secrets in the backup directory', () => {
+test('a dump that fails stops the block but still leaves the secrets in the backup directory', () => {
   const s = sandbox()
   writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
-  // A branch the box does not have: the block stops, but instad.env was copied first.
-  expect(s.run(edit(dumpBlock as string, 'main feat', ''), s.work)).toBeGreaterThan(0)
+  expect(s.run(dumpBlock as string, s.work, { FAIL_DUMP: '1' })).toBeGreaterThan(0)
   expect(existsSync(join(s.work, `backup-${STAMP}`, 'instad.env'))).toBe(true)
 })
 
@@ -117,73 +158,73 @@ test('the archive block keeps the last good archive when tar fails, and restarts
 
   // Not root: it refuses before stopping anything, since tar could neither read the data nor write the archive.
   expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '1000' })).toBeGreaterThan(0)
-  expect(existsSync(join(s.root, 'docker.log'))).toBe(false)
+  expect(s.log('docker.log')).toBe('')
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')
 
   expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '0', FAIL_TAR: '1' })).toBeGreaterThan(0)
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')
   expect(existsSync(join(s.etc, 'instacloud-data.tgz.tmp'))).toBe(false)
-  expect(readFileSync(join(s.root, 'docker.log'), 'utf8')).toContain('docker compose start')
+  expect(s.log('docker.log')).toContain('docker compose start')
 
   // A stop that fails partway (some services already down) still brings the stack back.
   writeFileSync(join(s.root, 'docker.log'), '')
   expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '0', FAIL_STOP: '1' })).toBeGreaterThan(0)
-  expect(readFileSync(join(s.root, 'docker.log'), 'utf8')).toMatch(/docker compose stop\ndocker compose start/)
+  expect(s.log('docker.log')).toMatch(/docker compose stop\ndocker compose start/)
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')
 
   // A failed branch-container listing must not let tar read files those containers may still be writing.
   writeFileSync(join(s.root, 'docker.log'), '')
   expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '0', FAIL_PS: '1' })).toBeGreaterThan(0)
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')
-  expect(readFileSync(join(s.root, 'docker.log'), 'utf8')).toContain('docker compose start')
+  expect(s.log('docker.log')).toContain('docker compose start')
 
   // Branch containers are listed and stopped; a stop that fails leaves the good archive alone.
   writeFileSync(join(s.root, 'docker.log'), '')
   expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '0', BRANCH_IDS: 'abc123', FAIL_BRANCH_STOP: '1' })).toBeGreaterThan(0)
-  expect(readFileSync(join(s.root, 'docker.log'), 'utf8')).toContain('docker stop abc123')
+  expect(s.log('docker.log')).toContain('docker stop abc123')
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')
 
   writeFileSync(join(s.root, 'docker.log'), '')
   expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '0', BRANCH_IDS: 'abc123' })).toBe(0)
-  expect(readFileSync(join(s.root, 'docker.log'), 'utf8')).toMatch(/docker stop abc123[\s\S]*docker compose start/)
+  expect(s.log('docker.log')).toMatch(/docker stop abc123[\s\S]*docker compose start/)
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz')).subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]))
   expect(statSync(join(s.etc, 'instacloud-data.tgz')).mode & 0o777).toBe(0o600)
   expect(existsSync(join(s.etc, 'instacloud-data.tgz.tmp'))).toBe(false)
 })
 
-// `insta branch create` clones its parent's data, so a recovery that loads a dump before creating a branch
-// clones that data into the branch and then collides with the branch's own dump. Executed: every service and
-// branch is created before the first load, every load stops on its first error, and it reads exactly the files
-// the dump block wrote.
-const recoveryBlock = blocks.find((b) => b.includes('insta branch create') && b.includes('psql '))
-
-test('the recovery block, with the backup lists, creates everything before loading and reads what the backup wrote', () => {
+// `insta branch create` clones its parent's data, so a recovery that creates a branch after a service exists
+// clones that service (and any data already loaded) into it. The recovery must rebuild exactly the layout it
+// dumped, clone nothing, and load every dump only after the last create, each one fail-fast.
+test('the recovery block rebuilds exactly the dumped layout, clones nothing, and loads last', () => {
   expect(recoveryBlock, 'the page must carry the recovery block').toBeDefined()
-  const cases: Array<[string, string, Record<string, string>]> = [
-    ['main', '', {}],
-    ['main feat', 'db analytics', { BOX_BRANCHES: 'main feat', BOX_SERVICES: 'db analytics' }],
-  ]
-  for (const [branches, services, box] of cases) {
-    const s = sandbox()
+  for (const layout of [{ main: ['db'] }, DIVERGENT]) {
+    const s = sandbox(layout)
     writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
-    expect(s.run(edit(dumpBlock as string, branches, services), s.work, box), `backup ${branches}/${services}`).toBe(0)
+    const before = s.box()
+    expect(s.run(dumpBlock as string, s.work), JSON.stringify(layout)).toBe(0)
+
+    // A new machine: no project yet.
+    rmSync(join(s.root, 'box'), { recursive: true, force: true }); mkdirSync(join(s.root, 'box'))
     writeFileSync(join(s.root, 'calls.log'), '')
-    const recovery = edit(recoveryBlock as string, branches, services).replace(/^B=backup-\S+/m, `B=backup-${STAMP}`)
-    expect(s.run(recovery, s.work, box), `recovery ${branches}/${services}`).toBe(0)
-    const calls = readFileSync(join(s.root, 'calls.log'), 'utf8').trim().split('\n')
+    const recovery = (recoveryBlock as string).replace(/^B=backup-\S+/m, `B=backup-${STAMP}`)
+    expect(s.run(recovery, s.work), `recovery ${JSON.stringify(layout)}`).toBe(0)
+
+    expect(s.box()).toEqual(before)
+    expect(s.log('clones.log'), 'a branch was created from a parent that already had services').toBe('')
+    const calls = s.log('calls.log').trim().split('\n')
     const firstLoad = calls.findIndex((c) => c.startsWith('psql '))
     const lastCreate = Math.max(...calls.map((c, i) => (/^insta (project create|services add|branch create)/.test(c) ? i : -1)))
     expect(firstLoad, calls.join('\n')).toBeGreaterThan(lastCreate)
-    for (const c of calls.filter((x) => x.startsWith('psql '))) expect(c).toMatch(/-v ON_ERROR_STOP=1 --single-transaction/)
-    const loads = calls.filter((c) => c.startsWith('psql ')).length
-    expect(loads).toBe(branches.split(' ').length * (services ? services.split(' ').length : 1))
-    if (branches.includes('feat')) expect(calls).toContain('insta branch create feat')
+    const loads = calls.filter((c) => c.startsWith('psql '))
+    expect(loads.length).toBe(Object.values(layout).flat().length)
+    for (const c of loads) expect(c).toMatch(/-v ON_ERROR_STOP=1 --single-transaction/)
   }
 })
 
-test('the recovery block stops at a dump it cannot read, before loading it', () => {
+test('the recovery block stops before loading anything when the backup directory is wrong', () => {
   const s = sandbox()
-  const recovery = edit(recoveryBlock as string, 'main', '').replace(/^B=backup-\S+/m, 'B=backup-missing')
+  rmSync(join(s.root, 'box'), { recursive: true, force: true }); mkdirSync(join(s.root, 'box'))
+  const recovery = (recoveryBlock as string).replace(/^B=backup-\S+/m, 'B=backup-missing')
   expect(s.run(recovery, s.work)).toBeGreaterThan(0)
-  expect(readFileSync(join(s.root, 'calls.log'), 'utf8')).not.toContain('psql ')
+  expect(s.log('calls.log')).not.toContain('psql ')
 })

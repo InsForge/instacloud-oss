@@ -1,0 +1,73 @@
+---
+title: "Limitations"
+description: "What InstaCloud does not do yet, and what to reach for instead."
+---
+
+InstaCloud is young and some things are not here yet. This is the list, with the way through where there is one. If one of these is blocking you, say so on [Discord](https://discord.com/invite/MPxwj5xVvW). What people are actually stuck on is how the list gets shorter.
+
+## No cron jobs
+
+Nothing in the CLI or the MCP server schedules work, so a job that has to run every night has nowhere of its own to live.
+
+If your project has a Postgres service, `pg_cron` covers most of it. It is preloaded and already pointed at your database, so a schedule is one statement:
+
+```sql
+create extension if not exists pg_cron;
+
+select cron.schedule(
+  'nightly-cleanup',
+  '0 3 * * *',
+  $$delete from sessions where expires_at < now()$$
+);
+```
+
+That handles anything you can express as SQL. Add the `http` extension and a scheduled statement can call your own service, which is how application work runs on a timer today.
+
+## Sleep is one dial per service
+
+A service either scales to zero or it does not. There is no schedule behind the dial and no per-route rule.
+
+The default follows the branch. Compute on your default branch is always-on, so production never waits for a cold start, and compute on every other branch scales to zero. Managed Redis, MySQL and MongoDB follow the same rule. Postgres scales to zero on every branch, so the first connection after a quiet period cold-starts unless you say otherwise.
+
+```bash
+insta compute always-on off api   # let an idle service sleep
+insta db always-on on             # keep Postgres warm
+```
+
+An explicit setting wins on every branch. Billing is actual usage either way, so the choice is about cold starts rather than cost.
+
+## A volume costs you three things
+
+A `/data` volume is how a compute service keeps files across restarts, and it is not free of consequences:
+
+- Machine count is pinned to 1, so the service cannot scale out.
+- Scale-to-zero stops the machine instead of suspending it, so waking is a cold start.
+- The volume never detaches. It can only be deleted, which destroys the data with it.
+
+A fresh volume also arrives holding nothing but `lost+found`, so an image expecting its upload directory to already exist will crashloop until it creates one. For user uploads a [storage service](/storage/overview) is usually the better tool, and the only one that survives scale-out.
+
+## Compute speaks HTTP
+
+A compute service is reached over HTTP on a single port. There is no raw TCP listener, so a container speaking a wire protocol of its own, a database or a message broker, runs fine and cannot be reached by anything else in the project.
+
+Use the managed service types for that. Postgres, Redis, MySQL, MongoDB and object storage each arrive with their own credentials.
+
+## A branch clones data, not running code
+
+`insta branch create` forks Postgres and storage copy-on-write, so the branch opens holding the parent's rows and objects. Compute is different: the branch gets the service and its own URL with nothing running on it, until you deploy.
+
+```bash
+insta branch create feat-x
+insta branch switch feat-x
+insta deploy .
+```
+
+Self-hosted InstaCloud OSS redeploys the parent's image for you.
+
+## The branch boundary is separation, not authorization
+
+A branch keeps work off `main`, but it is not a permission. Any command taking `--branch main` still reaches `main` from inside a branch. If an agent is running commands for you, set policy on the actions that matter rather than trusting the boundary to hold.
+
+## Self-hosting
+
+InstaCloud OSS runs the same way with a few commands missing, `services scale` and `services upgrade` among them, and `insta secrets bind` answering 501 because every container already receives its services' credentials under their own names. [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md) is the command-by-command list.

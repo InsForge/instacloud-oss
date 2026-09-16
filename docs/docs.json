@@ -121,6 +121,13 @@
               "self-hosting/branching",
               "self-hosting/upgrade"
             ]
+          },
+          {
+            "group": "Limitations",
+            "icon": "triangle-exclamation",
+            "pages": [
+              "limitations/overview"
+            ]
           }
         ]
       },

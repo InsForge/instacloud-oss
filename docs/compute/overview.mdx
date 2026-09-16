@@ -1,9 +1,9 @@
 ---
 title: "Compute"
-description: "Run any container in a microVM that sleeps when idle."
+description: "Run any container in a microVM, always on or scaling to zero."
 ---
 
-A compute service runs your container — web app, API, worker — in an isolated microVM with its own URL. Idle services sleep and wake on request, and billing is actual usage either way — an idle project pays only for the data it stores.
+A compute service runs your container — web app, API, worker — in an isolated microVM with its own URL. Production stays warm, branch services sleep when idle, and billing is actual usage either way.
 
 ```bash
 insta services add compute app
@@ -33,7 +33,7 @@ Any plan can attach the default 1 Gi; larger sizes are paid and plan-capped. Vol
 
 ## Lifecycle
 
-Idle services suspend; a request wakes them in seconds. Control the lifecycle directly:
+Compute on your default branch is always-on. On every other branch it scales to zero, and an idle machine suspends until the next request wakes it in seconds. Control the lifecycle directly:
 
 ```bash
 insta compute status    # desired vs actual state
@@ -42,7 +42,7 @@ insta compute stop
 insta compute suspend
 ```
 
-Create a service as `--always-on` when cold starts are unacceptable — an always-on service never sleeps, and billing remains actual usage. Machine counts and specs move with `insta services scale` and `insta services upgrade` on paid plans. Custom domains attach per branch with `insta compute set-domain`.
+`insta compute always-on on|off` overrides that on any branch, and `--no-always-on` at creation starts a service scale-to-zero. Billing is actual usage either way, so the choice is about cold starts, not cost. The trade-offs are in [limitations](/limitations/overview). Machine counts and specs move with `insta services scale` and `insta services upgrade` on paid plans. Custom domains attach per branch with `insta compute set-domain`.
 
 <Note>
 On self-hosted InstaCloud OSS, `services scale`/`upgrade` are cloud-only, while `--always-on` and custom domains work as they do here. `insta secrets bind` answers `501`: every compute container already receives each service's credentials under their own names, so read those (`insta secrets list` names them) or set your own with `insta secrets set`. The command-by-command list is in [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md).

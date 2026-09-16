@@ -50,32 +50,37 @@ that look optional are the parts that decide whether the archive is worth anythi
 managed database while appearing to succeed. `metrics-history.json`, the dashboard's three days of
 chart history, is left out on purpose: it is disposable and refills from live samples.
 
-**The databases**, one dump per Postgres service per branch, which is the copy you should trust.
-With one Postgres on a branch, `insta db url` finds it; with several it refuses to guess, so name
-each one with `--group`. Every file below holds a whole database or the box's secrets, so they all go
-into one directory only you can read, whatever mode an older file of the same name had:
+**The databases and the box's secrets.** One dump per Postgres service per branch, which is the
+copy you should trust, plus `instad.env` and any custom TLS pair, none of which are in the archive.
+Everything goes into a fresh directory only you can read, whatever mode an older file of the same
+name had. The block runs as written on a default install (one branch, one Postgres); edit the two
+lists at the top when you have more. With several Postgres services on a branch, `insta db url`
+refuses to guess, so `SERVICES` names them all; `insta services list` shows them.
 
 ```bash
 (
 set -eu                                               # any failure stops the block
+BRANCHES="main"                                       # edit: every branch to back up, e.g. "main feat"
+SERVICES=""                                           # edit: empty for one Postgres per branch, else e.g. "db analytics"
 umask 077
 B=backup-$(date +%Y%m%d-%H%M%S)
 mkdir -m 700 "$B"                                     # refuses a directory that already exists
-u=$(insta db url); pg_dump "$u" > "$B/main.sql"                              # the branch's only Postgres
-u=$(insta db url --branch feat); pg_dump "$u" > "$B/feat.sql"
-u=$(insta db url --group db --branch main); pg_dump "$u" > "$B/main-db.sql" # one line per service when there are several
-u=$(insta db url --group analytics --branch main); pg_dump "$u" > "$B/main-analytics.sql"
-sudo cp /etc/instacloud/instad.env "$B/instad.env"    # INSTA_OSS_SECRET and every setting, not in the archive
+sudo cp /etc/instacloud/instad.env "$B/instad.env"    # the secrets first: INSTA_OSS_SECRET and every setting
 cert=$(sudo sed -n 's/^INSTA_OSS_TLS_CERT_FILE=//p' /etc/instacloud/instad.env)
 key=$(sudo sed -n 's/^INSTA_OSS_TLS_KEY_FILE=//p' /etc/instacloud/instad.env)
 [ -z "$cert" ] || sudo cp -L "$cert" "$B/tls-cert.pem" # --tls custom: the pair lives outside the data directory
 [ -z "$key" ] || sudo cp -L "$key" "$B/tls-key.pem"
 sudo chown -R "$(id -u):$(id -g)" "$B"               # yours to read and move, still mode 600
+for br in $BRANCHES; do
+  if [ -z "$SERVICES" ]; then
+    u=$(insta db url --branch "$br"); pg_dump "$u" > "$B/$br.sql"
+  else
+    for g in $SERVICES; do u=$(insta db url --group "$g" --branch "$br"); pg_dump "$u" > "$B/$br-$g.sql"; done
+  fi
+done
 echo "backup written to $B"
 )
 ```
-
-`insta services list` names the Postgres services on the current branch.
 
 **Everything else.** Stop EVERY writer first, not just the daemon: the branch containers and the
 object store keep writing to `md/`, `vol/` and `garage/` while `tar` reads them, and an archive
@@ -98,8 +103,9 @@ tar -C /var/lib/instacloud -czf instacloud-data.tgz.tmp state.json pg md vol gar
 chmod 600 instacloud-data.tgz.tmp                     # private even over an older archive
 mv instacloud-data.tgz.tmp instacloud-data.tgz
 )
-insta compute start <group>                           # per group you had running, or let traffic wake them
 ```
+
+Afterwards, `insta compute start` each group you had running, or let traffic wake them.
 
 The paths assume the default data directory; with `--data-dir` use yours (`INSTA_OSS_DATA_DIR` in
 `/etc/instacloud/instad.env`). Treat both artifacts like credentials: the archive carries every service's credentials, data and
@@ -126,25 +132,35 @@ The supported recovery is the dumps, in this order. `insta branch create` clones
 current data, so create every service and then every branch while they are all still empty, and
 only then load anything: a dump loaded into `main` first would be cloned into `feat` and collide
 with `feat.sql`. Each load stops at its first SQL error and rolls back, rather than finishing with
-half a database:
+half a database. Set the three lines at the top to the directory the backup printed and the same
+lists it used:
 
 ```bash
 (
 set -eu
-insta project create demo
-insta services add postgres db                        # every Postgres service first, while empty
-insta branch create feat                              # then every branch you dumped, so each forks empty databases
-u=$(insta db url); psql -v ON_ERROR_STOP=1 --single-transaction "$u" < backup-<stamp>/main.sql
-u=$(insta db url --branch feat); psql -v ON_ERROR_STOP=1 --single-transaction "$u" < backup-<stamp>/feat.sql
+B=backup-20260916-120000                              # edit: the directory the backup block printed
+BRANCHES="main"                                       # edit: the same lists the backup used
+SERVICES=""
+insta project create demo                             # edit: the project name
+if [ -z "$SERVICES" ]; then insta services add postgres db
+else for g in $SERVICES; do insta services add postgres "$g"; done; fi   # every Postgres service first, while empty
+for br in $BRANCHES; do [ "$br" = main ] || insta branch create "$br"; done   # then every branch, so each forks empty databases
+for br in $BRANCHES; do
+  if [ -z "$SERVICES" ]; then
+    u=$(insta db url --branch "$br"); psql -v ON_ERROR_STOP=1 --single-transaction "$u" < "$B/$br.sql"
+  else
+    for g in $SERVICES; do u=$(insta db url --group "$g" --branch "$br"); psql -v ON_ERROR_STOP=1 --single-transaction "$u" < "$B/$br-$g.sql"; done
+  fi
+done
 )
 ```
 
-With several Postgres services on a branch, add each one before `insta branch create`, and load
-each dump by name, exactly as the backup block named them:
-`u=$(insta db url --group db --branch main); psql -v ON_ERROR_STOP=1 --single-transaction "$u" < backup-<stamp>/main-db.sql`.
-
-Redis, MySQL, MongoDB and bucket contents do not come back this way; export them with their own
-tools too.
+The dumps bring back Postgres only. Nothing else the box held comes back this way, and the dump
+directory does not capture it: Redis, MySQL, MongoDB and bucket contents (export them with their
+own tools), user secrets set with `insta secrets set` (keep your own copy of each value), the admin
+account and `insta_` API tokens (sign up again and mint new ones), per-project approval policies,
+custom domains, and template deployments. The archive still holds all of them in `state.json` as a
+cold copy.
 
 ## Growing the data disk
 

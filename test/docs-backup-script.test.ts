@@ -21,7 +21,21 @@ function sandbox() {
   for (const d of [bin, etc, data, work]) mkdirSync(d, { recursive: true })
   const stub = (name: string, body: string) => { writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`); chmodSync(join(bin, name), 0o755) }
   const realTar = execFileSync('sh', ['-c', 'command -v tar']).toString().trim()
-  stub('insta', 'echo "postgres://stub/$*"')
+  // Like the daemon: `db url` answers only for a branch in BOX_BRANCHES, and with several services (BOX_SERVICES)
+  // only when --group names one; every call is logged, so a case can check what ran in which order.
+  stub('insta', [
+    `echo "insta $*" >> "${root}/calls.log"`,
+    'if [ "$1 $2" = "db url" ]; then',
+    '  shift 2; br=main; g=""',
+    '  while [ $# -gt 0 ]; do case $1 in --branch) br=$2; shift 2 ;; --group) g=$2; shift 2 ;; *) shift ;; esac; done',
+    '  case " ${BOX_BRANCHES:-main} " in *" $br "*) ;; *) echo "branch not found: $br" >&2; exit 1 ;; esac',
+    '  set -- ${BOX_SERVICES:-db}',
+    '  if [ -z "$g" ] && [ $# -gt 1 ]; then echo "multiple postgres services - specify one" >&2; exit 1; fi',
+    '  if [ -n "$g" ]; then case " ${BOX_SERVICES:-db} " in *" $g "*) ;; *) echo "postgres service not found: $g" >&2; exit 1 ;; esac; fi',
+    '  echo "postgres://stub/$br/${g:-$1}"',
+    'fi',
+  ].join('\n'))
+  stub('psql', `echo "psql $* <" >> "${root}/calls.log"; cat > /dev/null`)
   stub('pg_dump', 'echo "DUMP $1"')
   stub('sudo', 'exec "$@"')
   stub('date', `echo ${STAMP}`)
@@ -45,26 +59,43 @@ function sandbox() {
   return { root, etc, data, work, run }
 }
 
-test('the dump block writes every dump, instad.env and both halves of a same-named TLS pair privately', () => {
+// The page's lists, as the reader would edit them.
+const edit = (block: string, branches: string, services: string) =>
+  block.replace(/^BRANCHES="[^"]*"/m, `BRANCHES="${branches}"`).replace(/^SERVICES="[^"]*"/m, `SERVICES="${services}"`)
+
+test('the dump block runs as written on a default box, and keeps both halves of a same-named TLS pair privately', () => {
   expect(dumpBlock, 'the page must carry the dump block').toBeDefined()
   const s = sandbox()
   mkdirSync(join(s.root, 'certs')); mkdirSync(join(s.root, 'keys'))
   writeFileSync(join(s.root, 'certs/tls.pem'), 'CERT'); writeFileSync(join(s.root, 'keys/tls.pem'), 'KEY')
   writeFileSync(join(s.etc, 'instad.env'),
     `INSTA_OSS_TLS=custom\nINSTA_OSS_TLS_CERT_FILE=${join(s.root, 'certs/tls.pem')}\nINSTA_OSS_TLS_KEY_FILE=${join(s.root, 'keys/tls.pem')}\n`)
+  // Verbatim: one branch, one Postgres.
   expect(s.run(dumpBlock as string, s.work)).toBe(0)
   const B = join(s.work, `backup-${STAMP}`)
   expect(statSync(B).mode & 0o777).toBe(0o700)
-  for (const f of ['main.sql', 'feat.sql', 'main-db.sql', 'main-analytics.sql', 'instad.env']) expect(existsSync(join(B, f)), f).toBe(true)
-  expect(readFileSync(join(B, 'main-db.sql'), 'utf8')).toContain('--group db --branch main')
+  for (const f of ['main.sql', 'instad.env', 'tls-cert.pem', 'tls-key.pem']) expect(existsSync(join(B, f)), f).toBe(true)
   expect(readFileSync(join(B, 'tls-cert.pem'), 'utf8')).toBe('CERT')
   expect(readFileSync(join(B, 'tls-key.pem'), 'utf8')).toBe('KEY')
   expect(statSync(join(B, 'main.sql')).mode & 0o077).toBe(0)
+})
 
-  // The recovery example may only read files this block writes.
-  const restores = [...page.matchAll(/< backup-<stamp>\/([\w.-]+)/g)].map((m) => m[1])
-  expect(restores.length).toBeGreaterThan(0)
-  for (const f of restores) expect(existsSync(join(B, f)), `recovery reads ${f}, which the dump block never writes`).toBe(true)
+test('the dump block with edited lists dumps every service on every branch by --group', () => {
+  const s = sandbox()
+  writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
+  const env = { BOX_BRANCHES: 'main feat', BOX_SERVICES: 'db analytics' }
+  expect(s.run(edit(dumpBlock as string, 'main feat', 'db analytics'), s.work, env)).toBe(0)
+  const B = join(s.work, `backup-${STAMP}`)
+  for (const f of ['main-db.sql', 'main-analytics.sql', 'feat-db.sql', 'feat-analytics.sql', 'instad.env']) expect(existsSync(join(B, f)), f).toBe(true)
+  expect(readFileSync(join(B, 'feat-analytics.sql'), 'utf8')).toContain('postgres://stub/feat/analytics')
+})
+
+test('a dump that fails still leaves the secrets in the backup directory', () => {
+  const s = sandbox()
+  writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
+  // A branch the box does not have: the block stops, but instad.env was copied first.
+  expect(s.run(edit(dumpBlock as string, 'main feat', ''), s.work)).toBeGreaterThan(0)
+  expect(existsSync(join(s.work, `backup-${STAMP}`, 'instad.env'))).toBe(true)
 })
 
 test('the dump block stops, writing nothing, when the backup directory already exists', () => {
@@ -121,20 +152,38 @@ test('the archive block keeps the last good archive when tar fails, and restarts
 })
 
 // `insta branch create` clones its parent's data, so a recovery that loads a dump before creating a branch
-// clones that data into the branch and then collides with the branch's own dump. Every psql load stops on
-// its first error.
-test('the recovery block creates every service and branch before loading any dump, and every load fails fast', () => {
-  const recovery = blocks.find((b) => b.includes('insta branch create') && b.includes('psql '))
-  expect(recovery, 'the page must carry the recovery block').toBeDefined()
-  const lines = (recovery as string).split('\n')
-  const firstLoad = lines.findIndex((l) => l.includes('psql '))
-  const lastCreate = Math.max(...lines.map((l, i) => (/insta (services add|branch create)/.test(l) ? i : -1)))
-  expect(lastCreate).toBeGreaterThanOrEqual(0)
-  expect(firstLoad).toBeGreaterThan(lastCreate)
-  for (const l of lines.filter((x) => x.includes('psql '))) expect(l, l).toMatch(/-v ON_ERROR_STOP=1 --single-transaction/)
-  // Every branch the dump block dumps is recreated before the loads.
-  const dumped = [...(dumpBlock as string).matchAll(/--branch (\w[\w-]*)/g)].map((m) => m[1]).filter((b) => b !== 'main')
-  for (const b of new Set(dumped)) expect(recovery, `branch ${b}`).toMatch(new RegExp(`insta branch create ${b}\\b`))
-  expect(page.indexOf('psql -v ON_ERROR_STOP=1 --single-transaction')).toBeGreaterThan(0)
-  expect(page).not.toMatch(/^psql "\$\(insta db url/m)
+// clones that data into the branch and then collides with the branch's own dump. Executed: every service and
+// branch is created before the first load, every load stops on its first error, and it reads exactly the files
+// the dump block wrote.
+const recoveryBlock = blocks.find((b) => b.includes('insta branch create') && b.includes('psql '))
+
+test('the recovery block, with the backup lists, creates everything before loading and reads what the backup wrote', () => {
+  expect(recoveryBlock, 'the page must carry the recovery block').toBeDefined()
+  const cases: Array<[string, string, Record<string, string>]> = [
+    ['main', '', {}],
+    ['main feat', 'db analytics', { BOX_BRANCHES: 'main feat', BOX_SERVICES: 'db analytics' }],
+  ]
+  for (const [branches, services, box] of cases) {
+    const s = sandbox()
+    writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
+    expect(s.run(edit(dumpBlock as string, branches, services), s.work, box), `backup ${branches}/${services}`).toBe(0)
+    writeFileSync(join(s.root, 'calls.log'), '')
+    const recovery = edit(recoveryBlock as string, branches, services).replace(/^B=backup-\S+/m, `B=backup-${STAMP}`)
+    expect(s.run(recovery, s.work, box), `recovery ${branches}/${services}`).toBe(0)
+    const calls = readFileSync(join(s.root, 'calls.log'), 'utf8').trim().split('\n')
+    const firstLoad = calls.findIndex((c) => c.startsWith('psql '))
+    const lastCreate = Math.max(...calls.map((c, i) => (/^insta (project create|services add|branch create)/.test(c) ? i : -1)))
+    expect(firstLoad, calls.join('\n')).toBeGreaterThan(lastCreate)
+    for (const c of calls.filter((x) => x.startsWith('psql '))) expect(c).toMatch(/-v ON_ERROR_STOP=1 --single-transaction/)
+    const loads = calls.filter((c) => c.startsWith('psql ')).length
+    expect(loads).toBe(branches.split(' ').length * (services ? services.split(' ').length : 1))
+    if (branches.includes('feat')) expect(calls).toContain('insta branch create feat')
+  }
+})
+
+test('the recovery block stops at a dump it cannot read, before loading it', () => {
+  const s = sandbox()
+  const recovery = edit(recoveryBlock as string, 'main', '').replace(/^B=backup-\S+/m, 'B=backup-missing')
+  expect(s.run(recovery, s.work)).toBeGreaterThan(0)
+  expect(readFileSync(join(s.root, 'calls.log'), 'utf8')).not.toContain('psql ')
 })

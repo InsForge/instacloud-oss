@@ -34,6 +34,10 @@ insta secrets sources
 insta secrets bind BUCKET_NAME storage/files --source-name BUCKET_NAME --to compute/app
 ```
 
+<Note>
+On self-hosted InstaCloud OSS, `insta secrets bind` answers `501`. Skip it: every compute container already receives the bucket's credentials under their own names (`insta secrets list` names them), or set your own with `insta secrets set`.
+</Note>
+
 Storage exposes several credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `BUCKET_NAME`, `AWS_REGION`), so `--source-name` is required — unlike Postgres, which exposes exactly one.
 
 Bindings are injected as environment variables at deploy time. For local development, `insta secrets` writes user secrets to `.env` and `insta run <cmd>` injects the branch bundle into one process.

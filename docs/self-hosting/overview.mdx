@@ -18,13 +18,16 @@ daemon that drives your Docker and answers the same API the hosted platform answ
   `pg-<name>-<project>-<branch>.<your-domain>:5432` for databases.
 - Serverless behaviour on one box: idle services sleep, traffic wakes them. See [sleep and
   wake](/self-hosting/sleep).
-- Branches that fork the disk: `insta branch create` returns in about a second at any database
-  size. See [branching](/self-hosting/branching).
+- Branches that fork the disk: `insta branch create` reflink-copies a sleeping database in about
+  a second at any size, and streams an awake one (or any, without reflinks) in time proportional
+  to its size. See [branching](/self-hosting/branching).
 - The bundled template catalog served through the cloud's `/templates` routes, so
   `insta template list` works with no internet access. Each template declares the CPU
   architectures its image is published for, and a deploy this box cannot run is refused up front.
-- The dashboard, served by the daemon itself, with setup, login, API tokens, a Deploy dialog and
-  the Templates gallery.
+- The dashboard, served by the daemon itself and laid out like the hosted console: a Service
+  canvas, Quick Start, Observability, Secrets, Branches and Settings, and each service's own
+  detail with Metrics, Variables, Runtime Logs and Settings, plus a Database tab for Postgres, a
+  Volume tab for apps, and Connect on every database.
 
 Not there yet: billing and usage metering, organizations and members, multi-node scheduling, and
 the backups API (`pg_dump` plus a tar of the data directory is the documented path until it

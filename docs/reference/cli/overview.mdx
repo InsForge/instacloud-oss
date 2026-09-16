@@ -136,6 +136,8 @@ insta secrets set STRIPE_KEY
 insta secrets bind DATABASE_URL postgres/db --to compute/app
 ```
 
+On self-hosted InstaCloud OSS, `secrets bind` answers `501`: every compute container already receives each service's credentials under their own names (`insta secrets list` names them).
+
 
 ### run
 

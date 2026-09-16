@@ -69,11 +69,12 @@ lives in `~/.insta-oss/`.
 In another terminal, install the CLI and point it at the daemon:
 
 ```bash
-curl -fsSL https://agents.instacloud.com | sh   # CLI + agent skills (or: npm install -g insta)
+npm install -g insta
 export INSTA_API_URL=http://127.0.0.1:8080      # the CLI defaults to the cloud
 ```
 
-No `insta login`: the daemon trusts loopback. App URLs are
+No `insta login`: the daemon trusts loopback. Skip `insta setup agent`, which registers the cloud's
+MCP server; the dashboard's Quick Start page prints this box's own setup steps. App URLs are
 `http://<group>-<project>-<branch>.localhost:8080`.
 
 ## What it looks like
@@ -90,12 +91,12 @@ created project 4496c3e1-… (demo)
 
 $ insta services add postgres db
 $ insta services add storage store
-$ insta secrets --print             # the only way credentials leave the daemon
+$ insta secrets --print             # the branch's credentials (gated: secrets.read)
 DATABASE_URL="postgres://postgres:…@pg-db-demo-main.example.com:5432/app?sslmode=require"
 AWS_ACCESS_KEY_ID="GK…"  AWS_SECRET_ACCESS_KEY="…"  AWS_ENDPOINT_URL_S3="https://s3.example.com"
 BUCKET_NAME="io-demo-main-store"
 
-$ insta deploy --image nginx:alpine --port 80
+$ insta deploy --image nginx:alpine --port 80 --group web
 deployed nginx:alpine -> https://web-demo-main.example.com (branch main, group web)
 
 $ insta branch create feat          # forks the db files and the volumes
@@ -165,11 +166,16 @@ The daemon serves a web UI at its own URL: one process, same origin. On a server
 laptop there is no login at all.
 
 It matches the hosted InstaCloud console: a Service canvas (or list) with status and a Wake button
-for a sleeping one, Observability, Secrets, Branches and Settings, an Activities side panel, and a service's own detail
-as an overlay with Metrics, Variables, Runtime Logs, Volume and Settings. Add Service covers a
-Docker image, an empty service, Postgres, Redis, MySQL, MongoDB, object storage and the Templates
-gallery. Variables lists the names a service actually receives, never the values, which stay behind
-`insta secrets`. Gated actions from the UI go through the same 202 and approve flow as the CLI.
+for a sleeping one, Observability, Secrets, Branches, Quick Start and a Settings panel, an
+Activities side panel with notifications, and a service's own detail as an overlay with Metrics,
+Variables, Runtime Logs and Settings. Postgres adds a Database tab, which offers Wake and browse
+while the database sleeps rather than waking it on sight; apps add Volume;
+every database has Connect, with its connection string, a client command and the `insta` line.
+Add Service covers a Docker image, an empty service, Postgres, Redis, MySQL, MongoDB, object
+storage and View Templates. Variables lists the names a service actually receives, never the
+values: read those with `insta secrets --print`, or a database's through Connect. An empty project
+shows the connect-agent panel with this box's CLI setup. Gated actions from the UI go through the
+same 202 and approve flow as the CLI.
 
 ![The Service page, showing a live project](docs/img/dashboard-services.png)
 
@@ -181,7 +187,7 @@ Locally: `npm run build:ui` once, then open http://127.0.0.1:8080. UI developmen
 `insta project create` (or `link`) installs the insta agent skills into your project (gitignored;
 `.claude/skills/` for Claude Code, `.agents/skills/` for Codex), so a coding agent opened in the
 repo already knows the workflow: one task, one branch, deploy, verify, delete. You keep the
-approval power, by setting an action to `approve` in the dashboard's policy matrix or through
+approval power, by setting an action to `approve` under Settings > Agent Governance in the dashboard or through
 `PUT /projects/:id/policy/:action`, and the audit trail (`insta events`). The insta-mcp server is a
 thin client over the same endpoints; point it at the daemon with
 `PLATFORM_API_URL=https://api.<domain>` and an `insta_` token.

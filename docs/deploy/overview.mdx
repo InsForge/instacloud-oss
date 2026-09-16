@@ -46,5 +46,5 @@ Deploy to a branch's compute from anywhere with `--branch <name>`. WebSocket app
 If a deploy fails, check `insta build . --explain` for build-side problems and `insta logs compute --deploy` for the machine lifecycle log.
 
 <Note>
-On self-hosted InstaCloud OSS, source deploys build locally with Docker (there is no remote builder) and `insta logs compute --deploy` is cloud-only. The command-by-command list is in [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md).
+On self-hosted InstaCloud OSS, source deploys build locally with Docker (there is no remote builder) and `insta logs compute --deploy` is cloud-only. `insta secrets bind` answers `501`: every compute container already receives each service's credentials under their own names, so read those (`insta secrets list` names them) or set your own with `insta secrets set`. The command-by-command list is in [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md).
 </Note>

@@ -85,8 +85,8 @@ taken over a running container is torn for that service even when the file list 
 set -eu                                               # a failed tar never replaces the last good archive
 cd /etc/instacloud
 umask 077                                             # the archive holds credentials and certificates
+trap 'rm -f instacloud-data.tgz.tmp; docker compose start' EXIT   # set before the first stop: the stack comes back whatever happens
 docker compose stop                                   # instad, the edge AND garage
-trap 'rm -f instacloud-data.tgz.tmp; docker compose start' EXIT   # the stack comes back whatever happens
 docker ps -q --filter 'name=^io-' | xargs -r docker stop   # every branch container
 rm -f instacloud-data.tgz.tmp                         # a fresh file, so umask applies
 tar -C /var/lib/instacloud -czf instacloud-data.tgz.tmp state.json pg md vol garage edge caddy

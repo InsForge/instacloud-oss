@@ -25,7 +25,7 @@ function sandbox() {
   stub('pg_dump', 'echo "DUMP $1"')
   stub('sudo', 'exec "$@"')
   stub('date', `echo ${STAMP}`)
-  stub('docker', `echo "docker $*" >> "${root}/docker.log"`)
+  stub('docker', `echo "docker $*" >> "${root}/docker.log"\nif [ -n "\${FAIL_STOP:-}" ] && [ "$1 $2" = "compose stop" ]; then exit 1; fi`)
   stub('tar', `if [ -n "\${FAIL_TAR:-}" ]; then echo partial > "$4"; exit 2; fi\nexec ${realTar} "$@"`)
   const run = (block: string, cwd: string, extra: Record<string, string> = {}) => {
     const script = block.replaceAll('/etc/instacloud', etc).replaceAll('/var/lib/instacloud', data)
@@ -75,6 +75,12 @@ test('the archive block keeps the last good archive when tar fails, and restarts
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')
   expect(existsSync(join(s.etc, 'instacloud-data.tgz.tmp'))).toBe(false)
   expect(readFileSync(join(s.root, 'docker.log'), 'utf8')).toContain('docker compose start')
+
+  // A stop that fails partway (some services already down) still brings the stack back.
+  writeFileSync(join(s.root, 'docker.log'), '')
+  expect(s.run(archiveBlock as string, s.work, { FAIL_STOP: '1' })).not.toBe(0)
+  expect(readFileSync(join(s.root, 'docker.log'), 'utf8')).toMatch(/docker compose stop\ndocker compose start/)
+  expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')
 
   expect(s.run(archiveBlock as string, s.work)).toBe(0)
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz')).subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]))

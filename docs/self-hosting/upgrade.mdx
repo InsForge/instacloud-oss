@@ -52,8 +52,12 @@ chart history, is left out on purpose: it is disposable and refills from live sa
 
 **The databases and the box's secrets.** One dump per Postgres service on every branch, which is
 the copy you should trust, plus `instad.env` and any custom TLS pair, none of which are in the
-archive. The block asks the daemon which branches exist and which Postgres services each one
-carries, so it runs unedited whatever the layout, and writes each dump to `<branch>/<service>.sql`.
+archive. The `insta` commands act on the project this directory is linked to, so run the block once
+for EVERY project on the box (`insta project list` names them), each time from a directory linked to
+that project with `insta project link <id>`: each run writes its own `backup-<project>-<stamp>`
+directory, and a box with two projects needs both. Within a project the block asks the daemon which
+branches exist and which Postgres services each one carries, so it runs unedited whatever the
+layout, and writes each dump to `<branch>/<service>.sql`.
 Everything goes into a fresh directory only you can read, whatever mode an older file of the same
 name had. It needs `jq`.
 
@@ -61,9 +65,16 @@ name had. It needs `jq`.
 (
 set -eu                                               # any failure stops the block
 command -v jq >/dev/null || { echo 'needs jq (apt install jq)' >&2; exit 1; }
+status=$(insta status --json)
+pid=$(printf '%s' "$status" | jq -r '.project.projectId // empty')
+[ -n "$pid" ] || { echo 'link this directory to a project first: insta project link <id>' >&2; exit 1; }
+projects=$(insta project list --json)
+name=$(printf '%s' "$projects" | jq -r --arg id "$pid" '.[] | select(.id == $id) | .name')
+[ -n "$name" ] || { echo "project $pid not found" >&2; exit 1; }
 umask 077
-B=backup-$(date +%Y%m%d-%H%M%S)
+B=backup-$name-$(date +%Y%m%d-%H%M%S)                 # one directory per project
 mkdir -m 700 "$B"                                     # refuses a directory that already exists
+echo "$name" > "$B/project"
 sudo cp /etc/instacloud/instad.env "$B/instad.env"    # the secrets first: INSTA_OSS_SECRET and every setting
 cert=$(sudo sed -n 's/^INSTA_OSS_TLS_CERT_FILE=//p' /etc/instacloud/instad.env)
 key=$(sudo sed -n 's/^INSTA_OSS_TLS_KEY_FILE=//p' /etc/instacloud/instad.env)
@@ -135,14 +146,15 @@ The supported recovery is the dumps, in this order. `insta branch create` clones
 current data, so create every branch first, while the new project has no services at all, then add
 each Postgres service on exactly the branches that carried it, and only then load anything. Each
 load stops at its first SQL error and rolls back, rather than finishing with half a database. The
-backup's default branch is restored into the new project's default branch. Set the two lines at the
-top:
+backup's default branch is restored into the new project's default branch. Run it once per backup
+directory, that is once per project, each time from a new empty directory (`insta project create`
+links the directory it runs in), and set the first line to that directory:
 
 ```bash
 (
 set -eu
-B=backup-20260916-120000                              # edit: the directory the backup block printed
-insta project create demo                             # edit: the project name
+B=../backup-demo-20260916-120000                      # edit: one directory the backup block printed
+insta project create "$(cat "$B/project")"            # the project the backup was taken from
 old=$(cat "$B/default-branch")
 new=$(insta branch list --json | jq -r '.[] | select(.is_default) | .name')
 target() { if [ "$1" = "$old" ]; then echo "$new"; else echo "$1"; fi; }

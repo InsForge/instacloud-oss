@@ -19,14 +19,20 @@ const STAMP = '20260916-000000'
 
 const INSTA_STUB = String.raw`box="$ROOT/box"
 echo "insta $*" >> "$ROOT/calls.log"
-cmd="$1 $2"; shift 2
+if [ "$1" = status ]; then cmd=status; shift; else cmd="$1 $2"; shift 2; fi
 br=""; g=""; from=""; pos=""
 while [ $# -gt 0 ]; do
   case $1 in --branch) br=$2; shift 2 ;; --group) g=$2; shift 2 ;; --from) from=$2; shift 2 ;; --json) shift ;; *) pos="$pos $1"; shift ;; esac
 done
 def=$(cat "$box/.default" 2>/dev/null || echo main)
 case $cmd in
-  "project create") mkdir -p "$box/main"; echo main > "$box/.default" ;;
+  "project create") set -- $pos; mkdir -p "$box/main"; echo main > "$box/.default"; echo "p-$1 $1" > "$box/.project" ;;
+  "status")
+    if [ -f "$box/.project" ]; then read -r id nm < "$box/.project"; printf '{"project":{"projectId":"%s","branch":"main"}}\n' "$id"
+    else printf '{"project":null}\n'; fi ;;
+  "project list")
+    if [ -f "$box/.project" ]; then read -r id nm < "$box/.project"; printf '[{"id":"other","name":"other"},{"id":"%s","name":"%s"}]\n' "$id" "$nm"
+    else printf '[]\n'; fi ;;
   "branch list")
     printf '['; sep=''
     for d in "$box"/*/; do n=$(basename "$d"); isd=false; [ "$n" = "$def" ] && isd=true
@@ -54,7 +60,7 @@ case $cmd in
     echo "postgres://stub/$b/$g" ;;
 esac`
 
-function sandbox(layout: Record<string, string[]> = { main: ['db'] }) {
+function sandbox(layout: Record<string, string[]> = { main: ['db'] }, project = 'demo') {
   const root = mkdtempSync(join(tmpdir(), 'io-backup-doc-'))
   const bin = join(root, 'bin'), etc = join(root, 'etc'), data = join(root, 'data'), work = join(root, 'work')
   for (const d of [bin, etc, data, work]) mkdirSync(d, { recursive: true })
@@ -74,6 +80,7 @@ function sandbox(layout: Record<string, string[]> = { main: ['db'] }) {
     rmSync(join(root, 'box'), { recursive: true, force: true })
     mkdirSync(join(root, 'box'))
     writeFileSync(join(root, 'box/.default'), 'main\n')
+    if (project) writeFileSync(join(root, 'box/.project'), `p-${project} ${project}\n`)
     for (const [branch, services] of Object.entries(l)) {
       mkdirSync(join(root, 'box', branch))
       for (const svc of services) writeFileSync(join(root, 'box', branch, svc), '')
@@ -107,10 +114,11 @@ test('the dump block runs unedited on a default box, secrets private, both halve
   writeFileSync(join(s.etc, 'instad.env'),
     `INSTA_OSS_TLS=custom\nINSTA_OSS_TLS_CERT_FILE=${join(s.root, 'certs/tls.pem')}\nINSTA_OSS_TLS_KEY_FILE=${join(s.root, 'keys/tls.pem')}\n`)
   expect(s.run(dumpBlock as string, s.work)).toBe(0)
-  const B = join(s.work, `backup-${STAMP}`)
+  const B = join(s.work, `backup-demo-${STAMP}`)
   expect(statSync(B).mode & 0o777).toBe(0o700)
   for (const f of ['main/db.sql', 'instad.env', 'tls-cert.pem', 'tls-key.pem']) expect(existsSync(join(B, f)), f).toBe(true)
   expect(readFileSync(join(B, 'default-branch'), 'utf8').trim()).toBe('main')
+  expect(readFileSync(join(B, 'project'), 'utf8').trim()).toBe('demo')
   expect(readFileSync(join(B, 'tls-cert.pem'), 'utf8')).toBe('CERT')
   expect(readFileSync(join(B, 'tls-key.pem'), 'utf8')).toBe('KEY')
   expect(statSync(join(B, 'main/db.sql')).mode & 0o077).toBe(0)
@@ -124,7 +132,7 @@ test('the dump block dumps exactly what each branch carries, one directory per b
   const s = sandbox(DIVERGENT)
   writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
   expect(s.run(dumpBlock as string, s.work)).toBe(0)
-  const B = join(s.work, `backup-${STAMP}`)
+  const B = join(s.work, `backup-demo-${STAMP}`)
   for (const f of ['main/db.sql', 'main/analytics.sql', 'feat/db.sql', 'a/b-c.sql', 'a-b/c.sql']) expect(existsSync(join(B, f)), f).toBe(true)
   expect(existsSync(join(B, 'feat/analytics.sql'))).toBe(false)
   expect(readFileSync(join(B, 'a/b-c.sql'), 'utf8')).toContain('postgres://stub/a/b-c')
@@ -136,13 +144,13 @@ test('a dump that fails stops the block but still leaves the secrets in the back
   const s = sandbox()
   writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
   expect(s.run(dumpBlock as string, s.work, { FAIL_DUMP: '1' })).toBeGreaterThan(0)
-  expect(existsSync(join(s.work, `backup-${STAMP}`, 'instad.env'))).toBe(true)
+  expect(existsSync(join(s.work, `backup-demo-${STAMP}`, 'instad.env'))).toBe(true)
 })
 
 test('the dump block stops, writing nothing, when the backup directory already exists', () => {
   const s = sandbox()
   writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
-  const B = join(s.work, `backup-${STAMP}`)
+  const B = join(s.work, `backup-demo-${STAMP}`)
   mkdirSync(B, { mode: 0o755 }); writeFileSync(join(B, 'main.sql'), 'OLD', { mode: 0o644 })
   expect(s.run(dumpBlock as string, s.work)).toBeGreaterThan(0)
   expect(readFileSync(join(B, 'main.sql'), 'utf8')).toBe('OLD')
@@ -206,10 +214,11 @@ test('the recovery block rebuilds exactly the dumped layout, clones nothing, and
     // A new machine: no project yet.
     rmSync(join(s.root, 'box'), { recursive: true, force: true }); mkdirSync(join(s.root, 'box'))
     writeFileSync(join(s.root, 'calls.log'), '')
-    const recovery = (recoveryBlock as string).replace(/^B=backup-\S+/m, `B=backup-${STAMP}`)
+    const recovery = (recoveryBlock as string).replace(/^B=\S+/m, `B=backup-demo-${STAMP}`)
     expect(s.run(recovery, s.work), `recovery ${JSON.stringify(layout)}`).toBe(0)
 
     expect(s.box()).toEqual(before)
+    expect(readFileSync(join(s.root, 'box/.project'), 'utf8').trim()).toBe('p-demo demo')
     expect(s.log('clones.log'), 'a branch was created from a parent that already had services').toBe('')
     const calls = s.log('calls.log').trim().split('\n')
     const firstLoad = calls.findIndex((c) => c.startsWith('psql '))
@@ -224,7 +233,26 @@ test('the recovery block rebuilds exactly the dumped layout, clones nothing, and
 test('the recovery block stops before loading anything when the backup directory is wrong', () => {
   const s = sandbox()
   rmSync(join(s.root, 'box'), { recursive: true, force: true }); mkdirSync(join(s.root, 'box'))
-  const recovery = (recoveryBlock as string).replace(/^B=backup-\S+/m, 'B=backup-missing')
+  const recovery = (recoveryBlock as string).replace(/^B=\S+/m, 'B=backup-missing')
   expect(s.run(recovery, s.work)).toBeGreaterThan(0)
   expect(s.log('calls.log')).not.toContain('psql ')
+})
+
+// The CLI acts on the linked project only, so the block is per project: it refuses to run unlinked, and
+// two projects backed up in turn land in two directories rather than one that silently holds a single project.
+test('the dump block is per project: it refuses an unlinked directory and names each backup for its project', () => {
+  const unlinked = sandbox({ main: ['db'] }, '')
+  writeFileSync(join(unlinked.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
+  expect(unlinked.run(dumpBlock as string, unlinked.work)).toBeGreaterThan(0)
+  expect(readdirSync(unlinked.work)).toEqual([])
+
+  const s = sandbox({ main: ['db'] }, 'shop')
+  writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
+  expect(s.run(dumpBlock as string, s.work)).toBe(0)
+  s.setBox({ main: ['events'] })
+  writeFileSync(join(s.root, 'box/.project'), 'p-blog blog\n')
+  expect(s.run(dumpBlock as string, s.work)).toBe(0)
+  expect(readdirSync(s.work).sort()).toEqual([`backup-blog-${STAMP}`, `backup-shop-${STAMP}`])
+  expect(existsSync(join(s.work, `backup-shop-${STAMP}`, 'main/db.sql'))).toBe(true)
+  expect(existsSync(join(s.work, `backup-blog-${STAMP}`, 'main/events.sql'))).toBe(true)
 })

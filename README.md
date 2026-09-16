@@ -169,7 +169,7 @@ It matches the hosted InstaCloud console: a Service canvas (or list) with status
 for a sleeping one, Observability, Secrets, Branches, Quick Start and a Settings panel, an
 Activities side panel with notifications, and a service's own detail as an overlay with Metrics,
 Variables, Runtime Logs and Settings. Postgres adds a Database tab, which offers Wake and browse
-while the database sleeps rather than waking it on sight; apps and managed databases add Volume;
+while the database sleeps rather than waking it on sight; apps add Volume;
 every database has Connect, with its connection string, a client command and the `insta` line.
 Add Service covers a Docker image, an empty service, Postgres, Redis, MySQL, MongoDB, object
 storage and View Templates. Variables lists the names a service actually receives, never the

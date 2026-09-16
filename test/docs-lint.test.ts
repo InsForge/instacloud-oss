@@ -168,6 +168,10 @@ test('COMPATIBILITY names every new route by its real verb', () => {
   expect(INVENTED.filter((v) => text.includes(v))).toEqual([])
   // `insta backup` does not exist, so the only allowed mention is the one that says so.
   expect(text).toMatch(/no `insta backup` command/)
+  // Its backup summary names the same roots the upgrade page archives, so it cannot drift into a
+  // shorter list that restores without the managed databases or the certificates.
+  const backups = text.slice(text.indexOf('## Backups'), text.indexOf('\n## ', text.indexOf('## Backups') + 1))
+  for (const root_ of ['state.json', 'pg/', 'md/', 'vol/', 'garage/', 'edge/', 'caddy/']) expect(backups, root_).toContain(`\`${root_}\``)
 })
 
 // The backup page is the ONLY documented recovery path (the backups API answers 501), so what it

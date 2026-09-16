@@ -262,6 +262,7 @@ const NOT_CLOUD_REST: Array<[string, string]> = [
   // no remote build gateway on a single box. `GET .../source` is the one real answer (below).
   ['POST', '/orgs/local/github/setup'], ['POST', '/orgs/local/github/setup/complete'],
   ['GET', '/github/installations'], ['GET', '/github/installations/7/repos'],
+  ['POST', '/orgs/local/github/repos'], ['POST', '/orgs/local/github/device'], ['POST', '/orgs/local/github/device/poll'],
   ['POST', '/projects/x/github/detect'], ['POST', '/projects/x/github/public-repo/resolve'],
   ['GET', '/projects/x/github/repo-binding'], ['POST', '/projects/x/github/repo-binding'], ['DELETE', '/projects/x/github/repo-binding'],
   ['GET', '/projects/x/github/builds'],

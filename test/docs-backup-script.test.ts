@@ -285,3 +285,18 @@ test('a project whose name holds a / backs up under its id and is recreated unde
   expect(s.run(recovery, s.work)).toBe(0)
   expect(readFileSync(join(s.root, 'box/.project'), 'utf8').trim()).toBe(`${projectId('sales/eu')} sales/eu`)
 })
+
+// Project names are unique, so a whole-project recovery cannot run against a project that still exists:
+// the block says so before it creates or loads anything, instead of failing halfway.
+test('the recovery block refuses a project that still exists, before creating or loading anything', () => {
+  const s = sandbox({ main: ['db'] }, 'demo')
+  writeFileSync(join(s.etc, 'instad.env'), 'INSTA_OSS_TLS=acme\n')
+  expect(s.run(dumpBlock as string, s.work)).toBe(0)
+  writeFileSync(join(s.root, 'calls.log'), '')
+  const recovery = (recoveryBlock as string).replace(/^B=\S+/m, `B=backup-p-demo-${STAMP}`)
+  expect(s.run(recovery, s.work)).toBeGreaterThan(0)
+  const calls = s.log('calls.log')
+  expect(calls).not.toContain('insta project create')
+  expect(calls).not.toContain('psql ')
+  expect(s.box()).toEqual(['main/db'])
+})

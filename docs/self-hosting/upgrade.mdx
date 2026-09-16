@@ -146,7 +146,13 @@ The supported recovery is the dumps, in this order. `insta branch create` clones
 current data, so create every branch first, while the new project has no services at all, then add
 each Postgres service on exactly the branches that carried it, and only then load anything. Each
 load stops at its first SQL error and rolls back, rather than finishing with half a database. The
-backup's default branch is restored into the new project's default branch. Run it once per backup
+backup's default branch is restored into the new project's default branch. It rebuilds a project
+that no longer exists (a new machine, or a deleted project) and refuses one that still does. To bring
+back a single deleted Postgres service or branch inside a live project, recreate just that piece and
+load its one dump: `insta branch create <branch>` if the branch is gone, then
+`insta services add postgres <service> --branch <branch>` and
+`psql -v ON_ERROR_STOP=1 --single-transaction "$(insta db url --group <service> --branch <branch>)" < <branch>/<service>.sql`.
+Run it once per backup
 directory, that is once per project, each time from a new empty directory (`insta project create`
 links the directory it runs in), and set the first line to that directory:
 
@@ -154,7 +160,12 @@ links the directory it runs in), and set the first line to that directory:
 (
 set -eu
 B=../backup-4496c3e1-0000-0000-0000-000000000000-20260916-120000   # edit: one directory the backup block printed
-insta project create "$(cat "$B/project")"            # the project the backup was taken from
+name=$(cat "$B/project")
+existing=$(insta project list --json)
+if printf '%s' "$existing" | jq -e --arg n "$name" 'any(.[]; .name == $n)' >/dev/null; then
+  echo "project $name still exists: recover the deleted pieces into it instead (see above)" >&2; exit 1
+fi
+insta project create "$name"                          # the project the backup was taken from
 old=$(cat "$B/default-branch")
 new=$(insta branch list --json | jq -r '.[] | select(.is_default) | .name')
 target() { if [ "$1" = "$old" ]; then echo "$new"; else echo "$1"; fi; }

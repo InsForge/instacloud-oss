@@ -3,67 +3,40 @@ title: "Overview"
 description: "The gaps people run into most often, and what to reach for instead."
 ---
 
-InstaCloud is young and some things are not here yet. Below are the ones people run into most often, with the way through where there is one. If something is blocking you and it is not here, say so on [Discord](https://discord.com/invite/MPxwj5xVvW). What people are actually stuck on is how this gets shorter.
+InstaCloud is young and some things are not here yet. Below are the ones people run into most often. If something is blocking you and it is not here, say so on [Discord](https://discord.com/invite/MPxwj5xVvW).
 
 ## Sleep is one dial per service
 
-A service either scales to zero or it does not. There is no schedule behind the dial and no per-route rule.
+A service either scales to zero or it does not, with no schedule behind the dial and no per-route rule. Compute on your default branch is always-on, compute on every other branch sleeps, and Postgres sleeps everywhere until `insta db always-on on`.
 
-The default follows the branch. Compute on your default branch is always-on, so production never waits for a cold start, and compute on every other branch scales to zero. Managed Redis, MySQL and MongoDB follow the same rule. Postgres scales to zero on every branch, so the first connection after a quiet period cold-starts unless you say otherwise.
+## Background work stops with the machine
 
-```bash
-insta compute always-on off api   # let an idle service sleep
-insta db always-on on             # keep Postgres warm
-```
+Nothing wakes a sleeping service on a timer. A scheduler or queue worker inside your container keeps time while the machine is up and stops dead when it suspends, so the job does not run late, it does not run at all. For anything expressible as SQL, `pg_cron` is the sturdier home, with `insta db always-on on` so the database is awake to fire it.
 
-An explicit setting wins on every branch. Billing is actual usage either way, so the choice is about cold starts rather than cost.
+## Volumes pin a service to one machine
 
-## Cron jobs
+Attach a `/data` volume and the machine count is fixed at 1, scale-to-zero stops the machine instead of suspending it, and the volume never detaches. It only deletes, taking the data with it. For user uploads a [storage service](/storage/overview) is the better tool.
 
-There is no scheduler to point a job at, so the schedule lives inside something you run, and that runs into the dial above.
+## No private network
 
-A scheduler inside your container, node-cron or APScheduler or Celery beat, only fires while the machine is up. On your default branch it keeps time. On any other branch, or on a service you scaled to zero, it does not: a suspended machine has no process to fire the job, and only real traffic wakes a service, never a clock. The job does not run late, it does not run at all.
+Services reach each other over their public HTTPS URLs. Compute listens on one HTTP port with no raw TCP, so a container speaking a wire protocol of its own runs fine and nothing else can reach it. Use the managed Postgres, Redis, MySQL and MongoDB types for that.
 
-`pg_cron` is the sturdier answer, and it carries the same condition. It is preloaded and already pointed at your database, so a schedule is one statement:
+## One region per service
 
-```sql
-create extension if not exists pg_cron;
+You pick a region when you create a service, and `insta services scale` adds replicas in that same region. Multi-region replication is not here yet.
 
-select cron.schedule(
-  'nightly-cleanup',
-  '0 3 * * *',
-  $$delete from sessions where expires_at < now()$$
-);
-```
+## No spend cap
 
-Postgres scales to zero by default, and a suspended instance fires nothing either, so `insta db always-on on` is what makes the schedule actually run. With the `http` extension a scheduled statement can then call your own service, which is how application work runs on a timer today.
-
-## A volume costs you three things
-
-A `/data` volume is how a compute service keeps files across restarts, and it is not free of consequences:
-
-- Machine count is pinned to 1, so the service cannot scale out.
-- Scale-to-zero stops the machine instead of suspending it, so waking is a cold start.
-- The volume never detaches. It can only be deleted, which destroys the data with it.
-
-A fresh volume also arrives holding nothing but `lost+found`, so an image expecting its upload directory to already exist will crashloop until it creates one. For user uploads a [storage service](/storage/overview) is usually the better tool, and the only one that survives scale-out.
-
-## Compute speaks HTTP
-
-A compute service is reached over HTTP on a single port. There is no raw TCP listener, so a container speaking a wire protocol of its own, a database or a message broker, runs fine and cannot be reached by anything else in the project.
-
-Use the managed service types for that. Postgres, Redis, MySQL, MongoDB and object storage each arrive with their own credentials.
+`insta usage` and `insta billing` show what you are spending. Nothing stops it at a number you choose.
 
 ## A branch clones data, not running code
 
-`insta branch create` forks Postgres and storage copy-on-write, so the branch opens holding the parent's rows and objects. Compute is different: the branch gets the service and its own URL with nothing running on it, until you deploy.
-
-```bash
-insta branch create feat-x
-insta branch switch feat-x
-insta deploy .
-```
+`insta branch create` forks Postgres and storage copy-on-write, so the branch opens holding the parent's rows and objects. Its compute service has a URL and nothing on it until you `insta deploy`.
 
 ## The branch boundary is separation, not authorization
 
-A branch keeps work off `main`, but it is not a permission. Any command taking `--branch main` still reaches `main` from inside a branch. If an agent is running commands for you, set policy on the actions that matter rather than trusting the boundary to hold.
+A branch keeps work off `main`, but any command taking `--branch main` still reaches `main` from inside one. If an agent runs commands for you, set policy on the actions that matter.
+
+## Agents get one command at a time
+
+`insta compute exec` runs one-shot commands on a live machine. `insta compute ssh` opens a real shell, but it needs an interactive login and refuses API keys, so an agent cannot use it.

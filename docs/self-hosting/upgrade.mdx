@@ -86,20 +86,29 @@ archive is still consistent for `state.json` and for any service that was ASLEEP
 NOT for a service that was running: for those, use the `pg_dump` above for Postgres, and accept
 that a running Redis, MySQL or MongoDB is captured mid-write. There is no third option today.
 
-**Restore, on a clean machine:**
+**Restore.** The archive restores onto the box it came from, where the branch containers and
+networks still exist:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sh            # same INSTA_OSS_DOMAIN as the old box
 cd /etc/instacloud && docker compose stop
+docker ps -q --filter 'name=^io-' | xargs -r docker stop
 tar -C /var/lib/instacloud -xzf instacloud-data.tgz
 docker compose start
-psql "$(insta db url)" < main.sql                     # per Postgres service per branch (--group <name> when a branch has several), if you restored from dumps
 ```
 
-Restore the archive BEFORE the first `insta` command: the daemon reads `state.json` at boot, and
-a daemon that has already written its own empty one will overwrite what you untar. Keep the
-domain the same, or every minted hostname in `state.json` points at a name that no longer
-resolves to this box.
+A restore onto a clean machine is not supported yet. The archive carries `state.json` and the data,
+but not the Docker containers and networks `state.json` points at, and a wake does not recreate a
+missing container: it fails instead. On a new machine, install, recreate the projects and services
+with `insta`, and load each Postgres dump into its service:
+
+```bash
+insta project create demo
+insta services add postgres db
+psql "$(insta db url --group db)" < main-db.sql       # one line per Postgres service per branch
+```
+
+Redis, MySQL, MongoDB and bucket contents do not come back this way; export them with their own
+tools before you move.
 
 ## Growing the data disk
 

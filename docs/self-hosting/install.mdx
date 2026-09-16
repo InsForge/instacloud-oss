@@ -149,7 +149,7 @@ Open the setup URL to create the admin account. See [set up access](/self-hostin
 | `/var/lib/instacloud` | all data: `state.json`, `pg/`, `vol/`, `md/`, `garage/`, `caddy/`, `edge/ca.pem` |
 | `/var/lib/instacloud.img` | the XFS loop image, only when one was needed |
 | `/etc/fstab` | `/var/lib/instacloud.img /var/lib/instacloud xfs loop,nofail,x-systemd.required-by=docker.service,x-systemd.before=docker.service 0 0` |
-| `/etc/docker/daemon.json` | `default-address-pools`, on a fresh install or when the key is absent |
+| `/etc/docker/daemon.json` | `default-address-pools`, when the file is missing or empty |
 
 The `x-systemd.required-by=docker.service` part matters: Docker must not start before the data
 mount is there. Without it a reboot where the image failed to mount would let dockerd restart the
@@ -194,9 +194,9 @@ them: `172.17.0.0/16` through `172.31.0.0/16` minus `docker0`, plus 16 `/20` net
 { "default-address-pools": [ { "base": "10.100.0.0/14", "size": 24 } ] }
 ```
 
-That is 1024 `/24` networks. The installer writes it only when `/etc/docker/daemon.json` is absent
-or has no `default-address-pools` key. A box that already sets the key keeps its own value, and the
-script prints the block for you to merge by hand when the file carries other keys.
+That is 1024 `/24` networks. The installer writes it only when `/etc/docker/daemon.json` is missing
+or empty. A box that already sets the key keeps its own value, and when the file carries other keys
+but not this one the script leaves it untouched and prints the block for you to merge by hand.
 
 ## Reflinks
 

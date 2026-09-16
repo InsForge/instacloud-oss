@@ -155,13 +155,15 @@ const CLI_VERBS = [
 // Commands that do not exist. `insta policy` was RETIRED from the CLI (insta-cli's
 // test/retired-policy.test.ts pins "unknown command 'policy'"); opt-in approval is the dashboard's
 // policy matrix or PUT /projects/:id/policy/:action. It was being recommended to operators anyway.
-const INVENTED = ['compute domain add', 'insta compute domain`', 'insta compute domain ', 'tokens list', 'insta tokens', 'insta policy']
+const INVENTED = ['compute domain add', 'insta compute domain', 'tokens list', 'insta tokens', 'insta policy']
 
 test('the README and the docs pages name no command that does not exist', () => {
   for (const rel of ['README.md', ...mdxPages()]) {
     // "There is no `insta tokens` command" is the correct way to mention one, so it is not a hit.
     const text = readFileSync(join(root, rel), 'utf8').replace(/\bno `[^`]+` command/g, '')
-    expect(INVENTED.filter((v) => text.includes(v)), rel).toEqual([])
+    // Whole words only: `insta compute domain` must not match inside a longer name, and must match at a line end.
+    const hit = (v: string) => new RegExp(`(^|[^\\w-])${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'm').test(text)
+    expect(INVENTED.filter(hit), rel).toEqual([])
   }
 })
 
@@ -182,6 +184,10 @@ test('COMPATIBILITY names every new route by its real verb', () => {
 // from it, which loses every managed database from a backup that appears to succeed.
 test('the backup procedure covers every data root the code writes, and stops the writers first', () => {
   const page = readFileSync(join(root, 'docs/self-hosting/upgrade.mdx'), 'utf8')
+  // A wake fails on a missing container (scheduler NoContainerError) and nothing rebuilds one from
+  // state.json, so the page may not promise an archive restore onto a clean machine.
+  expect(page).not.toMatch(/Restore, on a clean machine/)
+  expect(page).toMatch(/A restore onto a clean machine is not supported yet/)
   const tarLine = page.split('\n').find((l) => l.startsWith('tar -C /var/lib/instacloud -czf'))
   expect(tarLine, 'the page must carry one tar line').toBeDefined()
 
@@ -205,9 +211,12 @@ test('the backup procedure covers every data root the code writes, and stops the
   expect(branches).toBeGreaterThan(compose)
   expect(tar).toBeGreaterThan(branches)
 
-  // And the restore side, which the page did not have at all.
-  expect(page).toContain('Restore, on a clean machine')
-  expect(page).toContain('tar -C /var/lib/instacloud -xzf')
+  // And the restore side: onto the same box, with every writer stopped before the untar.
+  const restore = page.indexOf('**Restore.**')
+  const untar = page.indexOf('tar -C /var/lib/instacloud -xzf')
+  expect(restore).toBeGreaterThan(tar)
+  expect(page.indexOf("docker ps -q --filter 'name=^io-'", restore)).toBeGreaterThan(restore)
+  expect(untar).toBeGreaterThan(page.indexOf("docker ps -q --filter 'name=^io-'", restore))
   // It says what the archive is NOT consistent for, rather than overclaiming.
   expect(page).toMatch(/NOT for a service that was running/)
 })

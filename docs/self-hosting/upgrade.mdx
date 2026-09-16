@@ -80,9 +80,12 @@ echo "backup written to $B"
 object store keep writing to `md/`, `vol/` and `garage/` while `tar` reads them, and an archive
 taken over a running container is torn for that service even when the file list is right.
 
+Run this block as root (`sudo -i` first): the data directory and `/etc/instacloud` belong to root.
+
 ```bash
 (
 set -eu                                               # a failed tar never replaces the last good archive
+[ "$(id -u)" = 0 ] || { echo 'run as root: sudo -i' >&2; exit 1; }   # before anything is stopped
 cd /etc/instacloud
 umask 077                                             # the archive holds credentials and certificates
 trap 'rm -f instacloud-data.tgz.tmp; docker compose start' EXIT   # set before the first stop: the stack comes back whatever happens

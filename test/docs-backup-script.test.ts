@@ -25,6 +25,7 @@ function sandbox() {
   stub('pg_dump', 'echo "DUMP $1"')
   stub('sudo', 'exec "$@"')
   stub('date', `echo ${STAMP}`)
+  stub('id', 'echo "${FAKE_UID:-0}"')
   stub('docker', `echo "docker $*" >> "${root}/docker.log"\nif [ -n "\${FAIL_STOP:-}" ] && [ "$1 $2" = "compose stop" ]; then exit 1; fi`)
   stub('tar', `if [ -n "\${FAIL_TAR:-}" ]; then echo partial > "$4"; exit 2; fi\nexec ${realTar} "$@"`)
   const run = (block: string, cwd: string, extra: Record<string, string> = {}) => {
@@ -70,6 +71,11 @@ test('the archive block keeps the last good archive when tar fails, and restarts
   for (const f of ['state.json']) writeFileSync(join(s.data, f), '{}')
   for (const d of ['pg', 'md', 'vol', 'garage', 'edge', 'caddy']) mkdirSync(join(s.data, d))
   writeFileSync(join(s.etc, 'instacloud-data.tgz'), 'GOOD', { mode: 0o644 })
+
+  // Not root: it refuses before stopping anything, since tar could neither read the data nor write the archive.
+  expect(s.run(archiveBlock as string, s.work, { FAKE_UID: '1000' })).not.toBe(0)
+  expect(existsSync(join(s.root, 'docker.log'))).toBe(false)
+  expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')
 
   expect(s.run(archiveBlock as string, s.work, { FAIL_TAR: '1' })).not.toBe(0)
   expect(readFileSync(join(s.etc, 'instacloud-data.tgz'), 'utf8')).toBe('GOOD')

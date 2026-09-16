@@ -31,7 +31,7 @@ until something asks for it. Two details:
 
 ## Backups
 
-The backups API routes answer `501` today, with a hint that names this page, and there is no
+The backups API routes answer `501` today, with a hint to `pg_dump` the database, and there is no
 `insta backup` command, so this procedure is the only one there is. Follow it exactly: the parts
 that look optional are the parts that decide whether the archive is worth anything.
 
@@ -47,52 +47,153 @@ that look optional are the parts that decide whether the archive is worth anythi
 | `edge/`, `caddy/` | the internal CA and issued certificates | the `io-edge` container |
 
 `md/` is the one an earlier version of this page left out, and a backup that omits it loses every
-managed database while appearing to succeed.
+managed database while appearing to succeed. `metrics-history.json`, the dashboard's three days of
+chart history, is left out on purpose: it is disposable and refills from live samples.
 
-**The databases**, one dump per branch, which is the copy you should trust:
+**The databases and the box's secrets.** One dump per Postgres service on every branch, which is
+the copy you should trust, plus `instad.env` and any custom TLS pair, none of which are in the
+archive. The `insta` commands act on the project this directory is linked to, so run the block once
+for EVERY project on the box (`insta project list` names them), each time from a directory linked to
+that project with `insta project link <id>`: each run writes its own `backup-<project id>-<stamp>`
+directory (the project's name is kept in its `project` file), and a box with two projects needs both. Within a project the block asks the daemon which
+branches exist and which Postgres services each one carries, so it runs unedited whatever the
+layout, and writes each dump to `<branch>/<service>.sql`.
+Everything goes into a fresh directory only you can read, whatever mode an older file of the same
+name had. It needs `jq`.
 
 ```bash
-pg_dump "$(insta db url)" > main.sql
-pg_dump "$(insta db url --branch feat)" > feat.sql
+(
+set -eu                                               # any failure stops the block
+command -v jq >/dev/null || { echo 'needs jq (apt install jq)' >&2; exit 1; }
+status=$(insta status --json)
+pid=$(printf '%s' "$status" | jq -r '.project.projectId // empty')
+[ -n "$pid" ] || { echo 'link this directory to a project first: insta project link <id>' >&2; exit 1; }
+projects=$(insta project list --json)
+name=$(printf '%s' "$projects" | jq -r --arg id "$pid" '.[] | select(.id == $id) | .name')
+[ -n "$name" ] || { echo "project $pid not found" >&2; exit 1; }
+umask 077
+B=backup-$pid-$(date +%Y%m%d-%H%M%S)                  # one directory per project, by id: a display name may hold a /
+mkdir -m 700 "$B"                                     # refuses a directory that already exists
+echo "$name" > "$B/project"
+sudo cp /etc/instacloud/instad.env "$B/instad.env"    # the secrets first: INSTA_OSS_SECRET and every setting
+cert=$(sudo sed -n 's/^INSTA_OSS_TLS_CERT_FILE=//p' /etc/instacloud/instad.env)
+key=$(sudo sed -n 's/^INSTA_OSS_TLS_KEY_FILE=//p' /etc/instacloud/instad.env)
+[ -z "$cert" ] || sudo cp -L "$cert" "$B/tls-cert.pem" # --tls custom: the pair lives outside the data directory
+[ -z "$key" ] || sudo cp -L "$key" "$B/tls-key.pem"
+sudo chown -R "$(id -u):$(id -g)" "$B"               # yours to read and move, still mode 600
+list=$(insta branch list --json)                      # a failed listing stops the block
+printf '%s' "$list" | jq -r '.[] | select(.is_default) | .name' > "$B/default-branch"
+branches=$(printf '%s' "$list" | jq -r '.[].name')
+for br in $branches; do
+  mkdir -m 700 "$B/$br"
+  svc=$(insta services list --json --branch "$br")
+  names=$(printf '%s' "$svc" | jq -r '.[] | select(.type == "postgres") | .name')
+  for g in $names; do
+    u=$(insta db url --group "$g" --branch "$br"); pg_dump "$u" > "$B/$br/$g.sql"
+  done
+done
+echo "backup written to $B"
+)
 ```
 
 **Everything else.** Stop EVERY writer first, not just the daemon: the branch containers and the
 object store keep writing to `md/`, `vol/` and `garage/` while `tar` reads them, and an archive
 taken over a running container is torn for that service even when the file list is right.
 
+Run this block as root (`sudo -i` first): the data directory and `/etc/instacloud` belong to root.
+
 ```bash
+(
+set -eu                                               # a failed tar never replaces the last good archive
+[ "$(id -u)" = 0 ] || { echo 'run as root: sudo -i' >&2; exit 1; }   # before anything is stopped
 cd /etc/instacloud
+umask 077                                             # the archive holds credentials and certificates
+trap 'rc=$?; rm -f instacloud-data.tgz.tmp; docker compose start || { echo "the stack did not restart: run docker compose start" >&2; rc=1; }; exit $rc' EXIT   # set before the first stop: the stack comes back, and a failed restart fails the block
 docker compose stop                                   # instad, the edge AND garage
-docker ps -q --filter 'name=^io-' | xargs -r docker stop   # every branch container
-tar -C /var/lib/instacloud -czf instacloud-data.tgz state.json pg md vol garage edge caddy
-docker compose start
-insta compute start <group>                           # per group you had running, or let traffic wake them
+ids=$(docker ps -q --filter 'name=^io-')              # every branch container; a failed listing stops the block
+[ -z "$ids" ] || docker stop $ids
+rm -f instacloud-data.tgz.tmp                         # a fresh file, so umask applies
+tar -C /var/lib/instacloud -czf instacloud-data.tgz.tmp state.json pg md vol garage edge caddy
+chmod 600 instacloud-data.tgz.tmp                     # private even over an older archive
+mv instacloud-data.tgz.tmp instacloud-data.tgz
+)
 ```
 
-The middle line is the one people skip. Branch containers are not part of the compose stack, so
+Afterwards, `insta compute start` each group you had running, or let traffic wake them.
+
+The paths assume the default data directory; with `--data-dir` use yours (`INSTA_OSS_DATA_DIR` in
+`/etc/instacloud/instad.env`). Treat both artifacts like credentials: the archive carries every service's credentials, data and
+issued certificates, and the dump directory beside it holds the dumps, `instad.env` and any custom
+TLS pair, none of which are inside the archive. Encrypt any copy of either that leaves the box.
+
+The `docker ps` line is the one people skip. Branch containers are not part of the compose stack, so
 `docker compose stop` does not touch them; the filter matches every container this daemon owns,
 because they are all named `io-<ref>-…`. Services that were asleep stay asleep and cost nothing.
 
 **What the archive is and is not.** With every writer stopped it is a consistent point-in-time
-copy of the whole box. If you cannot stop the branch containers (you have traffic to serve), the
+copy of the roots it lists. If you cannot stop the branch containers (you have traffic to serve), the
 archive is still consistent for `state.json` and for any service that was ASLEEP at the time, and
 NOT for a service that was running: for those, use the `pg_dump` above for Postgres, and accept
 that a running Redis, MySQL or MongoDB is captured mid-write. There is no third option today.
 
-**Restore, on a clean machine:**
+**Restore.** Restoring from the archive is not supported yet
+([#139](https://github.com/InsForge/instacloud-oss/issues/139)). The archive carries `state.json`
+and the data, but not the Docker containers and networks `state.json` points at, and a wake does
+not recreate a missing container: it fails instead. That holds on a new machine, and on this one
+for any service, branch or project deleted since the backup. Keep the archive as a cold copy.
+
+The supported recovery is the dumps, in this order. `insta branch create` clones its parent's
+current data, so create every branch first, while the new project has no services at all, then add
+each Postgres service on exactly the branches that carried it, and only then load anything. Each
+load stops at its first SQL error and rolls back, rather than finishing with half a database. The
+backup's default branch is restored into the new project's default branch. It rebuilds a project
+that no longer exists (a new machine, or a deleted project) and refuses one that still does. To bring
+back a single deleted Postgres service or branch inside a live project, recreate just that piece and
+load its one dump: `insta branch create <branch>` if the branch is gone, then
+`insta services add postgres <service> --branch <branch>` and
+`psql -v ON_ERROR_STOP=1 --single-transaction "$(insta db url --group <service> --branch <branch>)" < <branch>/<service>.sql`.
+Run it once per backup
+directory, that is once per project, each time from a new empty directory (`insta project create`
+links the directory it runs in), and set the first line to that directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sh            # same INSTA_OSS_DOMAIN as the old box
-cd /etc/instacloud && docker compose stop
-tar -C /var/lib/instacloud -xzf instacloud-data.tgz
-docker compose start
-psql "$(insta db url)" < main.sql                     # per branch, if you restored from dumps
+(
+set -eu
+B=../backup-4496c3e1-0000-0000-0000-000000000000-20260916-120000   # edit: one directory the backup block printed
+name=$(cat "$B/project")
+existing=$(insta project list --json)
+if printf '%s' "$existing" | jq -e --arg n "$name" 'any(.[]; .name == $n)' >/dev/null; then
+  echo "project $name still exists: recover the deleted pieces into it instead (see above)" >&2; exit 1
+fi
+insta project create "$name"                          # the project the backup was taken from
+old=$(cat "$B/default-branch")
+new=$(insta branch list --json | jq -r '.[] | select(.is_default) | .name')
+target() { if [ "$1" = "$old" ]; then echo "$new"; else echo "$1"; fi; }
+for d in "$B"/*/; do br=$(basename "$d")               # 1. every branch, while nothing is there to clone
+  [ "$br" = "$old" ] && continue
+  [ "$br" != "$new" ] || { echo "branch $br would collide with the new default branch" >&2; exit 1; }
+  insta branch create "$br" --from "$new"
+done
+for d in "$B"/*/; do br=$(basename "$d")               # 2. each service on the branches that had it
+  for f in "$d"*.sql; do [ -e "$f" ] || continue
+    insta services add postgres "$(basename "$f" .sql)" --branch "$(target "$br")"
+  done
+done
+for d in "$B"/*/; do br=$(basename "$d")               # 3. then the data
+  for f in "$d"*.sql; do [ -e "$f" ] || continue
+    u=$(insta db url --group "$(basename "$f" .sql)" --branch "$(target "$br")")
+    psql -v ON_ERROR_STOP=1 --single-transaction "$u" < "$f"
+  done
+done
+)
 ```
 
-Restore the archive BEFORE the first `insta` command: the daemon reads `state.json` at boot, and
-a daemon that has already written its own empty one will overwrite what you untar. Keep the
-domain the same, or every minted hostname in `state.json` points at a name that no longer
-resolves to this box.
+The dumps bring back Postgres only. Nothing else the box held comes back this way, and the dump
+directory does not capture it: Redis, MySQL, MongoDB and bucket contents (export them with their
+own tools), user secrets set with `insta secrets set` (keep your own copy of each value), the admin
+account and `insta_` API tokens (sign up again and mint new ones), per-project approval policies,
+custom domains, and template deployments. The archive still holds all of them in `state.json` as a
+cold copy.
 
 ## Growing the data disk
 

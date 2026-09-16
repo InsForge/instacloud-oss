@@ -209,34 +209,9 @@ test('the backup procedure covers every data root the code writes, and stops the
   expect(branches).toBeGreaterThan(compose)
   expect(tar).toBeGreaterThan(branches)
 
-  // The dumps hold whole databases and instad.env holds INSTA_OSS_SECRET: every one is written into a
-  // fresh mode-700 directory under umask 077, so no older file's looser mode can expose it.
-  const dumpUmask = page.indexOf('umask 077')
-  const privateDir = page.indexOf('mkdir -m 700 "$B"')
-  const dumps = page.split('\n').filter((l) => l.startsWith('pg_dump '))
-  expect(dumps.length).toBeGreaterThan(0)
-  expect(privateDir).toBeGreaterThan(dumpUmask)
-  expect(page.indexOf('pg_dump ')).toBeGreaterThan(privateDir)
-  for (const l of dumps) expect(l, l).toMatch(/> "\$B\//)
-  expect(page).toMatch(/cp \/etc\/instacloud\/instad\.env "\$B\/"/)
-  // A --tls custom pair is mounted from its own host directory, outside the data directory, so the
-  // archive never holds it: the dump directory copies both files, following symlinks.
-  const tlsLoop = page.indexOf('for k in INSTA_OSS_TLS_CERT_FILE INSTA_OSS_TLS_KEY_FILE; do')
-  expect(tlsLoop).toBeGreaterThan(privateDir)
-  expect(page.indexOf('sudo cp -L "$f" "$B/"', tlsLoop)).toBeGreaterThan(tlsLoop)
-
-  // The archive holds every credential on the box, so it is created private: under umask 077, into
-  // a fresh temp file (umask never tightens a file that already exists), chmod 600, then renamed
-  // over any older archive, whose looser mode would otherwise survive the rewrite.
-  const umask = page.indexOf('umask 077')
-  expect(umask).toBeGreaterThan(0)
-  expect(tar).toBeGreaterThan(umask)
+  // Privacy, fail-fast and the custom TLS pair are checked by running these blocks
+  // (test/docs-backup-script.test.ts); here only that the archive goes through the temp file.
   expect(tarLine).toMatch(/-czf instacloud-data\.tgz\.tmp /)
-  const fresh = page.indexOf('rm -f instacloud-data.tgz.tmp')
-  expect(fresh).toBeGreaterThan(umask)
-  expect(tar).toBeGreaterThan(fresh)
-  const seal = page.indexOf('chmod 600 instacloud-data.tgz.tmp && mv instacloud-data.tgz.tmp instacloud-data.tgz')
-  expect(seal).toBeGreaterThan(tar)
 
   // It says what the archive is NOT consistent for, rather than overclaiming.
   expect(page).toMatch(/NOT for a service that was running/)

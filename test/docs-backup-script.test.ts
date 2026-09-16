@@ -119,3 +119,22 @@ test('the archive block keeps the last good archive when tar fails, and restarts
   expect(statSync(join(s.etc, 'instacloud-data.tgz')).mode & 0o777).toBe(0o600)
   expect(existsSync(join(s.etc, 'instacloud-data.tgz.tmp'))).toBe(false)
 })
+
+// `insta branch create` clones its parent's data, so a recovery that loads a dump before creating a branch
+// clones that data into the branch and then collides with the branch's own dump. Every psql load stops on
+// its first error.
+test('the recovery block creates every service and branch before loading any dump, and every load fails fast', () => {
+  const recovery = blocks.find((b) => b.includes('insta branch create') && b.includes('psql '))
+  expect(recovery, 'the page must carry the recovery block').toBeDefined()
+  const lines = (recovery as string).split('\n')
+  const firstLoad = lines.findIndex((l) => l.includes('psql '))
+  const lastCreate = Math.max(...lines.map((l, i) => (/insta (services add|branch create)/.test(l) ? i : -1)))
+  expect(lastCreate).toBeGreaterThanOrEqual(0)
+  expect(firstLoad).toBeGreaterThan(lastCreate)
+  for (const l of lines.filter((x) => x.includes('psql '))) expect(l, l).toMatch(/-v ON_ERROR_STOP=1 --single-transaction/)
+  // Every branch the dump block dumps is recreated before the loads.
+  const dumped = [...(dumpBlock as string).matchAll(/--branch (\w[\w-]*)/g)].map((m) => m[1]).filter((b) => b !== 'main')
+  for (const b of new Set(dumped)) expect(recovery, `branch ${b}`).toMatch(new RegExp(`insta branch create ${b}\\b`))
+  expect(page.indexOf('psql -v ON_ERROR_STOP=1 --single-transaction')).toBeGreaterThan(0)
+  expect(page).not.toMatch(/^psql "\$\(insta db url/m)
+})

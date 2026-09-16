@@ -190,7 +190,7 @@ test('the backup procedure covers every data root the code writes, and stops the
   expect(page).toMatch(/Restoring from the archive is not supported yet/)
   expect(page).toContain('https://github.com/InsForge/instacloud-oss/issues/139')
   expect(page).not.toMatch(/tar [^\n]*-x/)
-  expect(page).toMatch(/psql "\$\(insta db url --group [^)]+\)" </)
+  expect(page).toMatch(/u=\$\(insta db url --group [^)]+\); psql -v ON_ERROR_STOP=1 --single-transaction "\$u" </)
   const tarLine = page.split('\n').find((l) => l.startsWith('tar -C /var/lib/instacloud -czf'))
   expect(tarLine, 'the page must carry one tar line').toBeDefined()
 

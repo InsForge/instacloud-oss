@@ -122,17 +122,26 @@ and the data, but not the Docker containers and networks `state.json` points at,
 not recreate a missing container: it fails instead. That holds on a new machine, and on this one
 for any service, branch or project deleted since the backup. Keep the archive as a cold copy.
 
-The supported recovery is the dumps. Recreate the project and its services with `insta`, then load
-each Postgres dump into its service:
+The supported recovery is the dumps, in this order. `insta branch create` clones its parent's
+current data, so create every service and then every branch while they are all still empty, and
+only then load anything: a dump loaded into `main` first would be cloned into `feat` and collide
+with `feat.sql`. Each load stops at its first SQL error and rolls back, rather than finishing with
+half a database:
 
 ```bash
+(
+set -eu
 insta project create demo
-insta services add postgres db
-psql "$(insta db url)" < backup-<stamp>/main.sql                      # a branch with one Postgres
-insta services add postgres analytics                                 # a branch with several: one line per service, by --group
-psql "$(insta db url --group db --branch main)" < backup-<stamp>/main-db.sql
-psql "$(insta db url --group analytics --branch main)" < backup-<stamp>/main-analytics.sql
+insta services add postgres db                        # every Postgres service first, while empty
+insta branch create feat                              # then every branch you dumped, so each forks empty databases
+u=$(insta db url); psql -v ON_ERROR_STOP=1 --single-transaction "$u" < backup-<stamp>/main.sql
+u=$(insta db url --branch feat); psql -v ON_ERROR_STOP=1 --single-transaction "$u" < backup-<stamp>/feat.sql
+)
 ```
+
+With several Postgres services on a branch, add each one before `insta branch create`, and load
+each dump by name, exactly as the backup block named them:
+`u=$(insta db url --group db --branch main); psql -v ON_ERROR_STOP=1 --single-transaction "$u" < backup-<stamp>/main-db.sql`.
 
 Redis, MySQL, MongoDB and bucket contents do not come back this way; export them with their own
 tools too.

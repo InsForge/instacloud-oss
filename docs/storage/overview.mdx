@@ -22,7 +22,7 @@ Buckets are private by default; create with `--public` (or flip later) to serve 
 `insta branch create` forks the bucket copy-on-write: the branch opens with all of the parent's objects, and writes on either side never touch the other. Uploads an agent makes on its task branch disappear with `insta branch delete`.
 
 <Note>
-On self-hosted InstaCloud OSS the fork is a full object sync rather than copy-on-write — same isolation, duplicated at clone time. Binding, below, answers `501` there: every compute container already receives the bucket's credentials, so read those (`insta secrets list` names them) or set your own with `insta secrets set`.
+On self-hosted InstaCloud OSS the fork is a full object sync rather than copy-on-write — same isolation, duplicated at clone time.
 </Note>
 
 ## Credentials
@@ -33,6 +33,10 @@ Bucket credentials are provider-minted and live on the platform, like the databa
 insta secrets sources
 insta secrets bind BUCKET_NAME storage/files --source-name BUCKET_NAME --to compute/app
 ```
+
+<Note>
+On self-hosted InstaCloud OSS, `insta secrets bind` answers `501`. Skip it: every compute container already receives the bucket's credentials under their own names (`insta secrets list` names them), or set your own with `insta secrets set`.
+</Note>
 
 Storage exposes several credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `BUCKET_NAME`, `AWS_REGION`), so `--source-name` is required — unlike Postgres, which exposes exactly one.
 

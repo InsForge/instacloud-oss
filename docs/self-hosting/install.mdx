@@ -71,8 +71,10 @@ script. The build needs about 1 GiB of free memory and a minute on a 2 vCPU box.
    warning.
 5. Installs Docker when missing, enables it, requires `docker compose version`, and starts the
    daemon when it is installed but not answering.
-6. Writes `/etc/docker/daemon.json` with `default-address-pools` and restarts Docker, on a fresh
-   Docker install or when the file has no such key. See [Docker address
+6. Writes `/etc/docker/daemon.json` with `default-address-pools` and restarts Docker when the file
+   is missing or empty. A `daemon.json` that already holds other settings is
+   left untouched, with a warning that prints the key to add: until you add it and restart Docker,
+   the box holds only 31 branch networks. See [Docker address
    pools](#docker-address-pools) for why.
 7. Opens the firewall, but only when one is active, and only for its own services (see below:
    never for SSH). Under `ufw`: inbound 80, 443 and the Postgres lane, plus 443, the three

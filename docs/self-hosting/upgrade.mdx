@@ -102,8 +102,9 @@ insta compute start <group>                           # per group you had runnin
 ```
 
 The paths assume the default data directory; with `--data-dir` use yours (`INSTA_OSS_DATA_DIR` in
-`/etc/instacloud/instad.env`). Treat the archive like a credential: it carries every service's credentials, data and
-issued certificates (`instad.env` and a custom TLS pair are copied into the dump directory above), so encrypt any copy that leaves the box.
+`/etc/instacloud/instad.env`). Treat both artifacts like credentials: the archive carries every service's credentials, data and
+issued certificates, and the dump directory beside it holds the dumps, `instad.env` and any custom
+TLS pair, none of which are inside the archive. Encrypt any copy of either that leaves the box.
 
 The `docker ps` line is the one people skip. Branch containers are not part of the compose stack, so
 `docker compose stop` does not touch them; the filter matches every container this daemon owns,
@@ -127,7 +128,10 @@ each Postgres dump into its service:
 ```bash
 insta project create demo
 insta services add postgres db
-psql "$(insta db url --group db)" < backup-<stamp>/main-db.sql       # one line per Postgres service per branch
+psql "$(insta db url)" < backup-<stamp>/main.sql                      # a branch with one Postgres
+insta services add postgres analytics                                 # a branch with several: one line per service, by --group
+psql "$(insta db url --group db --branch main)" < backup-<stamp>/main-db.sql
+psql "$(insta db url --group analytics --branch main)" < backup-<stamp>/main-analytics.sql
 ```
 
 Redis, MySQL, MongoDB and bucket contents do not come back this way; export them with their own

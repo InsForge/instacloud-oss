@@ -48,8 +48,12 @@ src/
 ├── state.ts             single-tenant persistence (state.json) with a process lock
 ├── types.ts             the model + adapter contracts (Database/Compute/Storage/ManagedDb)
 ├── manageddb.ts         managed-db catalog (images/ports/env) + the secret naming contract
+├── names.ts             the platform's name grammar, shared by engine and templates
+├── hostarch.ts          which CPU architecture an image must carry to run on this box
 ├── templates/           manifest parser, bundled catalog, deployment executor
 ├── observe.ts           observability shapes + parsers (docker logs/stats, DB SQL)
+├── metrics-sampler.ts   samples docker stats on a timer, persisted under the data dir
+├── metrics-history.ts   the kept samples, answering the 1h / 6h / 24h / 3d chart ranges
 ├── s3.ts                hand-rolled SigV4 S3 client (list, delete, presigned GET/POST)
 ├── docker.ts            the single seam to Docker: spawn the docker CLI
 └── adapters/

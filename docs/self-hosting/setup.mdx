@@ -14,17 +14,21 @@ Open the URL the installer printed:
 https://console.<domain>/setup
 ```
 
-Pick a name, an email and a password of at least 8 characters. The password is hashed with scrypt
-and stored in the daemon's state file. You are signed in immediately, and the page becomes
-unavailable: a second sign-up answers `422 USER_ALREADY_EXISTS`.
+Enter an email and a password. The form requires at least 8 characters with an uppercase letter,
+a number and a special character; the daemon itself refuses anything under 8. The password is
+hashed with scrypt and stored in the daemon's state file. You are signed in immediately, and the
+sign-up is closed from then on: a second one answers `422 USER_ALREADY_EXISTS`.
+
+The next screen, **Create a CLI token**, is optional. Create one there and it prints the
+`insta login` line for this box, or skip it and create tokens later.
 
 Later sign-ins are at `https://console.<domain>/login`. Ten failed attempts from one IP address in
 15 minutes answer `429`.
 
 ## Mint a token for the CLI and agents
 
-In the dashboard, open the **Account** page and its **API tokens** tab, create one, and copy it.
-Tokens are shown once. Then, on any machine:
+In the dashboard, open the avatar menu at the top right and choose **API Tokens**
+(`/account/tokens`), create one, and copy it. Tokens are shown once. Then, on any machine:
 
 ```bash
 insta login --api-key insta_xxxxxxxx --api-url https://api.<domain>

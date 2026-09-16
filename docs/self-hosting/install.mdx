@@ -69,7 +69,12 @@ script. The build needs about 1 GiB of free memory and a minute on a 2 vCPU box.
 4. Checks the sizing: the vCPU count, `MemTotal`, and the free space on the filesystem that will
    hold the data directory. See [Requirements](#requirements) for what is fatal and what is a
    warning.
-5. Opens the firewall, but only when one is active, and only for its own services (see below:
+5. Installs Docker when missing, enables it, requires `docker compose version`, and starts the
+   daemon when it is installed but not answering.
+6. Writes `/etc/docker/daemon.json` with `default-address-pools` and restarts Docker, on a fresh
+   Docker install or when the file has no such key. See [Docker address
+   pools](#docker-address-pools) for why.
+7. Opens the firewall, but only when one is active, and only for its own services (see below:
    never for SSH). Under `ufw`: inbound 80, 443 and the Postgres lane, plus 443, the three
    database lanes and the per-service lane range from `docker0` and from every Docker address
    pool. The ports come from the values it resolved, so a lane you moved is the lane it opens;
@@ -103,11 +108,6 @@ script. The build needs about 1 GiB of free memory and a minute on a 2 vCPU box.
    systemctl show ssh.socket sshd.socket --value -p Listen
    ss -tlnpH | grep -i ssh
    ```
-6. Installs Docker when missing, enables it, requires `docker compose version`, and starts the
-   daemon when it is installed but not answering.
-7. Writes `/etc/docker/daemon.json` with `default-address-pools` and restarts Docker, on a fresh
-   Docker install or when the file has no such key. See [Docker address
-   pools](#docker-address-pools) for why.
 8. Creates `/var/lib/instacloud` and probes for reflinks, falling back to an XFS loop image. See
    [Reflinks](#reflinks).
 9. Resolves the domain: `--domain`, then `INSTA_OSS_DOMAIN`, then the value already in
@@ -123,8 +123,8 @@ script. The build needs about 1 GiB of free memory and a minute on a 2 vCPU box.
     landed by then is a warning, not a failure: the edge keeps retrying on its own, and the
     database lanes start presenting it the moment it lands. With `INSTA_OSS_TLS=internal` the root
     CA is then copied to `/var/lib/instacloud/edge/ca.pem`. Under `custom` there is nothing to wait
-    for, so it probes instead: the edge has to answer `api.<domain>` with the serial of the
-    certificate you supplied, and a pair the edge cannot load fails the install rather than
+    for, so it probes instead: the edge has to answer `api.<domain>` with the SHA-256
+    fingerprint of the certificate you supplied, and a pair the edge cannot load fails the install rather than
     leaving it crash-looping behind a success message.
 
 Then it prints two lines you need:
@@ -169,6 +169,8 @@ Postgres containers against empty directories.
 | `--print-firewall` | | print the firewall rules and exit |
 | `--print-daemon-json` | | print the Docker address-pool block and exit |
 | `--print-env`, `--print-compose`, `--print-caddyfile` | | print the file and exit |
+| `--print-ssh-advice` | | print which ports your SSH daemon listens on, to allow before you enable a firewall, and exit |
+| `--print-domain-note` | | print whether the automatic domain resolves to this box, and exit |
 | `-y` | | assume yes |
 
 Every `INSTA_OSS_*` variable in the environment when you run the script is passed through into
@@ -370,7 +372,7 @@ What you take on:
 
   The `certificate` object is absent in the other TLS modes, and absent if the file cannot be
   read, which is worth alerting on too.
-- **A custom domain outside your wildcard has no certificate.** `insta compute domain` still
+- **A custom domain outside your wildcard has no certificate.** `insta compute set-domain` still
   attaches the hostname and routes it, and `insta compute check-domain` reports it as `pending`
   rather than `ready` because the certificate does not cover it. Add it as a SAN to the
   certificate you supply, or keep that name on `--tls acme`.

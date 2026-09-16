@@ -23,12 +23,14 @@ daemon that drives your Docker and answers the same API the hosted platform answ
 - The bundled template catalog served through the cloud's `/templates` routes, so
   `insta template list` works with no internet access. Each template declares the CPU
   architectures its image is published for, and a deploy this box cannot run is refused up front.
-- The dashboard, served by the daemon itself, with setup, login, API tokens, a Deploy dialog and
-  the Templates gallery.
+- The dashboard, served by the daemon itself and laid out like the hosted console: a Service
+  canvas, Quick Start, Observability, Secrets, Branches and Settings, and each service's own
+  detail with Metrics, Variables, Runtime Logs and Settings, plus a Database tab for Postgres, a
+  Volume tab for apps and managed databases, and Connect on every database.
 
 Not there yet: billing and usage metering, organizations and members, multi-node scheduling, and
-the backups API (`pg_dump` plus a tar of the data directory is the documented path until it
-ships). Those routes answer `501` with guidance that names the alternative rather than pretending
+the backups API (until it ships, [upgrade and backups](/self-hosting/upgrade) has the
+procedure). Those routes answer `501` with guidance that names the alternative rather than pretending
 to work. [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md) is
 the command-by-command list.
 

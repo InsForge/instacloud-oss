@@ -28,9 +28,11 @@ Later sign-ins are at `https://console.<domain>/login`. Ten failed attempts from
 ## Mint a token for the CLI and agents
 
 In the dashboard, open the avatar menu at the top right and choose **API Tokens**
-(`/account/tokens`), create one, and copy it. Tokens are shown once. Then, on any machine:
+(`/account/tokens`), create one, and copy it. Tokens are shown once. Then, on the machine you work
+from, install the CLI (Node 18+) and log in:
 
 ```bash
+npm install -g insta
 insta login --api-key insta_xxxxxxxx --api-url https://api.<domain>
 ```
 
@@ -57,8 +59,8 @@ key acts as the single admin, on every route. Treat `scopes` as a note to yourse
 made the token for, not as a permission boundary.
 
 Two things follow. Give each agent, box, or CI job its own token, so revoking one does not disturb
-the others. And to take access away, revoke the token: `DELETE /tokens/<id>`, or the dashboard's
-**API tokens** tab. Revocation is immediate, and it is the only lever a token has.
+the others. And to take access away, revoke the token: `DELETE /tokens/<id>`, or **API Tokens**
+under the dashboard's avatar menu. Revocation is immediate, and it is the only lever a token has.
 
 ## MCP and agent skills
 
@@ -92,8 +94,11 @@ The jar carries the session from the first call into the second, and no `Origin`
 Sign-up is refused once an admin exists, which makes the first call safe to leave in a provisioning
 script: it either creates the admin or fails loudly.
 
-With `INSTA_OSS_TLS=internal` add `--cacert /var/lib/instacloud/edge/ca.pem` to the curls and
-`NODE_EXTRA_CA_CERTS=/var/lib/instacloud/edge/ca.pem` to the CLI. See
+With `INSTA_OSS_TLS=internal`, copy the root off the box first (for example
+`ssh ubuntu@<box> sudo cat /var/lib/instacloud/edge/ca.pem > ./instacloud-ca.pem`, since root SSH is
+usually off and the data directory is root-only), then add
+`--cacert ./instacloud-ca.pem` to the curls and `NODE_EXTRA_CA_CERTS=$PWD/instacloud-ca.pem` to the
+CLI: the path on the box does not exist on the machine you run them from. See
 [domains and TLS](/self-hosting/domains).
 
 ## What requires authentication

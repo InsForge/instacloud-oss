@@ -43,7 +43,7 @@ At install time, with a wildcard record (`*.example.com` and `example.com` to th
 per-host A records:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sh -s -- --domain example.com --email ops@example.com
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh -s -- --domain example.com --email ops@example.com
 ```
 
 For one app on a host you own, point it at an existing install:
@@ -79,16 +79,19 @@ wildcard matches exactly one label and bucket URLs are `<bucket>.s3.<domain>`. N
 published, no order is placed, and renewal is yours: the install page has the procedure and what
 the daemon does to make an approaching expiry hard to miss.
 
-Under `internal` the installer copies the root certificate to `/var/lib/instacloud/edge/ca.pem`,
-and clients need to trust it. The same applies under `custom` when your certificate comes from a
-private CA, with your own CA file in place of that path. Each client reads its own variable, so a
-tool that is not told will fail on its own while everything else works:
+Under `internal` the installer copies the root certificate to `/var/lib/instacloud/edge/ca.pem`
+on the box, and clients need to trust it. The same applies under `custom` when your certificate
+comes from a private CA, with your own CA file in place of the copy below. That path exists only on
+the box, and the data directory is readable by root alone, so copy the root to each machine that
+runs a client first, through the sudo-capable user you SSH in as. Each client then reads its own
+variable, so a tool that is not told will fail on its own while everything else works:
 
 ```bash
-curl --cacert /var/lib/instacloud/edge/ca.pem https://api.example.com/healthz
-export PGSSLROOTCERT=/var/lib/instacloud/edge/ca.pem
-export NODE_EXTRA_CA_CERTS=/var/lib/instacloud/edge/ca.pem
-export AWS_CA_BUNDLE=/var/lib/instacloud/edge/ca.pem
+ssh ubuntu@<box> sudo cat /var/lib/instacloud/edge/ca.pem > ./instacloud-ca.pem
+curl --cacert ./instacloud-ca.pem https://api.example.com/healthz
+export PGSSLROOTCERT=$PWD/instacloud-ca.pem
+export NODE_EXTRA_CA_CERTS=$PWD/instacloud-ca.pem
+export AWS_CA_BUNDLE=$PWD/instacloud-ca.pem
 ```
 
 `AWS_CA_BUNDLE` is what the AWS CLI and boto3 read, and they read none of the other three, so

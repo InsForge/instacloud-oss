@@ -9,13 +9,13 @@ Re-run the one-liner. The script sees the existing `/etc/instacloud/instad.env`,
 setting in it, and recreates only what changed:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh
 ```
 
 Pin a version, or go back to one:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sh -s -- --version v0.1.0
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh -s -- --version v0.1.0
 ```
 
 Branch containers are not part of the compose stack, so they are not recreated and keep running

@@ -17,33 +17,57 @@ branch  = a disposable, fully isolated clone of all three
 
 ## Install on a VPS
 
-Ubuntu 22.04+ or Debian 12+, 2 vCPU, 2 GiB RAM, 15 GiB free disk, and the ports 80, 443, 8080,
-8081, 5432, 6379 and 27017 free. The installer checks all of that before it changes anything: a
-busy port names the key that moves it, and a first install on a box under the memory or disk
-minimum stops there rather than failing later under load. As root:
+A fresh Ubuntu 22.04+ or Debian 12+ box with 2 vCPU, 2 GiB RAM and 15 GiB free disk, and inbound
+TCP 80 and 443 allowed in its cloud firewall or security group (add 5432 to reach Postgres from
+outside). On the box, as a user with sudo:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh
 ```
 
-It pulls `ghcr.io/insforge/instacloud`, published for linux/amd64 and linux/arm64. Re-run the same
-command to upgrade, or add `--version v0.1.0` to pin a release.
-
-The script installs Docker if it is missing, prepares a reflink-capable data directory, and
-starts three containers: the daemon, the TLS edge, and the object store. It prints where to go:
+The installer checks the box first (free ports, memory, disk) and stops before changing anything if
+one falls short. Then it installs Docker if it is missing, prepares a reflink-capable data
+directory, pulls `ghcr.io/insforge/instacloud` (linux/amd64 and linux/arm64), starts the daemon,
+the TLS edge and the object store, and waits for a certificate. On a 2 vCPU, 2 GiB cloud VM that
+takes about a minute and ends like this:
 
 ```
-  Setup:    https://console.<domain>/setup
-  CLI:      insta login --api-key <token from the setup page> --api-url https://api.<domain>
+InstaCloud is running.
+  Setup:    https://console.203-0-113-10.sslip.io/setup
+  API:      https://api.203-0-113-10.sslip.io
+  Note:     203.0.113.10 is this cloud VM's public address, mapped by the provider: make sure its security group or firewall allows 80 and 443 (and the database lanes you use).
+  CLI:      insta login --api-key <token from the setup page> --api-url https://api.203-0-113-10.sslip.io
+  Config /etc/instacloud   Data /var/lib/instacloud   Reflinks: loop image (10 GiB)
 ```
 
-Open the setup URL, create the one admin account, copy an API token, and point the CLI at the box.
-Then deploy something to see it work end to end:
+If a `Note:` line appears, act on it before you go on: the certificate and your URLs need 80 and
+443 open. `curl -s https://api.<domain>/healthz` answers `{"ok":true}` once the daemon is up.
 
-```bash
-insta project create demo
-insta template deploy hermes
-```
+Then, from your own machine:
+
+1. Open the Setup URL, create the admin account, and create a CLI token on the next screen.
+2. Install the CLI (Node 18+) and log in with that token:
+
+   ```bash
+   npm install -g insta
+   insta login --api-key insta_… --api-url https://api.203-0-113-10.sslip.io
+   ```
+
+3. Deploy something:
+
+   ```bash
+   mkdir my-app && cd my-app          # the CLI links the project to this directory
+   insta project create demo
+   insta services add postgres db
+   insta deploy --image nginx:alpine --port 80 --group web
+   # deployed nginx:alpine -> https://web-demo-main.203-0-113-10.sslip.io (branch main, group web)
+   ```
+
+   Or start from a template: `insta template deploy hermes` asks for the dashboard's username and
+   password.
+
+The installer installs the newest release. Re-run the same command to upgrade, or pin a release
+with `curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh -s -- --version v0.1.0`.
 
 With no `--domain` the installer uses the public IP of the box as an sslip.io name, so URLs work
 immediately. Apps land on `https://<group>-<project>-<branch>.<domain>` and databases on
@@ -87,7 +111,8 @@ has no domain and no TLS.
 $ cd ~/my-app                       # the CLI links the project to your cwd
 $ insta project create demo
 created project 4496c3e1-… (demo)
-  resources: []
+  resources:
+  linked ./.insta/project.json (branch main)
 
 $ insta services add postgres db
 $ insta services add storage store
@@ -100,10 +125,10 @@ $ insta deploy --image nginx:alpine --port 80 --group web
 deployed nginx:alpine -> https://web-demo-main.example.com (branch main, group web)
 
 $ insta branch create feat          # forks the db files and the volumes
-created branch feat in 0.9s         # feat sleeps until its first request
+created branch feat (…)             # a sleeping database forks in about a second
 
 $ insta compute always-on off web   # main is always-on by default; opt this one into scale-to-zero
-$ insta compute status web          # five idle minutes later
+$ insta compute status web          # five idle minutes, and at least ten after creating it
 web  desired=running  live=suspended
 
 $ curl -s https://web-demo-main.example.com/ | head -1   # a request wakes it in ~2s
@@ -162,7 +187,7 @@ Command-by-command CLI and MCP compatibility: [COMPATIBILITY.md](COMPATIBILITY.m
 ## Dashboard
 
 The daemon serves a web UI at its own URL: one process, same origin. On a server it starts at
-`/setup` (one admin account), signs in at `/login`, and mints API tokens on the Account page. On a
+`/setup` (one admin account), signs in at `/login`, and mints API tokens under the avatar menu's API Tokens. On a
 laptop there is no login at all.
 
 It matches the hosted InstaCloud console: a Service canvas (or list) with status and a Wake button

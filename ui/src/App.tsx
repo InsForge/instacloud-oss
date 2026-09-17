@@ -50,6 +50,16 @@ function ProjectRedirect({ projectId }: { projectId: string }) {
   return <Navigate to={`/p/${projectId}/${encodeURIComponent(def?.name ?? 'main')}/services`} replace />
 }
 
+/** The console's 404 (Next.js's default not-found page): "404 | This page could not be found." */
+function NotFound() {
+  return (
+    <div className="flex h-screen items-center justify-center bg-background text-foreground">
+      <h1 className="border-r border-border pr-6 text-2xl font-medium">404</h1>
+      <p className="pl-6 text-sm text-muted-foreground">This page could not be found.</p>
+    </div>
+  )
+}
+
 function CenterNote({ title, body }: { title: string; body: string }) {
   return (
     <div className="flex h-screen items-center justify-center">
@@ -111,7 +121,8 @@ export default function App() {
           {/* Settings is the console's panel over the page (`?panel=settings`); the old page's bookmarks open it. */}
           <Route path="settings" element={<Navigate to="../services?panel=settings" replace />} />
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* The console renders a 404 for unknown paths; redirecting home hid typos in pasted links. */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </AuthGate>
   )

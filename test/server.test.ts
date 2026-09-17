@@ -119,6 +119,31 @@ test('branch create clones data + redeploys apps; branches list has is_default/s
   expect(del.json().teardown.destroyed).toBeGreaterThan(0)
 })
 
+test('branch create with excludeServices forks nothing: no services, secrets or bindings copied', async () => {
+  const id = await createProject()
+  await post(`/projects/${id}/deploy`, { image: 'app:1', branch: 'main', port: 3000 })
+  await put(`/projects/${id}/secrets/API_KEY`, { value: 'k', branch: 'main' })
+
+  const r = await post(`/projects/${id}/branches`, { name: 'empty', from: 'main', excludeServices: true })
+  expect(r.statusCode).toBe(201)
+  expect(r.json().branch.name).toBe('empty')
+  // None of the parent's services materialise: no database fork, no bucket copy, no redeploy.
+  expect(calls.filter((c) => c.includes('empty'))).toEqual([])
+  const row = Object.values(loadState().branches).find((b) => b.name === 'empty')!
+  expect(Object.keys(row.databases ?? {})).toEqual([])
+  expect(Object.keys(row.buckets ?? {})).toEqual([])
+  expect(Object.keys(row.apps ?? {})).toEqual([])
+  // The parent's branch-scoped user secrets are NOT inherited...
+  expect(loadState().userSecrets[id]?.filter((u) => u.branch === 'empty')).toEqual([])
+  // ...and the event still records what the branch was cut from, marked as an empty cut.
+  const ev = loadState().events.filter((e) => e.kind === 'branch.created' && e.branch === 'empty')
+  expect(ev).toHaveLength(1)
+  expect(ev[0].payload).toMatchObject({ from: 'main', excludedServices: true })
+  // A malformed flag is a 400, not a silent full fork.
+  const bad = await post(`/projects/${id}/branches`, { name: 'empty2', from: 'main', excludeServices: 'yes' })
+  expect(bad.statusCode).toBe(400)
+})
+
 test('secrets returns the branch bundle (seam) and is gateable', async () => {
   const id = await createProject()
   const r = await get(`/projects/${id}/secrets?branch=main`)

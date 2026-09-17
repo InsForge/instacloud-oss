@@ -80,6 +80,13 @@ export function obsComponentFor(type: string): ObsComponent | undefined {
   return undefined
 }
 
+/** `GET /objects` (src/types.ts ObjectListing): flat S3 list-type=2 — no contentType, no folder
+ *  rollup; ui/src/lib/objectRows.ts derives both. */
+export type ObjectListing = {
+  objects: Array<{ key: string; size: number; lastModified: string; etag: string }>
+  nextCursor?: string
+}
+
 export type LogLine = { ts: string; level?: string; message: string; instance?: string }
 export type LogsResult = { source: string; lines: LogLine[]; note?: string }
 export type MetricSeries = { name: string; unit?: string; labels?: Record<string, string>; points: Array<[number, number]> }
@@ -211,8 +218,28 @@ export const api = {
   setAccess: (p: string, sid: string, isPublic: boolean, branch: string) =>
     call<{ service?: Service }>('PUT', `/projects/${p}/services/${sid}/access`, { public: isPublic, branch }),
 
-  createBranch: (p: string, name: string, from: string) =>
-    call<{ branch: { id: string; name: string } }>('POST', `/projects/${p}/branches`, { name, from }),
+  // Object storage (the Buckets tab). All four go through `call`: the actions are governable
+  // (storage.read/write/delete), so any of them can answer 202 approval_required.
+  listObjects: (p: string, sid: string, branch: string, opts?: { prefix?: string; cursor?: string; limit?: number }) =>
+    call<ObjectListing>('GET', `/projects/${p}/services/${sid}/objects${qs({ branch, ...opts })}`),
+  /** Presigned GET, 60s TTL: fetch it right before handing the URL to the browser. */
+  presignDownload: (p: string, sid: string, key: string, branch: string) =>
+    call<{ url: string; expiresAt: string }>('GET', `/projects/${p}/services/${sid}/objects/download${qs({ key, branch })}`),
+  /** Presigned POST form policy, 300s TTL: the browser multiparts `fields` + the file to `url`. */
+  presignUpload: (p: string, sid: string, body: { key: string; contentType: string; size: number }, branch: string) =>
+    call<{ url: string; fields: Record<string, string>; expiresAt: string }>('POST', `/projects/${p}/services/${sid}/objects/upload${qs({ branch })}`, body),
+  deleteObject: (p: string, sid: string, key: string, branch: string) =>
+    call<{ deleted: true }>('DELETE', `/projects/${p}/services/${sid}/objects${qs({ key, branch })}`),
+  deleteObjects: (p: string, sid: string, keys: string[], branch: string) =>
+    call<{ deleted: number; failed: Array<{ key: string; message: string }> }>('POST', `/projects/${p}/services/${sid}/objects/delete${qs({ branch })}`, { keys }),
+
+  /** `excludeServices` is the console's "Exclude all services": an empty branch, none of the
+   *  parent's services, secrets, or secret bindings are copied. Sent only when set. */
+  createBranch: (p: string, name: string, from: string, excludeServices?: boolean) =>
+    call<{ branch: { id: string; name: string } }>('POST', `/projects/${p}/branches`,
+      { name, from, ...(excludeServices ? { excludeServices } : {}) }),
+  renameBranch: (p: string, branchId: string, name: string) =>
+    call<{ branch: { id: string; name: string } }>('PATCH', `/projects/${p}/branches/${branchId}`, { name }),
   deleteBranch: (p: string, branchId: string) =>
     call<Teardown>('DELETE', `/projects/${p}/branches/${branchId}`),
   removeService: (p: string, sid: string, branch?: string) =>

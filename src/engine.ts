@@ -445,8 +445,10 @@ export class Engine {
   /** Provision one branch stack. `source` null = fresh (initdb); a Branch = fork its database
    *  (adapter-level: reflink or dump/restore). `branchId` is minted by the caller so the lane
    *  reservation and the op lock have an owner from the start (decision 51). WP5 rewrites this method
-   *  over registrations; the hooks it calls (contract 7.2) are already in place. */
-  private async provisionBranch(project: Project, name: string, isDefault: boolean, source: Branch | null, branchId: string): Promise<Branch> {
+   *  over registrations; the hooks it calls (contract 7.2) are already in place.
+   *  `empty` (the console's "Exclude all services") provisions only the branch shell — ref, network
+   *  and row — and materialises none of the source's services. */
+  private async provisionBranch(project: Project, name: string, isDefault: boolean, source: Branch | null, branchId: string, opts?: { empty?: boolean }): Promise<Branch> {
     const ref = this.ref(project, name)
     // FIRST, and synchronously: the name and the ref are claimed before a single resource exists
     // (decision 51). A concurrent create of the same branch refuses here, having created nothing,
@@ -481,9 +483,10 @@ export class Engine {
     // `forkFromParent`, which iterates the parent BRANCH's services (platform
     // `src/provisioning/branch.ts:270`). A project's first branch has no source and, at that point,
     // no registrations either.
-    const dbs = this.dbList(project.id).filter((d) => !source || this.carries(project, source, d, 'postgres'))
-    const stores = this.stList(project.id).filter((s) => !source || this.carries(project, source, s, 'storage'))
-    const managedRegs = this.managedList(project.id).filter((m) => !source || this.carries(project, source, m, 'managed'))
+    const empty = opts?.empty === true
+    const dbs = empty ? [] : this.dbList(project.id).filter((d) => !source || this.carries(project, source, d, 'postgres'))
+    const stores = empty ? [] : this.stList(project.id).filter((s) => !source || this.carries(project, source, s, 'storage'))
+    const managedRegs = empty ? [] : this.managedList(project.id).filter((m) => !source || this.carries(project, source, m, 'managed'))
     // Check every hostname this branch will mint and reserve every lane port it needs BEFORE the
     // first provisioning await, inside the engine-wide provision chain (decision 51). The check
     // itself writes nothing, so it stays out of a mutate: the chain is what makes it atomic.
@@ -643,9 +646,15 @@ export class Engine {
     }))
   }
 
-  async createBranch(projectId: string, name: string, from?: string): Promise<Branch> {
+  async createBranch(projectId: string, name: string, from?: string, opts?: { excludeServices?: boolean }): Promise<Branch> {
     const project = this.getProject(projectId)
     if (!project) throw new Error('project not found')
+    // The console's "Exclude all services": an empty branch, none of the parent's services,
+    // secrets, or secret bindings are copied. The parent still names what the branch was cut
+    // from (the event records it), it just contributes nothing to the clone. One known
+    // divergence: compute registrations are project-scoped here (`computeGroupNames`), so the
+    // empty branch still lists them as not-deployed rows — no container, data or secret is copied.
+    const excludeServices = opts?.excludeServices === true
     // Rename has always enforced this; create had not, so the API accepted a name that the
     // per-branch hostnames and URLs cannot express (`my branch`, `a/b`, `x?`). Same rule both
     // ways, at the daemon, so the CLI and agents get it too and not just the dashboard.
@@ -683,7 +692,7 @@ export class Engine {
     // grows, and from the first round on this holds `branchOp(source)`, which every add now
     // needs, so a second divergence would take an add landing in the gap between two rounds.
     // Bounded anyway, and a create that cannot settle says so rather than spinning.
-    let keys = this.createBranchKeys(project, source, branchId)
+    let keys = this.createBranchKeys(project, source, branchId, excludeServices)
     for (let round = 1; ; round++) {
       const settled = new Set(keys)
       const out = await this.withOp([...settled], async (): Promise<{ branch: Branch } | { union: ServiceKey[] }> => {
@@ -692,9 +701,9 @@ export class Engine {
         if (!this.getProject(projectId)) throw new Error('project not found')
         const live = loadState().branches[source.id]
         if (!live) throw new Error(`source branch "${source.name}" not found`)
-        const needed = this.createBranchKeys(project, live, branchId)
+        const needed = this.createBranchKeys(project, live, branchId, excludeServices)
         if (needed.every((k) => settled.has(k))) {
-          return { branch: await this.createBranchLocked(project, name, live, branchId) }
+          return { branch: await this.createBranchLocked(project, name, live, branchId, excludeServices) }
         }
         return { union: [...new Set([...settled, ...needed])] }
       })
@@ -709,8 +718,13 @@ export class Engine {
   /** Every ServiceKey a create of `branchId` from `source` touches: the project, both branch
    *  keys, and the source's carried services and compute groups on BOTH sides (what the source
    *  carries is exactly what the clone will carry, so one list keys both). Recomputed under the
-   *  lock from the re-read row, which is what makes the union check above meaningful. */
-  private createBranchKeys(project: Project, source: Branch, branchId: string): ServiceKey[] {
+   *  lock from the re-read row, which is what makes the union check above meaningful.
+   *
+   *  An exclude-services create forks nothing, so it needs no service keys at all — only the
+   *  project and the two branch keys. The set is static, so the union re-drive above settles on
+   *  the first round no matter what is being added to the source concurrently. */
+  private createBranchKeys(project: Project, source: Branch, branchId: string, excludeServices = false): ServiceKey[] {
+    if (excludeServices) return [this.projectOp(project), this.branchOp(source), this.branchOp(branchId)]
     const ids = this.carriedServiceIds(project, source)
     const groups = Object.keys(source.apps ?? {})
     return [
@@ -726,7 +740,7 @@ export class Engine {
     ]
   }
 
-  private async createBranchLocked(projectAtCall: Project, name: string, sourceAtCall: Branch, branchId: string): Promise<Branch> {
+  private async createBranchLocked(projectAtCall: Project, name: string, sourceAtCall: Branch, branchId: string, excludeServices = false): Promise<Branch> {
     const projectId = projectAtCall.id
     // Everything above was read BEFORE the lock, and the rows can have moved while this waited.
     // A project delete holding the same project key may have taken the project, the source
@@ -743,8 +757,11 @@ export class Engine {
     if (!source) throw new Error(`source branch "${sourceAtCall.name}" not found`)
     this.assertUsable(source, 'forked')
     if (this.getBranchByName(projectId, name)) throw new Error(`branch "${name}" already exists`)
-    // Each database forks inside provisionBranch (db.fork); each bucket copies here; compute redeploys.
-    const b = await this.serialize('provision', () => this.provisionBranch(project, name, false, source, branchId))
+    // Each database forks inside provisionBranch (db.fork); each bucket copies here; compute
+    // redeploys. An exclude-services create provisions only the branch shell (ref, network, row):
+    // passing `source` with `empty` keeps the fork semantics ("cut from that branch") without
+    // materialising anything it carries.
+    const b = await this.serialize('provision', () => this.provisionBranch(project, name, false, source, branchId, { empty: excludeServices }))
     // `provisionBranch` COMMITS the branch row, and every step below it -- the volume forks, the
     // bucket copies, the compute deploys, the inherited secrets -- builds resources that row
     // already advertises. `provisionBranch`'s own rollback cannot reach any of them, so a failure
@@ -770,17 +787,20 @@ export class Engine {
     let cloneName = name
     try {
       // WP4 hook: /data volumes fork BEFORE the redeploy loop, so each new container starts on its
-      // own copy rather than sharing the source's bytes.
-      const volumes = await this.forkVolumes(project, source, b)
-      for (const s of this.stList(projectId)) {
-        const from = this.bucketHandle(project, source, s.id)
-        const to = this.bucketHandle(project, b, s.id)
-        if (from && to) await this.storage.cloneInto(from.bucket, to.bucket, b.network)
-      }
-      // compute = redeploy: same image, SAME listen port, allocated host mapping.
-      for (const [group, app] of Object.entries(source.apps)) {
-        // WP3 hook: a clone of a non-always-on service starts asleep (false until the scheduler lands).
-        await this.deployAllocatingPort(projectId, name, group, app, { startAsleep: this.startAsleepFor(project, b, group) })
+      // own copy rather than sharing the source's bytes. An exclude-services create carries no
+      // compute, so there is nothing to fork, clone or redeploy.
+      const volumes = excludeServices ? [] : await this.forkVolumes(project, source, b)
+      if (!excludeServices) {
+        for (const s of this.stList(projectId)) {
+          const from = this.bucketHandle(project, source, s.id)
+          const to = this.bucketHandle(project, b, s.id)
+          if (from && to) await this.storage.cloneInto(from.bucket, to.bucket, b.network)
+        }
+        // compute = redeploy: same image, SAME listen port, allocated host mapping.
+        for (const [group, app] of Object.entries(source.apps)) {
+          // WP3 hook: a clone of a non-always-on service starts asleep (false until the scheduler lands).
+          await this.deployAllocatingPort(projectId, name, group, app, { startAsleep: this.startAsleepFor(project, b, group) })
+        }
       }
       // platform parity: the parent branch's user-defined (branch-scoped) secrets clone onto the new
       // branch, and so do its bindings (a template's platform credential renames must survive a fork).
@@ -806,6 +826,9 @@ export class Engine {
         const parent = st.branches[source.id]
         sourceName = parent?.name ?? source.name
         cloneName = st.branches[b.id]?.name ?? name
+        // Exclude-services: the names above are still needed for the event, but none of the
+        // parent's secrets, bindings or db settings are copied ("Creates an empty branch").
+        if (excludeServices) return
         const list = st.userSecrets[projectId] ?? []
         const inherited = list.filter((u) => u.branch === sourceName).map((u) => ({ ...u, branch: cloneName }))
         st.userSecrets[projectId] = [...list, ...inherited]
@@ -815,7 +838,7 @@ export class Engine {
         const dbVolumeGib = parent?.dbVolumeGib ?? source.dbVolumeGib
         if (dbVolumeGib !== undefined) st.branches[b.id].dbVolumeGib = dbVolumeGib
       })
-      secretsCloned = true
+      secretsCloned = !excludeServices
       // WP3 hook: the clone's databases sleep until first use (no-op until the scheduler lands).
       await this.sleepNewBranch(project, b)
       // WP4: how the database and each /data volume were copied (decision 39), so `insta events`
@@ -825,7 +848,7 @@ export class Engine {
       // Both names as the copy actually found them, so the event does not report a branch that
       // no longer answers to the name in it, and the caller gets the row as it stands rather
       // than the snapshot taken at commit time.
-      this.emit(projectId, cloneName, 'resource', 'branch.created', { from: sourceName, ...(db ? { db } : {}), volumes })
+      this.emit(projectId, cloneName, 'resource', 'branch.created', { from: sourceName, ...(db ? { db } : {}), volumes, ...(excludeServices ? { excludedServices: true } : {}) })
       return loadState().branches[b.id] ?? b
     } catch (e) {
       const undone = await this.unwindBranch(project, b, secretsCloned)

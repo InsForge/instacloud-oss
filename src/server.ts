@@ -252,14 +252,16 @@ export function buildServer(
 
   app.post('/projects/:id/branches', async (req, reply) => {
     const { id } = req.params as { id: string }
-    const { name, from } = (req.body ?? {}) as { name?: unknown; from?: unknown }
+    const { name, from, excludeServices } = (req.body ?? {}) as { name?: unknown; from?: unknown; excludeServices?: unknown }
     // Typed at the boundary, not just truthy: `{"name": 123}` used to pass, because RegExp.test
     // coerces its argument, and then failed deep in provisioning as a state-ish error instead of
     // the malformed-request 400 it is. Same for a non-string `from`.
     if (typeof name !== 'string' || !name) return reply.code(400).send({ error: 'name required' })
     if (from !== undefined && typeof from !== 'string') return reply.code(400).send({ error: 'from must be a string' })
+    // The console's "Exclude all services": an empty branch, nothing of the parent is copied.
+    if (excludeServices !== undefined && typeof excludeServices !== 'boolean') return reply.code(400).send({ error: 'excludeServices must be a boolean' })
     try {
-      const b = await engine.createBranch(id, name, from)
+      const b = await engine.createBranch(id, name, from, { excludeServices: excludeServices === true })
       return reply.code(201).send({ branch: { id: b.id, name: b.name } })
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e)

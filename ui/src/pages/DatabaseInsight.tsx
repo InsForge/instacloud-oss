@@ -6,6 +6,16 @@ import { api } from '../api'
 import { usePoll } from '../hooks'
 import { dbGateView, dbPanelKey } from '../lib/dbWakeGate'
 import { ConsolePage } from '../components/console/ConsolePage'
+import { TopTabs } from '../components/console/Tabs'
+import { DataTab, EditorTab, ExtensionsTab } from '../components/console/DatabaseTabs'
+
+/** The console's Database sub-tabs (D02): Data, Editor, Stats, Extension. No Configurations —
+ *  the daemon has no PgBouncer and credentials stay behind `insta secrets`. */
+const DB_TABS = [
+  { id: 'data', label: 'Data' }, { id: 'editor', label: 'Editor' },
+  { id: 'stats', label: 'Stats' }, { id: 'extension', label: 'Extension' },
+] as const
+type DbTabId = (typeof DB_TABS)[number]['id']
 
 function fmtBytes(n: number): string {
   if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GiB`
@@ -57,6 +67,7 @@ export function DatabasePanel({ projectId, branch, group, serviceId, footer }: {
   const [waking, setWaking] = useState(false)
   const [awaitingRead, setAwaitingRead] = useState(false)
   const [wakeError, setWakeError] = useState<string>()
+  const [sub, setSub] = useState<DbTabId>('data')
   // The hold ends when the metrics poll delivers its next answer, data or error; that answer decides what shows.
   useEffect(() => { setAwaitingRead(false) }, [metricsPoll.data, metricsPoll.error])
 
@@ -99,6 +110,24 @@ export function DatabasePanel({ projectId, branch, group, serviceId, footer }: {
     )
   }
 
+  return (
+    <div className="flex flex-col gap-4">
+      <TopTabs tabs={DB_TABS} value={sub} onChange={setSub} label="Database views" />
+      {sub === 'data' && <DataTab projectId={projectId} branch={branch} group={group} />}
+      {sub === 'editor' && <EditorTab projectId={projectId} branch={branch} group={group} />}
+      {sub === 'extension' && <ExtensionsTab projectId={projectId} branch={branch} group={group} />}
+      {sub === 'stats' && <StatsContent metrics={metrics} error={error} activity={activity} stats={stats} />}
+    </div>
+  )
+}
+
+/** The point-in-time stats blocks (the panel's original body), now the Stats sub-tab. */
+function StatsContent({ metrics, error, activity, stats }: {
+  metrics: Awaited<ReturnType<typeof api.dbMetrics>> | undefined
+  error: Error | undefined
+  activity: Awaited<ReturnType<typeof api.dbActivity>> | undefined
+  stats: Awaited<ReturnType<typeof api.dbQueryStats>> | undefined
+}) {
   return (
     <div className="flex flex-col gap-4">
       {error && (

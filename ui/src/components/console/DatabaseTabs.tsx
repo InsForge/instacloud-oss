@@ -1,0 +1,244 @@
+// The console's Database sub-tabs (insta-frontend database/data-tab.tsx, sql-editor.tsx,
+// extensions-tab.tsx): the Data browser (table rail + first rows), the SQL editor (query tabs,
+// Run, result grid) and the Extensions list. All three ride `POST /database/query` and the
+// existing extensions routes; the wake gate in DatabaseInsight.tsx fronts them, so a sleeping
+// instance never reaches here.
+//
+// Self-host divergences: the editor is a plain textarea (no CodeMirror — the dashboard adds no
+// editor dependency), there is no Configurations sub-tab yet (the daemon has no PgBouncer and its
+// credentials live behind `insta secrets`), and query tabs live in component state, not the URL.
+
+import { useCallback, useEffect, useState } from 'react'
+import { Button, Skeleton, Switch, cn } from '@insforge/ui'
+import { Plus, Table2 } from 'lucide-react'
+import { api, type DbQueryResult } from '../../api'
+import { cellText, TABLES_SQL, tableRowsSql, DATA_TAB_LIMIT } from '../../lib/sqlBrowse'
+
+function Th({ children, className }: { children?: string; className?: string }) {
+  return <th className={cn('border-b border-border px-4 py-3 text-left text-[13px] font-normal text-muted-foreground', className)}>{children}</th>
+}
+
+/** The rows-or-status result, as the editor and the data browser both print it. */
+function ResultGrid({ result, emptyMessage }: { result: DbQueryResult; emptyMessage: string }) {
+  if ('status' in result) {
+    return <p className="px-4 py-6 text-sm text-muted-foreground">{result.status} · {result.ms} ms</p>
+  }
+  if (result.rowCount === 0) {
+    return <p className="px-4 py-6 text-center text-sm text-muted-foreground">{emptyMessage}</p>
+  }
+  return (
+    <div className="max-h-[55vh] overflow-auto overscroll-contain">
+      <table className="w-full">
+        <thead className="sticky top-0 z-10 bg-card">
+          <tr>{result.columns.map((c) => <Th key={c}>{c}</Th>)}</tr>
+        </thead>
+        <tbody>
+          {result.rows.map((row, i) => (
+            <tr key={i} className="border-b border-border last:border-b-0 hover:bg-alpha-4">
+              {row.map((cell, j) => (
+                <td key={j} className={cn('max-w-80 truncate px-4 py-2 font-mono text-[13px]', cell === null && 'text-muted-foreground')}
+                  title={cellText(cell)}>
+                  {cellText(cell)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** Data: the table rail on the left, the first rows of the picked table on the right. */
+export function DataTab({ projectId, branch, group }: { projectId: string; branch: string; group?: string }) {
+  const [tables, setTables] = useState<Array<{ schema: string; name: string }> | null>(null)
+  const [picked, setPicked] = useState<{ schema: string; name: string } | null>(null)
+  const [rows, setRows] = useState<DbQueryResult | null>(null)
+  const [error, setError] = useState<string>()
+
+  const run = useCallback(async (sql: string) => {
+    const r = await api.dbQuery(projectId, sql, branch, group)
+    if (r.kind === 'error') { setError(r.error); return null }
+    if (r.kind === 'approval') { setError('This read needs an approval first (db.query).'); return null }
+    return r.data
+  }, [projectId, branch, group])
+
+  useEffect(() => {
+    void (async () => {
+      const r = await run(TABLES_SQL)
+      if (r && 'rows' in r) {
+        const list = r.rows.map(([schema, name]) => ({ schema: String(schema), name: String(name) }))
+        setTables(list)
+        setPicked((prev) => prev ?? list[0] ?? null)
+      }
+    })()
+  }, [run])
+
+  useEffect(() => {
+    if (!picked) return
+    setRows(null)
+    void (async () => {
+      const r = await run(tableRowsSql(picked.schema, picked.name))
+      if (r) setRows(r)
+    })()
+  }, [picked, run])
+
+  if (error) return <p className="px-1 py-4 text-sm text-destructive">{error}</p>
+  if (!tables) return <Skeleton className="h-40 rounded-lg" />
+  if (tables.length === 0) {
+    return <p className="py-10 text-center text-sm text-muted-foreground">No tables yet. Create one in the Editor and it appears here.</p>
+  }
+  return (
+    <div className="flex min-h-0 items-start gap-3">
+      <div className="w-56 shrink-0 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">Tables</div>
+        <div className="max-h-[55vh] overflow-y-auto p-1">
+          {tables.map((t) => {
+            const active = picked?.schema === t.schema && picked?.name === t.name
+            return (
+              <button key={`${t.schema}.${t.name}`} type="button" onClick={() => setPicked(t)}
+                className={cn('flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left font-mono text-[13px] transition-colors',
+                  active ? 'bg-alpha-8' : 'hover:bg-alpha-4')}>
+                <Table2 className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate" title={`${t.schema}.${t.name}`}>
+                  {t.schema === 'public' ? t.name : `${t.schema}.${t.name}`}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-card">
+        {rows ? (
+          <>
+            <ResultGrid result={rows} emptyMessage="This table is empty." />
+            {'rowCount' in rows && rows.rowCount >= DATA_TAB_LIMIT && (
+              <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">First {DATA_TAB_LIMIT} rows. Use the Editor for more.</p>
+            )}
+          </>
+        ) : (
+          <Skeleton className="m-4 h-32 rounded-lg" />
+        )}
+      </div>
+    </div>
+  )
+}
+
+type Query = { id: number; title: string; sql: string; result?: DbQueryResult; error?: string; running?: boolean }
+
+/** Editor: query tabs + Add Query over a statement box, Run, and the result pane. */
+export function EditorTab({ projectId, branch, group }: { projectId: string; branch: string; group?: string }) {
+  const [queries, setQueries] = useState<Query[]>([{ id: 1, title: 'Query 1', sql: '' }])
+  const [active, setActive] = useState(1)
+  const q = queries.find((x) => x.id === active) ?? queries[0]
+  const patch = (id: number, next: Partial<Query>) =>
+    setQueries((prev) => prev.map((x) => (x.id === id ? { ...x, ...next } : x)))
+
+  const run = async (query: Query) => {
+    if (!query.sql.trim() || query.running) return
+    patch(query.id, { running: true, error: undefined })
+    const r = await api.dbQuery(projectId, query.sql, branch, group)
+    if (r.kind === 'error') return patch(query.id, { running: false, result: undefined, error: r.error })
+    if (r.kind === 'approval') return patch(query.id, { running: false, error: 'Running statements needs an approval first (db.query).' })
+    patch(query.id, { running: false, result: r.data, error: undefined })
+  }
+
+  const addQuery = () => {
+    const id = Math.max(...queries.map((x) => x.id)) + 1
+    setQueries((prev) => [...prev, { id, title: `Query ${id}`, sql: '' }])
+    setActive(id)
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-1">
+        {queries.map((x) => (
+          <button key={x.id} type="button" onClick={() => setActive(x.id)}
+            className={cn('cursor-pointer rounded-md px-2.5 py-1 text-sm transition-colors',
+              x.id === q.id ? 'bg-alpha-8 font-medium' : 'text-muted-foreground hover:bg-alpha-4')}>
+            {x.title}
+          </button>
+        ))}
+        <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground" onClick={addQuery}>
+          <Plus className="size-3.5" />
+          Add Query
+        </Button>
+      </div>
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <textarea value={q.sql} onChange={(e) => patch(q.id, { sql: e.target.value })}
+          placeholder="-- write a SQL statement" rows={6} spellCheck={false}
+          aria-label={`${q.title} statement`}
+          onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void run(q) } }}
+          className="w-full resize-y bg-transparent px-4 py-3 font-mono text-[13px] outline-none placeholder:text-muted-foreground" />
+        <div className="flex items-center justify-between gap-3 border-t border-border px-3 py-2">
+          <p className="text-xs text-muted-foreground">⌘⏎ runs. Statements apply immediately — there is no staged Deploy here.</p>
+          <Button variant="primary" size="sm" disabled={!q.sql.trim() || q.running} onClick={() => { void run(q) }}>
+            {q.running ? 'Running…' : 'Run'}
+          </Button>
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        {q.error ? (
+          <p className="px-4 py-6 text-sm text-destructive">Query failed. {q.error}</p>
+        ) : q.result ? (
+          <ResultGrid result={q.result} emptyMessage="The statement returned no rows." />
+        ) : (
+          <p className="px-4 py-10 text-center text-sm text-muted-foreground">Click Run to execute your query</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Extensions: what the instance offers, with an enable/disable switch per row. */
+export function ExtensionsTab({ projectId, branch, group }: { projectId: string; branch: string; group?: string }) {
+  const [list, setList] = useState<{ available: Array<{ name: string }>; enabled: string[] } | null>(null)
+  const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState<string>()
+
+  const load = useCallback(async () => {
+    try { setList(await api.dbExtensions(projectId, branch, group)) }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+  }, [projectId, branch, group])
+  useEffect(() => { void load() }, [load])
+
+  const toggle = async (name: string, enable: boolean) => {
+    setBusy(name); setError(undefined)
+    const r = await api.dbPatchExtensions(projectId, enable ? { enable: [name] } : { disable: [name] }, branch, group)
+    setBusy(undefined)
+    if (r.kind === 'error') return setError(r.error)
+    if (r.kind === 'approval') return setError('Changing extensions needs an approval first.')
+    setList(r.data)
+  }
+
+  if (error && !list) return <p className="px-1 py-4 text-sm text-destructive">{error}</p>
+  if (!list) return <Skeleton className="h-40 rounded-lg" />
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <table className="w-full table-fixed">
+          <thead>
+            <tr><Th>Extension</Th><Th className="w-28 text-right">Enabled</Th></tr>
+          </thead>
+          <tbody>
+            {list.available.map((ext) => {
+              const on = list.enabled.includes(ext.name)
+              return (
+                <tr key={ext.name} className="border-b border-border last:border-b-0 hover:bg-alpha-4">
+                  <td className="truncate px-4 py-2 font-mono text-[13px]">{ext.name}</td>
+                  <td className="px-4 py-2">
+                    <div className="flex justify-end">
+                      <Switch checked={on} disabled={busy === ext.name} aria-label={`Enable ${ext.name}`}
+                        onCheckedChange={(v) => { void toggle(ext.name, v === true) }} />
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+    </div>
+  )
+}

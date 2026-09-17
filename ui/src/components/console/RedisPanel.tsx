@@ -1,19 +1,80 @@
-// The console's redis Database tab (insta-frontend database/redis-data-tab.tsx, E01): logical-db
-// chips, the key list, and the picked key's value, behind the same suspended/wake gate as
-// Postgres. Self-host divergences: only the Data view (the daemon has no redis Editor/Stats/
-// Configurations), collection values are bounded at the first 200 entries, and the gate copy has
-// no billing sentence — nothing is billed here.
+// The console's redis Database tab (insta-frontend database/redis-data-tab.tsx, E01): Data
+// (logical-db chips, the key list, the picked key's value) and Stats (the server's INFO counters),
+// behind the same suspended/wake gate as Postgres. Self-host divergences: no Editor or
+// Configurations sub-tab (an arbitrary-command editor is a different security posture than reads,
+// and the credentials live behind `insta secrets`), collection values are bounded at the first 200
+// entries, and the gate copy has no billing sentence — nothing is billed here.
 
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Skeleton, cn } from '@insforge/ui'
 import { KeyRound, Loader2 } from 'lucide-react'
-import { api, type RedisKeys, type RedisValue, type Service } from '../../api'
+import { api, type RedisKeys, type RedisStats, type RedisValue, type Service } from '../../api'
 import type { PendingApproval } from '../ApprovalPrompt'
 import { dbGateView } from '../../lib/dbWakeGate'
+import { TopTabs } from './Tabs'
+
+const REDIS_TABS = [{ id: 'data', label: 'Data' }, { id: 'stats', label: 'Stats' }] as const
+type RedisTabId = (typeof REDIS_TABS)[number]['id']
+
+function fmtBytes(n: number): string {
+  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GiB`
+  if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(1)} MiB`
+  if (n >= 1024) return `${(n / 1024).toFixed(0)} KiB`
+  return `${n.toFixed(0)} B`
+}
+
+function fmtUptime(sec: number): string {
+  if (sec >= 86_400) return `${Math.floor(sec / 86_400)}d ${Math.floor((sec % 86_400) / 3_600)}h`
+  if (sec >= 3_600) return `${Math.floor(sec / 3_600)}h ${Math.floor((sec % 3_600) / 60)}m`
+  return `${Math.floor(sec / 60)}m`
+}
+
+function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className="mt-2 text-[28px] font-bold tabular-nums">{value}</p>
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  )
+}
+
+/** The Stats sub-tab: INFO counters as cards, like the postgres Stats blocks. */
+function RedisStatsView({ projectId, branch, service }: { projectId: string; branch: string; service: Service }) {
+  const [stats, setStats] = useState<RedisStats | null>(null)
+  const [error, setError] = useState<string>()
+  useEffect(() => {
+    void (async () => {
+      const r = await api.redisStats(projectId, service.id, branch)
+      if (r.kind === 'error') return setError(r.error)
+      if (r.kind === 'approval') return setError('Reading stats needs an approval first (db.read).')
+      setStats(r.data)
+    })()
+  }, [projectId, service.id, branch])
+
+  if (error) return <p className="px-1 py-4 text-sm text-destructive">{error}</p>
+  if (!stats) return <Skeleton className="h-32 rounded-lg" />
+  const lookups = stats.keyspaceHits + stats.keyspaceMisses
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Memory" value={fmtBytes(stats.usedMemoryBytes)}
+          hint={stats.maxMemoryBytes > 0 ? `of ${fmtBytes(stats.maxMemoryBytes)}` : 'no maxmemory limit'} />
+        <StatCard label="Clients" value={String(stats.connectedClients)} hint={`${stats.opsPerSec} ops/s now`} />
+        <StatCard label="Cache hit" value={lookups ? `${((stats.keyspaceHits / lookups) * 100).toFixed(1)}%` : '—'}
+          hint={`${stats.keyspaceHits} hits · ${stats.keyspaceMisses} misses`} />
+        <StatCard label="Commands" value={String(stats.totalCommands)}
+          hint={`${stats.expiredKeys} expired · ${stats.evictedKeys} evicted keys`} />
+      </div>
+      <p className="text-xs text-muted-foreground">valkey {stats.version} · up {fmtUptime(stats.uptimeSec)}</p>
+    </div>
+  )
+}
 
 export function RedisPanel({ projectId, branch, service, onApproval }: {
   projectId: string; branch: string; service: Service; onApproval: (p: NonNullable<PendingApproval>) => void
 }) {
+  const [sub, setSub] = useState<RedisTabId>('data')
   const [db, setDb] = useState(0)
   const [listing, setListing] = useState<RedisKeys | null>(null)
   const [picked, setPicked] = useState<string | null>(null)
@@ -88,6 +149,9 @@ export function RedisPanel({ projectId, branch, service, onApproval }: {
 
   return (
     <div className="flex flex-col gap-3">
+      <TopTabs tabs={REDIS_TABS} value={sub} onChange={setSub} label="Redis views" />
+      {sub === 'stats' && <RedisStatsView projectId={projectId} branch={branch} service={service} />}
+      {sub === 'data' && <>
       <div className="flex items-center gap-2">
         {chips.map((d) => (
           <button key={d} type="button" onClick={() => { setDb(d); setPicked(null); setListing(null) }}
@@ -144,6 +208,7 @@ export function RedisPanel({ projectId, branch, service, onApproval }: {
           </div>
         </div>
       )}
+      </>}
     </div>
   )
 }

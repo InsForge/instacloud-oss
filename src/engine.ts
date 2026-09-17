@@ -10,7 +10,7 @@ import { dataLayout, ensureDirSync, lazyDataDirOps, probedCapabilities } from '.
 import { migrateLegacyData } from './datadir-migrate'
 import { docker } from './docker'
 import { BRANCH_NAME_RE, SERVICE_NAME_RE } from './names'
-import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseKeyspaceInfo, parseServiceId, pgContainerName, pgServiceId, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
+import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseKeyspaceInfo, parseRedisInfo, parseServiceId, pgContainerName, pgServiceId, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
 import * as observe from './observe'
 import { DEFAULT_STEP_SEC, DEFAULT_WINDOW_SEC, liveSeries, MetricsHistory, statsToSamples, type MetricsTarget, type MetricsWindow } from './metrics-history'
 import { loadState, mutate } from './state'
@@ -1893,6 +1893,28 @@ export class Engine {
     const dbs = parseKeyspaceInfo(await this.redisCmd(t, ['INFO', 'keyspace']))
     const cursor = String(scan[0])
     return { dbs, keys: (scan[1] as unknown[]).map(String), ...(cursor === '0' ? {} : { cursor }) }
+  }
+
+  /** The Stats view's snapshot: the server's own INFO counters, picked into the console's shape.
+   *  Same gate as the key reads: never wakes, 503 while asleep. */
+  async redisStats(projectId: string, serviceId: string, opts: { branch?: string } = {}): Promise<{
+    version: string; uptimeSec: number; connectedClients: number
+    usedMemoryBytes: number; maxMemoryBytes: number
+    totalCommands: number; opsPerSec: number; keyspaceHits: number; keyspaceMisses: number
+    expiredKeys: number; evictedKeys: number
+  }> {
+    const t = this.redisTarget(projectId, serviceId, opts.branch)
+    await this.assertPgAwake(t.branch, t.sid)
+    const info = parseRedisInfo(await this.redisCmd(t, ['INFO']))
+    const num = (k: string): number => { const n = Number(info[k]); return Number.isFinite(n) ? n : 0 }
+    return {
+      version: info.valkey_version ?? info.redis_version ?? 'unknown',
+      uptimeSec: num('uptime_in_seconds'), connectedClients: num('connected_clients'),
+      usedMemoryBytes: num('used_memory'), maxMemoryBytes: num('maxmemory'),
+      totalCommands: num('total_commands_processed'), opsPerSec: num('instantaneous_ops_per_sec'),
+      keyspaceHits: num('keyspace_hits'), keyspaceMisses: num('keyspace_misses'),
+      expiredKeys: num('expired_keys'), evictedKeys: num('evicted_keys'),
+    }
   }
 
   /** One key's type, TTL and value. Collection reads are bounded (first 200 entries), because a

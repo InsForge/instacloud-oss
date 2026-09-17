@@ -111,6 +111,18 @@ export function parseKeyspaceInfo(text: string): Array<{ db: number; keys: numbe
   return out
 }
 
+/** `INFO` → its key:value pairs (comment lines dropped), for the redis Stats view. */
+export function parseRedisInfo(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const colon = line.indexOf(':')
+    if (colon > 0) out[line.slice(0, colon)] = line.slice(colon + 1)
+  }
+  return out
+}
+
 // ---- region WP2 (router) ----
 /** Which managed types route by TLS SNI on the shared server-mode lane (redis 6379, mongo 27017).
  *  MySQL greets first and has no SNI, so it gets a plaintext per-service port (decision 38). Kept as

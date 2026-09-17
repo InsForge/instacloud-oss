@@ -126,6 +126,11 @@ export const managed: ManagedDbAdapter = {
     const joined = args.join(' ')
     if (joined.includes('SCAN')) return '["0",["user:1","user:2"]]'
     if (joined.includes('INFO keyspace')) return '# Keyspace\ndb0:keys=2,expires=0,avg_ttl=0'
+    if (joined === 'INFO') {
+      return ['# Server', 'valkey_version:7.2.14', 'uptime_in_seconds:120', '# Clients', 'connected_clients:2',
+        '# Memory', 'used_memory:1048576', 'maxmemory:0', '# Stats', 'total_commands_processed:42',
+        'instantaneous_ops_per_sec:1', 'keyspace_hits:9', 'keyspace_misses:1', 'expired_keys:0', 'evicted_keys:0'].join('\n')
+    }
     if (joined.includes('TYPE')) return '"string"'
     if (joined.includes('TTL')) return '-1'
     if (joined.includes('HGETALL')) return '{"token":"abc"}'

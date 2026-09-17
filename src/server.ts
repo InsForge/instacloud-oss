@@ -928,6 +928,15 @@ export function buildServer(
     catch (e) { return dataErr(reply, e) }
   })
 
+  app.get('/projects/:id/services/:sid/redis/stats', async (req, reply) => {
+    const { id, sid } = req.params as { id: string; sid: string }
+    const q = req.query as { branch?: string }
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    if (!gated(id, 'db.read', reply)) return reply
+    try { return await engine.redisStats(id, sid, { branch: q.branch }) }
+    catch (e) { return dataErr(reply, e) }
+  })
+
   app.get('/projects/:id/services/:sid/redis/value', async (req, reply) => {
     const { id, sid } = req.params as { id: string; sid: string }
     const q = req.query as { branch?: string; db?: string; key?: string }

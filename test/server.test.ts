@@ -5024,6 +5024,14 @@ test('redis key browser: keys + value routes, typed refusals, and the sleeping 5
   // The recorded exec carries container + args; the password rides the adapter's env, never argv.
   expect(calls.some((c) => c.startsWith('md.cmd:io-demo-main-rd-cache:'))).toBe(true)
 
+  // Stats: the INFO counters picked into the console's shape.
+  const stats = await get(`/projects/${id}/services/rd-cache/redis/stats`)
+  expect(stats.statusCode).toBe(200)
+  expect(stats.json()).toMatchObject({
+    version: '7.2.14', uptimeSec: 120, connectedClients: 2, usedMemoryBytes: 1048576,
+    totalCommands: 42, keyspaceHits: 9, keyspaceMisses: 1,
+  })
+
   // Typed refusals: a non-redis target, an out-of-range logical db, a missing key.
   expect((await get(`/projects/${id}/services/pg-db/redis/keys`)).statusCode).toBe(400)
   expect((await get(`/projects/${id}/services/rd-cache/redis/keys?db=16`)).statusCode).toBe(400)

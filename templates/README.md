@@ -60,10 +60,13 @@ Where the record stands, and what each row rests on:
 | `n8n` | yes | yes | The official `n8nio/n8n:2.36.5` index carries both. Nothing is rebuilt here |
 | `openclaw` | yes | yes | Upstream's index carries both; this image only adds an entrypoint |
 | `pi` | yes | yes | Same base and ttyd asset as the other terminal templates |
+| `whisper` | yes | **no** | Unproven, not incompatible. The machine this template was built on has no docker daemon, so the `--platform linux/arm64` build AGENTS.md asks for was never run. Both halves do publish for aarch64: torch serves `manylinux_2_28_aarch64` on its cpu index, and the ttyd aarch64 asset is already pinned in the Dockerfile. Run the two commands above and this becomes a one-line manifest change |
 
-Every row above was checked by building the template for `linux/arm64` on an arm64 machine and
-starting the resulting image until it answered its own manifest healthcheck. Re-check a row the
-same way rather than trusting it after a base image or upstream version moves.
+Every `arm64` **yes** above was checked by building the template for `linux/arm64` on an arm64
+machine and starting the resulting image until it answered its own manifest healthcheck. Re-check a
+row the same way rather than trusting it after a base image or upstream version moves. A **no**
+rests on its own Evidence cell instead, which says whether the architecture was disproven or just
+never proven: those are different, and only the second one is a row someone can clear.
 
 ## Logo attribution
 
@@ -81,6 +84,7 @@ because an RGBA file can still be fully opaque.
 | `n8n` | `logo.svg` 1.6 KB | yes (vector) | fixed `#EA4B71` | n8n's brand mark |
 | `openclaw` | `logo.svg` 4.6 KB | yes (vector) | fixed; includes a near-black `#050810` element | OpenClaw's mark |
 | `9router` | `logo.png` 500x500 | yes (corner alpha 0) | fixed orange `#F34E21` | 9router's own mark, taken from the copy at `i.imgur.com/yjb5HvR.png`. Upstream's repo PNG (`images/9router.png`) is a 2940x2594 screenshot of the app, not this mark, so that copy is the only place the asset is available. Please do not "correct" this row to the repo URL |
+| `whisper` | `meta.logo: none` | n/a | n/a | Upstream ships no mark. `openai/whisper` carries `approach.png`, which is a model architecture diagram, and `language-breakdown.svg`, which is a bar chart of WER per language: both are figures from the paper rather than a logo, and the rules here reject a hand-cut or redrawn one. The OpenAI corporate mark is the company's, not this project's, which is the difference between this row and the `codex` row above it (Codex has a product mark of its own). Declared `none` so the gallery draws a monogram |
 
 Logos are served to the gallery from jsDelivr, pinned to the commit that published the template:
 `https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@<sha>/templates/<code>/logo.svg`. That URL is

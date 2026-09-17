@@ -1,0 +1,65 @@
+code: herdr
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+upstream:
+  repo: herdrdev/herdr
+  pinned: "0.9.1"
+  license: Apache-2.0
+
+services:
+  # Named for the template, not "workspace": three templates sharing one service name collided on
+  # the same branch, the second overwriting the first (QA.md finding 1).
+  herdr:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/herdr:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 7681
+    # ttyd's own port and path. herdr speaks no HTTP at all: its API is a unix socket and its
+    # interface is a TUI, so ttyd is what answers this gate and what the browser reaches.
+    healthcheck: /
+    # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works (hermes and n8n
+    # cannot). Costs a ~25s cold boot, and a box left running with no browser is stopped.
+    # Consequence worth knowing, and it is upstream's own model too: panes keep running while the
+    # machine is up, and an idle stop ends the processes. herdr restores the saved layout on the
+    # next attach; the processes that were in it do not come back (herdr.dev/docs/session-state).
+    volume: true  # mounts at /data
+    env:
+      fixed:
+        # herdr derives every path it writes from HOME: config and session state in
+        # $HOME/.config/herdr (session.json, the layout it restores), logs in
+        # $HOME/.local/state/herdr, and both unix sockets in the config dir. One variable puts all
+        # of it on the volume. No HERDR_* path override is needed, and XDG_CONFIG_HOME would move
+        # only half of it.
+        HOME: /data/home
+      required:
+        # Neither a `default:` nor a `generate:`, matching the other terminal templates: the deploy
+        # form shows two empty required fields and cannot be submitted until the operator fills
+        # them. This service is a root shell in a browser, and a credential shipped in this file
+        # would be the same one on every deploy in the world.
+        ADMIN_USERNAME:
+          description: "Username for the browser terminal sign-in. Pick your own; it may not contain a colon"
+        ADMIN_PASSWORD:
+          description: "Password for the browser terminal sign-in. Pick a strong one: it is all that stands between the URL and a root shell"
+      optional:
+        # herdr needs no API key: it owns terminals, it does not call a model. These are here
+        # because panes inherit the service environment, so a key set once is present in whichever
+        # agent you start inside herdr. Both are equally fine set later from the terminal.
+        ANTHROPIC_API_KEY:
+          description: "Anthropic API key, picked up by Claude Code and other Anthropic clients you run inside herdr"
+        OPENAI_API_KEY:
+          description: "OpenAI API key, picked up by Codex and other OpenAI clients you run inside herdr"
+
+meta:
+  name: Herdr
+  tagline: Browser terminal workspace for running coding agents
+  category: ai-agent
+  tags: [ai-agent, terminal, ai]
+  # Architectures the published image carries. A box on anything else is told at deploy time
+  # rather than left to fail on the pull: the node base and the ttyd asset carry aarch64, and
+  # upstream publishes herdr-linux-aarch64 beside the x86_64 binary with its own checksum.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg              # upstream's own mark, assets/logo.svg at the pinned tag
+  links:
+    upstream: https://github.com/herdrdev/herdr
+    documentation: https://herdr.dev/docs/

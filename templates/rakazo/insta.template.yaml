@@ -12,16 +12,13 @@ upstream:
   pinned: "sha-771c18024d46a647ac5cd6e6334190a234bc8e1b@sha256:3e8f80fc055811efaa489c34b1c9dcbb999969bf3925cfd1ebddf8ce9b553b7e"
   license: Apache-2.0
 
-# Four independent values, because the app refuses to share them: resolveDedicatedSecret
-# (packages/core/src/secrets-guard.ts) throws at startup, naming the collision, if
-# SCREEN_PROXY_SECRET or SANDBOX_SUPERVISOR_TOKEN equals BETTER_AUTH_SECRET or each other, and it
-# refuses either under 32 characters. None of the four is ever typed or read by a user, which is
-# what puts them here instead of in `required`.
+# Three independent values, because the app refuses to share them: SCREEN_PROXY_SECRET must differ
+# from BETTER_AUTH_SECRET or resolveDedicatedSecret throws at startup naming the collision. None of
+# the three is ever typed or read by a user, which is what puts them here instead of in `required`.
 generated:
   auth_secret: secret:48
   encryption_key: secret:64
   screen_proxy_secret: secret:48
-  supervisor_token: secret:48
 
 services:
   # Rakazo's whole state lives in Postgres: accounts, bots, conversations, memory, routines, and
@@ -43,9 +40,9 @@ services:
     # inside this container. A suspended machine has nothing left to wake it, and "persistent AI
     # teammates" that stop existing between visits is the one thing this template cannot ship.
     alwaysOn: true
-    # DATA_DIR below, and not optional here: it holds the bot home directories AND the Docker
-    # data-root the bot computers live in (their image, their writable layers, their networks).
-    # Without it every restart re-pulls a 400 MB image and every computer starts empty.
+    # DATA_DIR below. Small under SANDBOX_PROVIDER=none (agent home directories belong to a
+    # computer provider, and there is none here), but the app's default of ./data resolves inside
+    # /app, which the image leaves root-owned while it runs as USER node.
     volume: true
     env:
       fixed:
@@ -65,42 +62,23 @@ services:
         # Vite preview's allowedHosts is exactly [RAKAZO_HOST]. Left at its `localhost` default the
         # server answers every request, the health probe included, with 403 Blocked request.
         RAKAZO_HOST: ${services.web.host}
-        # Bot computers are sibling containers of a Docker daemon the entrypoint runs INSIDE this
-        # service. A compute machine is a VM with the full capability set, so it can run its own
-        # dockerd; the platform's socket is never involved. `none` is the alternative and it is not
-        # a usable one: a run requires a computer (executor.ts refuses a bot without one), so with
-        # `none` the first chat message fails with "Computers unavailable".
-        SANDBOX_PROVIDER: docker
-        # The supervisor is in this same container, so both ends are loopback. SUPERVISOR_HOST is
-        # the security-relevant half: this API is root-equivalent on the machine, the platform
-        # routes only 5173, and 127.0.0.1 keeps it off every other interface.
-        SANDBOX_SUPERVISOR_URL: http://127.0.0.1:7091
-        SUPERVISOR_HOST: 127.0.0.1
-        SUPERVISOR_PORT: "7091"
-        DOCKER_SOCKET: /var/run/docker.sock
-        # Upstream's desktop image (Xvfb, fluxbox, Chromium, noVNC), pinned by INDEX digest so it
-        # resolves on both declared architectures, and taken from the same commit as the app image
-        # above: tag sha-771c18024d46a647ac5cd6e6334190a234bc8e1b. A digest-only reference on
-        # purpose -- `docker pull` and `docker image inspect` both accept it unambiguously, which
-        # a combined tag@digest reference does not everywhere.
-        RAKAZO_COMPUTER_IMAGE: ghcr.io/elie222/rakazo/computer@sha256:fbf49498e29c4515049e87059bc86afa398902c081d8b968293e4d81c4d5b931
-        # An empty directory. When the supervisor cannot inspect the computer image its fallback is
-        # to build one from the copy of infra/sandboxes/computer inside the app image, i.e. compile
-        # Chromium's Debian stack during a user's first click. With no Dockerfile at this path it
-        # reports the missing image instead, which is the truthful answer while the entrypoint's
-        # background pull is still running on a first boot.
-        RAKAZO_COMPUTER_CONTEXT: /opt/rakazo/no-computer-build
-        # `published` rather than the compose stack's `isolated`: each computer still gets its own
-        # per-bot bridge network, but its noVNC port is published on 127.0.0.1, which is how the
-        # API and the preview server in this container reach it. `isolated` throws at the first
-        # request here ("isolated Compose screens require a containerized supervisor"), because it
-        # resolves the screen through the supervisor's OWN container record and this supervisor has
-        # none: it runs in the machine, not in a container of the daemon it drives.
-        SANDBOX_SCREEN_NETWORK: published
-        # Each computer is capped at 2 GB and 2 CPUs by upstream's defaults, and here they come out
-        # of the same 8 GB machine as the API, the worker, the web preview and dockerd. Uncapped,
-        # one space could ask for enough computers to OOM the deployment out from under itself.
-        SANDBOX_MAX_COMPUTERS_PER_SPACE: "2"
+        # Bot computers are sibling containers of a Docker daemon, and this service CAN run one of
+        # its own: a compute machine starts with the full capability set and dockerd comes up on
+        # overlay2. That was tried, and a computer container really does run the whole desktop.
+        # What the nesting will not allow is the app DRIVING it. Two limits, both measured on prod
+        # and both outside a manifest's reach (the PR has the commands and the output):
+        #   1. the machine's cgroup root is `domain threaded`, so the memory and io controllers
+        #      cannot be enabled in any child cgroup and runc refuses a container spec carrying a
+        #      memory or CPU-quota limit at all;
+        #   2. the machine is a chroot, so runc installs a container's rootfs with MS_MOVE+chroot
+        #      rather than pivot_root. A chroot is per-process, not per-namespace, so anything
+        #      joining the container's namespaces -- the Docker exec API included -- lands OUTSIDE
+        #      it. Every computer operation upstream has is a container exec, starting with the
+        #      workspace mkdir, so computer.boot fails on the first one.
+        # Hence `none`, upstream's own supported value for a deployment with no computer host. Note
+        # what that costs, because it is the main reason this template is a draft: a run requires a
+        # computer, so with `none` chat does not work either, only the UI around it.
+        SANDBOX_PROVIDER: none
         CLOUD_AGENT_PROVIDER: none
         AGENT_RUNTIME: pi
         WAKEUP_DRIVER: graphile
@@ -113,9 +91,6 @@ services:
         # every credential already stored, which is why it is generated once and never surfaced.
         ENCRYPTION_KEY: ${encryption_key}
         SCREEN_PROXY_SECRET: ${screen_proxy_secret}
-        # The supervisor's bearer. Access to that surface is control of this machine's Docker
-        # daemon, which is why upstream keeps it independent of the two above.
-        SANDBOX_SUPERVISOR_TOKEN: ${supervisor_token}
       platform:
         DATABASE_URL: ${{services.db.DATABASE_URL}}
       # Nothing is required. Rakazo has no admin credential to seed: the FIRST account registered
@@ -145,14 +120,15 @@ meta:
   tagline: Persistent AI teammates with their own memory and routines
   category: ai-agent
   tags: [ai-agent, ai, automation]
-  # Upstream publishes both architectures for the app image and for the computer image
-  # (docs/self-host.md: "Every publish is multi-arch (amd64 + arm64)"; both pinned indexes above
-  # carry linux/amd64 and linux/arm64), and the overlay's own additions switch on the build
-  # architecture rather than assuming one.
+  # The overlay adds one file to upstream's image, and upstream publishes both architectures
+  # (docs/self-host.md: "Every publish is multi-arch (amd64 + arm64)"; the pinned index above
+  # carries linux/amd64 and linux/arm64).
   architectures: [amd64, arm64]
   logo: ./logo.svg
-  # Draft: this packs upstream's whole backend, plus a Docker daemon for the bot computers, into
-  # one container. That shape is a product call a human has to sign off on. See the PR.
+  # Draft, and the harder of the two reasons is not the packing: with no computer host reachable
+  # from a compute machine, a run cannot start, so this deploys the UI and not the product. Whether
+  # that ships at all, or waits for a remote sandbox provider's key, is a call for a human. See the
+  # PR for what was measured.
   draft: true
   links:
     upstream: https://github.com/elie222/rakazo

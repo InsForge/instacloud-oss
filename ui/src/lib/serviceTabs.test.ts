@@ -3,18 +3,22 @@ import { TAB_LABELS, tabsFor, type TabId } from './serviceTabs'
 
 describe('tabsFor', () => {
   it('gives compute the full rail, Volume included', () => {
-    expect(tabsFor('compute')).toEqual(['metrics', 'variables', 'runtime', 'volume', 'settings'])
+    expect(tabsFor('compute')).toEqual(['metrics', 'variables', 'deploys', 'runtime', 'volume', 'settings'])
   })
 
   it('gives postgres a Database tab and no Volume', () => {
-    expect(tabsFor('postgres')).toEqual(['database', 'metrics', 'variables', 'runtime', 'settings'])
+    expect(tabsFor('postgres')).toEqual(['database', 'metrics', 'variables', 'deploys', 'runtime', 'settings'])
+  })
+
+  it('gives redis the console Database tab (key browser)', () => {
+    expect(tabsFor('redis')).toEqual(['database', 'metrics', 'variables', 'deploys', 'runtime', 'settings'])
   })
 
   // The round-1 Critical: the daemon's volume read AND write both refuse every non-compute
   // service, so a Volume tab here could only ever show "volumes are only supported for compute
   // services" and an attach could never succeed.
-  it.each(['redis', 'mysql', 'mongodb'])('gives %s no Volume tab, because the daemon has none', (type) => {
-    expect(tabsFor(type)).toEqual(['metrics', 'variables', 'runtime', 'settings'])
+  it.each(['mysql', 'mongodb'])('gives %s no Volume tab and no data browser, because the daemon has neither', (type) => {
+    expect(tabsFor(type)).toEqual(['metrics', 'variables', 'deploys', 'runtime', 'settings'])
     expect(tabsFor(type)).not.toContain('volume')
   })
 

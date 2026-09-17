@@ -6,7 +6,7 @@
 //   compute   Metrics, Variables, Runtime Logs, Volume, Settings (General / Custom Domain)
 //   postgres  Database, Metrics, Variables, Runtime Logs, Settings
 //   managed   Metrics, Variables, Runtime Logs, Volume, Settings
-//   storage   Variables, Settings
+//   storage   Buckets, Variables, Settings
 // Self-host divergences: no Deployment Logs (the daemon has no deploy-events route); Variables are
 // names only (values stay behind `insta secrets`); a Runtime row for Start / Stop / Suspend, states
 // the console does not have; Custom Domain only in server mode; changes apply immediately.
@@ -32,6 +32,7 @@ import { LogsPanel } from '../../pages/Logs'
 import { DatabasePanel } from '../../pages/DatabaseInsight'
 import { dbPanelKey } from '../../lib/dbWakeGate'
 import { MetricCharts } from '../metrics/MetricCharts'
+import { BucketsPanel } from './BucketsPanel'
 import { VolumeCard } from './VolumeCard'
 import { ConnectDatabaseDialog } from './ConnectDatabaseDialog'
 import { isDbConnectEngine } from '../../lib/databaseConnect'
@@ -210,6 +211,12 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
                 // fresh chart state is what keeps one service's samples from wearing the next's name.
                 <MetricCharts key={service.id} projectId={projectId} component={obsComponentFor(service.type)!} branch={branch}
                   group={service.name} lineName={service.name} />
+              )}
+              {/* Keyed by service, like Metrics: the overlay stays mounted when another storage
+                  service opens, and one bucket's listing must not wear the next's name. */}
+              {active === 'buckets' && (
+                <BucketsPanel key={service.id} projectId={projectId} branch={branch} service={service}
+                  onDone={reload} onApproval={setApproval} />
               )}
               {active === 'variables' && <VariablesTab projectId={projectId} branch={branch} service={service} onApproval={setApproval} />}
               {active === 'runtime' && runtimeComponent && (

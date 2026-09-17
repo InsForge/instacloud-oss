@@ -18,9 +18,15 @@ describe('tabsFor', () => {
     expect(tabsFor(type)).not.toContain('volume')
   })
 
-  it('gives storage the minimum, and treats an unknown type the same way', () => {
-    expect(tabsFor('storage')).toEqual(['variables', 'settings'])
+  it('leads storage with the Buckets file browser; an unknown type gets the minimum', () => {
+    expect(tabsFor('storage')).toEqual(['buckets', 'variables', 'settings'])
     expect(tabsFor('something-new')).toEqual(['variables', 'settings'])
+  })
+
+  it('only ever names storage as bucket-bearing', () => {
+    const withBuckets = ['compute', 'postgres', 'redis', 'mysql', 'mongodb', 'storage', 'unknown']
+      .filter((t) => tabsFor(t).includes('buckets'))
+    expect(withBuckets).toEqual(['storage'])
   })
 
   it('only ever names compute as volume-bearing', () => {

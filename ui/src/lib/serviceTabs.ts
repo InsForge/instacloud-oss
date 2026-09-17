@@ -5,10 +5,11 @@
 // test beside a react-importing module cannot load under the root vitest config (see
 // test/ui-lib-deps.test.ts).
 
-export type TabId = 'database' | 'metrics' | 'variables' | 'runtime' | 'volume' | 'settings'
+export type TabId = 'buckets' | 'database' | 'metrics' | 'variables' | 'runtime' | 'volume' | 'settings'
 
 export const TAB_LABELS: Record<TabId, string> = {
-  database: 'Database', metrics: 'Metrics', variables: 'Variables', runtime: 'Runtime Logs', volume: 'Volume', settings: 'Settings',
+  buckets: 'Buckets', database: 'Database', metrics: 'Metrics', variables: 'Variables', runtime: 'Runtime Logs',
+  volume: 'Volume', settings: 'Settings',
 }
 
 /** The managed database types, as the daemon names them. Exported because the Settings card asks
@@ -24,5 +25,7 @@ export function tabsFor(type: string): TabId[] {
   // for compute services" and an attach could never succeed. A tab that cannot work is worse than
   // an absent one. It comes back if and when the daemon grows managed volumes.
   if (MANAGED_TYPES.has(type)) return ['metrics', 'variables', 'runtime', 'settings']
+  // Storage leads with the console's Buckets tab (the bucket + file browser).
+  if (type === 'storage') return ['buckets', 'variables', 'settings']
   return ['variables', 'settings']
 }

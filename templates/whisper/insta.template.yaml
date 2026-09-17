@@ -17,11 +17,16 @@ services:
     image: ghcr.io/insforge/insta-oss/templates/whisper:0.1.0   # built from ./Dockerfile by templates-build-images.yml
     port: 7681
     healthcheck: /             # ttyd answers 401 unauthenticated, which counts as healthy
-    # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works (hermes and n8n
-    # cannot). Costs a cold boot on the first request. Worth knowing for this template
-    # specifically: a transcription is a foreground command in the terminal, so closing the tab
-    # mid-run can let an idle machine stop with the job unfinished. `nohup`/`tmux` is the answer
-    # for a long file, and the README says so.
+    # No alwaysOn, which leaves the choice to the platform instead of asserting one: an undefined
+    # alwaysOn resolves to cfg.sleep.alwaysOnDefault on the DEFAULT branch (src/engine.ts,
+    # effectiveAlwaysOn) and to scale-to-zero on every other one, and alwaysOnDefault is true on a
+    # stock config. Verified on prod rather than assumed: the deployed service reports
+    # always_on=true. The identical comment on claude-code, codex and pi says wake-on-request
+    # applies here and predates anyone checking; see the PR for that.
+    # What does bite this template, on every branch and regardless of sleep: ttyd's close signal is
+    # SIGHUP, so closing the browser tab kills the foreground job. Verified both ways on a
+    # 2-minute file: hung up on mid-run it left a zombie and no transcript, and the same run under
+    # `nohup` finished with nobody connected. The README says to use `nohup` for long files.
     volume: true  # mounts at /data
     env:
       fixed:

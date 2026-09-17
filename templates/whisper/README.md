@@ -120,10 +120,12 @@ A browser terminal cannot open a file picker on your laptop, so this is worth re
 - **Out:** `cat transcripts/name.txt` and copy from the terminal, which is fine for a transcript and
   tedious for a batch. For anything larger, push it somewhere from inside the box: `curl -T`, a
   `git push`, or an object-store CLI you install yourself with `pip install`.
-- **Long files:** a transcription is a foreground command. This service is not `alwaysOn`, so a
-  browser tab closed mid-run can let the machine idle out with the job unfinished. Use
+- **Long files:** a transcription is a foreground command, and ttyd kills the shell when the
+  WebSocket closes, so **closing the browser tab kills the run.** This is not about the machine
+  sleeping; it happens immediately, while the machine is still up. Verified on a two-minute file:
+  transcribed in the foreground and hung up on mid-run, it left no transcript at all. Use
   `nohup whisper ... > transcripts/run.log 2>&1 &` for anything long, then reconnect and read the
-  log.
+  log. The same run under `nohup` finished with nobody connected.
 
 ## Links
 

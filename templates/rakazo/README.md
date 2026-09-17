@@ -3,11 +3,11 @@
 Persistent AI teammates with their own memory and routines.
 
 > **Draft.** The template deploys and has been verified end to end, but it stays out of the catalog
-> while two calls are pending. It packs upstream's four-process backend into a single container,
-> because server-side template deploys support web services only in v1; and it turns the bot
-> **computer** surface off (`SANDBOX_PROVIDER=none`), because bot computers are sibling Docker
-> containers started by a supervisor holding `/var/run/docker.sock`, which no template service can
-> be given. Both are shape decisions, not bugs. See the pull request that added this directory.
+> while one call is pending: it packs upstream's whole backend — the API, the graphile worker, the
+> web preview, a sandbox supervisor and a Docker daemon for the bot computers — into a single
+> container, because server-side template deploys support web services only in v1. That is a shape
+> decision, not a bug, and a human has to sign off on it. See the pull request that added this
+> directory.
 
 ## Overview
 
@@ -18,21 +18,25 @@ Electron desktop app and from an Expo mobile app; this template hosts the backen
 which is also the "Existing instance" the desktop and mobile apps connect to.
 
 Upstream is explicit that this is not a static site: it is a long-running API, a Graphile Worker,
-Postgres and a computer provider. This template runs the first three, with Postgres as a managed
-service. The overlay image (`./Dockerfile`) adds one file to upstream's own application image: an
-entrypoint that applies Prisma migrations and then runs the API, the worker and the Vite preview of
-the web app side by side, because upstream's stock command starts only the API and a manifest
-carries no `command:` field.
+Postgres and a computer provider. This template runs all of them, with Postgres as a managed
+service. The overlay image (`./Dockerfile`) adds a Docker Engine and one entrypoint script to
+upstream's own application image: the entrypoint applies Prisma migrations and then runs the API,
+the worker, the Vite preview of the web app, the sandbox supervisor and `dockerd` side by side,
+because upstream's stock command starts only the API and a manifest carries no `command:` field.
 
 ## What you get by hosting it
 
 - Bots that stay on. Routines and scheduled wakeups fire from graphile-worker polling Postgres
   inside the service, which is why it is declared always-on.
+- **Bot computers.** Each bot gets a Linux desktop of its own — Browser, Terminal, Files and the
+  graphical Desktop pane — running as a container of a Docker daemon inside the service. A run
+  needs a computer, so this is what makes chat work at all, not an extra.
 - An HTTPS URL serving the web app, same-origin-proxying `/api` and `/rpc` to the API process.
 - A managed Postgres holding every account, bot, conversation, memory record, routine and job.
 - Model credentials, voice providers and app integrations (Composio, Pipedream Connect, remote MCP,
   OpenAPI) configured in the app's own UI after deploy, not as deploy-time variables.
-- Auth, encryption and screen-proxy secrets generated for you and stored as managed secrets.
+- Auth, encryption, screen-proxy and supervisor secrets generated for you and stored as managed
+  secrets.
 
 ## What you need before deploying
 
@@ -56,19 +60,24 @@ carries no `command:` field.
 | `BETTER_AUTH_SECRET` | generated | Signs session cookies. You never set or read it. |
 | `ENCRYPTION_KEY` | generated | Passphrase for the AES-256-GCM store holding the credentials you enter in the UI. Generated once; changing it strands everything already stored. |
 | `SCREEN_PROXY_SECRET` | generated | Signs browser-screen capabilities. Upstream refuses to start if it equals `BETTER_AUTH_SECRET`, so it is a separate generator. |
+| `SANDBOX_SUPERVISOR_TOKEN` | generated | Bearer for the supervisor that creates bot computers. Upstream keeps it independent of the two above, because that surface is control of the service's Docker daemon. |
 | `DATABASE_URL` | platform | Bound from the `db` service. |
 
 Set by the template, not by you: `DATA_DIR=/data` (upstream's default of `./data` resolves inside
-`/app`, which the image leaves root-owned while running as `USER node`), `API_HOST=127.0.0.1` and
-`API_PROXY_TARGET=http://127.0.0.1:3100` (the API is reachable only from the preview server in the
-same container; 5173 is the one exposed port), `BETTER_AUTH_URL` / `WEB_ORIGIN` / `API_URL` resolved
-to the service's own HTTPS URL (cookies and CORS follow them), `RAKAZO_HOST` resolved to its
-hostname (Vite preview's `allowedHosts` is exactly this one value, and every request to any other
-host gets a 403), `SANDBOX_PROVIDER=none`, `CLOUD_AGENT_PROVIDER=none`, `AGENT_RUNTIME=pi`,
-`WAKEUP_DRIVER=graphile` and `LOG_FORMAT=json`.
+`/app`), `API_HOST=127.0.0.1` and `API_PROXY_TARGET=http://127.0.0.1:3100` (the API is reachable
+only from the preview server in the same container; 5173 is the one exposed port), `BETTER_AUTH_URL`
+/ `WEB_ORIGIN` / `API_URL` resolved to the service's own HTTPS URL (cookies and CORS follow them),
+`RAKAZO_HOST` resolved to its hostname (Vite preview's `allowedHosts` is exactly this one value, and
+every request to any other host gets a 403), `SANDBOX_PROVIDER=docker` with
+`SANDBOX_SUPERVISOR_URL=http://127.0.0.1:7091` and `SUPERVISOR_HOST=127.0.0.1` (the supervisor is a
+sibling process, not a sibling service, and loopback keeps a root-equivalent API off every other
+interface), `RAKAZO_COMPUTER_IMAGE` pinned by digest to upstream's desktop image at the same commit
+as the app image, `SANDBOX_SCREEN_NETWORK=published`, `SANDBOX_MAX_COMPUTERS_PER_SPACE=2`,
+`CLOUD_AGENT_PROVIDER=none`, `AGENT_RUNTIME=pi`, `WAKEUP_DRIVER=graphile` and `LOG_FORMAT=json`.
 
-The volume at `/data` is small under `SANDBOX_PROVIDER=none`: agent home directories belong to the
-Docker computer provider, which is off here. The state that matters is in Postgres.
+The volume at `/data` holds two things: each bot's home directory, and the Docker data-root the bot
+computers live in — their image, their writable layers and their networks. A computer and the files
+in it survive a restart because of it. Everything else that matters is in Postgres.
 
 ## After deploy
 
@@ -77,21 +86,24 @@ Docker computer provider, which is off here. The state that matters is in Postgr
 2. Connect a model: Settings, then the model provider section, or set `OPENROUTER_API_KEY` at deploy
    time to skip this.
 3. Create a bot and talk to it. Give it a routine if you want it working while you are away.
-4. Optional: in the desktop or mobile app choose **Existing instance** and enter this HTTPS URL.
+4. Open the bot's **computer** to watch it work, or take control of the desktop yourself.
+5. Optional: in the desktop or mobile app choose **Existing instance** and enter this HTTPS URL.
 
-What is **not** available in this deployment: the **Agent computer** panes (Browser, Terminal,
-Files, graphical Desktop). Those run in per-bot sibling containers started by upstream's sandbox
-supervisor over the Docker socket. Chat, memory, routines, delegation to peer bots and the
-MCP/OpenAPI/Composio/Pipedream tool sources do not depend on it. For the computer surface, follow
-upstream's [self-hosting guide](https://github.com/elie222/rakazo/blob/main/docs/self-host.md) on a
-VM you control.
+Two things to expect on the **first** boot only. The 400 MB desktop image is pulled in the
+background while the database migrations run, so for roughly the first minute opening a bot computer
+reports the image as missing; it works from then on, and after a restart the image is already on the
+volume. And bots share a Team Computer by default, with at most two computers per space here,
+because each is capped at 2 GB of the same machine the app runs on.
 
 ## Links
 
-- Architectures: `linux/amd64` and `linux/arm64`. Upstream publishes both and this image only adds
-  an entrypoint.
+- Architectures: `linux/amd64` and `linux/arm64`. Upstream publishes both for the app and the
+  desktop image, and the overlay's Docker Engine download picks per architecture with its own
+  checksum for each.
 - Upstream: <https://github.com/elie222/rakazo>
 - Self-hosting guide: <https://github.com/elie222/rakazo/blob/main/docs/self-host.md>
-- Image: `ghcr.io/elie222/rakazo/app`, pinned to `sha-771c18024d46a647ac5cd6e6334190a234bc8e1b`.
-  Upstream publishes no release tag yet, only `edge` and one `sha-<commit>` tag per main build.
+- Sandbox providers: <https://github.com/elie222/rakazo/blob/main/docs/self-host-sandbox-providers.md>
+- Images: `ghcr.io/elie222/rakazo/app` and `ghcr.io/elie222/rakazo/computer`, both pinned to
+  `sha-771c18024d46a647ac5cd6e6334190a234bc8e1b`. Upstream publishes no release tag yet, only `edge`
+  and one `sha-<commit>` tag per main build. Docker Engine 29.8.1, from Docker's static bundle.
 - License: Apache-2.0 (upstream `elie222/rakazo`).

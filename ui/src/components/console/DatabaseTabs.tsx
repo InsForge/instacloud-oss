@@ -5,11 +5,12 @@
 // instance never reaches here.
 //
 // Self-host divergences: the editor is a plain textarea (no CodeMirror — the dashboard adds no
-// editor dependency), there is no Configurations sub-tab yet (the daemon has no PgBouncer and its
-// credentials live behind `insta secrets`), and query tabs live in component state, not the URL.
+// editor dependency), the Configurations sub-tab has no PgBouncer section (the daemon runs no
+// pooler) and never shows the regenerated value (credentials live behind `insta secrets` and the
+// Connect dialog), and query tabs live in component state, not the URL.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Skeleton, Switch, cn } from '@insforge/ui'
+import { Button, ConfirmDialog, Skeleton, Switch, cn } from '@insforge/ui'
 import { Plus, Table2 } from 'lucide-react'
 import { api, type DbQueryResult } from '../../api'
 import { cellText, TABLES_SQL, tableRowsSql, DATA_TAB_LIMIT } from '../../lib/sqlBrowse'
@@ -186,6 +187,65 @@ export function EditorTab({ projectId, branch, group }: { projectId: string; bra
           <p className="px-4 py-10 text-center text-sm text-muted-foreground">Click Run to execute your query</p>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Configurations: the console's Username / Password rows (D02). The regenerate re-mints
+ *  DATABASE_URL on the daemon; running containers keep the old env until their next deploy. */
+export function ConfigurationsTab({ projectId, branch, group }: { projectId: string; branch: string; group?: string }) {
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+  const [error, setError] = useState<string>()
+
+  const regenerate = async () => {
+    setBusy(true); setError(undefined); setDone(false)
+    const r = await api.dbRegeneratePassword(projectId, branch, group)
+    setBusy(false); setConfirmOpen(false)
+    if (r.kind === 'error') return setError(r.error)
+    if (r.kind === 'approval') return setError('Regenerating the password needs an approval first (secrets.read).')
+    setDone(true)
+  }
+
+  const row = 'flex items-start justify-between gap-6 border-b border-border px-4 py-4 last:border-b-0'
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className={row}>
+          <div>
+            <p className="text-sm font-medium">Username</p>
+            <p className="mt-1 text-sm text-muted-foreground">The postgres role your connection string uses.</p>
+          </div>
+          <span className="font-mono text-[13px]">postgres</span>
+        </div>
+        <div className={row}>
+          <div>
+            <p className="text-sm font-medium">Password</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Regenerate Password &mdash; breaks existing connections until they use the new password. Deployed
+              containers keep the old value until their next deploy.
+            </p>
+            {done && (
+              <p className="mt-2 text-sm text-success">
+                Password regenerated. Read the new connection string in the Connect dialog or with{' '}
+                <span className="font-mono">insta secrets --print</span>.
+              </p>
+            )}
+            {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-[13px] tracking-widest text-muted-foreground select-none">••••••••••••••••</span>
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => setConfirmOpen(true)}>Regenerate</Button>
+          </div>
+        </div>
+      </div>
+      {confirmOpen && (
+        <ConfirmDialog open onOpenChange={setConfirmOpen} title="Regenerate Password" confirmText="Regenerate"
+          destructive isLoading={busy}
+          description="Breaks existing connections until they use the new password. Deployed containers keep the old value until their next deploy."
+          onConfirm={() => { void regenerate() }} />
+      )}
     </div>
   )
 }

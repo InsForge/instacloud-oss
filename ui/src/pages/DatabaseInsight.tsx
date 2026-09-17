@@ -7,13 +7,13 @@ import { usePoll } from '../hooks'
 import { dbGateView, dbPanelKey } from '../lib/dbWakeGate'
 import { ConsolePage } from '../components/console/ConsolePage'
 import { TopTabs } from '../components/console/Tabs'
-import { DataTab, EditorTab, ExtensionsTab } from '../components/console/DatabaseTabs'
+import { ConfigurationsTab, DataTab, EditorTab, ExtensionsTab } from '../components/console/DatabaseTabs'
 
-/** The console's Database sub-tabs (D02): Data, Editor, Stats, Extension. No Configurations —
- *  the daemon has no PgBouncer and credentials stay behind `insta secrets`. */
+/** The console's Database sub-tabs (D02), in its order: Data, Editor, Stats, Configurations,
+ *  Extension. */
 const DB_TABS = [
-  { id: 'data', label: 'Data' }, { id: 'editor', label: 'Editor' },
-  { id: 'stats', label: 'Stats' }, { id: 'extension', label: 'Extension' },
+  { id: 'data', label: 'Data' }, { id: 'editor', label: 'Editor' }, { id: 'stats', label: 'Stats' },
+  { id: 'configurations', label: 'Configurations' }, { id: 'extension', label: 'Extension' },
 ] as const
 type DbTabId = (typeof DB_TABS)[number]['id']
 
@@ -115,6 +115,7 @@ export function DatabasePanel({ projectId, branch, group, serviceId, footer }: {
       <TopTabs tabs={DB_TABS} value={sub} onChange={setSub} label="Database views" />
       {sub === 'data' && <DataTab projectId={projectId} branch={branch} group={group} />}
       {sub === 'editor' && <EditorTab projectId={projectId} branch={branch} group={group} />}
+      {sub === 'configurations' && <ConfigurationsTab projectId={projectId} branch={branch} group={group} />}
       {sub === 'extension' && <ExtensionsTab projectId={projectId} branch={branch} group={group} />}
       {sub === 'stats' && <StatsContent metrics={metrics} error={error} activity={activity} stats={stats} />}
     </div>

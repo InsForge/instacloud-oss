@@ -50,6 +50,12 @@ export type DbExtensions = { available: Array<{ name: string }>; enabled: string
 /** The redis key browser (`GET .../redis/keys` and `/redis/value`). */
 export type RedisKeys = { dbs: Array<{ db: number; keys: number }>; keys: string[]; cursor?: string }
 export type RedisValue = { type: string; ttl: number; value: unknown }
+export type RedisStats = {
+  version: string; uptimeSec: number; connectedClients: number
+  usedMemoryBytes: number; maxMemoryBytes: number
+  totalCommands: number; opsPerSec: number; keyspaceHits: number; keyspaceMisses: number
+  expiredKeys: number; evictedKeys: number
+}
 export type Operation = { id: string; action: string; status: string; createdAt?: string }
 export type SecretTree = {
   projectWide: string[]
@@ -233,6 +239,10 @@ export const api = {
     call<DbQueryResult>('POST', `/projects/${p}/database/query`, { sql, branch, ...(group ? { group } : {}) }),
   dbExtensions: (p: string, branch: string, group?: string) =>
     get<DbExtensions>(`/projects/${p}/database/extensions${qs({ branch, group })}`),
+  /** Regenerate the postgres password (server-minted; re-mints DATABASE_URL). Gated secrets.read
+   *  because the answer carries the new connection string. */
+  dbRegeneratePassword: (p: string, branch: string, group?: string) =>
+    call<{ connString: string; password: string }>('POST', `/projects/${p}/database/password${qs({ branch, group })}`, {}),
   dbPatchExtensions: (p: string, body: { enable?: string[]; disable?: string[] }, branch: string, group?: string) =>
     call<DbExtensions>('PATCH', `/projects/${p}/database/extensions${qs({ branch, group })}`, body),
 
@@ -241,6 +251,8 @@ export const api = {
     call<RedisKeys>('GET', `/projects/${p}/services/${sid}/redis/keys${qs({ branch, ...opts })}`),
   redisValue: (p: string, sid: string, key: string, branch: string, db?: number) =>
     call<RedisValue>('GET', `/projects/${p}/services/${sid}/redis/value${qs({ key, branch, db })}`),
+  redisStats: (p: string, sid: string, branch: string) =>
+    call<RedisStats>('GET', `/projects/${p}/services/${sid}/redis/stats${qs({ branch })}`),
 
   // Object storage (the Buckets tab). All four go through `call`: the actions are governable
   // (storage.read/write/delete), so any of them can answer 202 approval_required.

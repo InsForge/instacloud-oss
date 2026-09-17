@@ -1,0 +1,72 @@
+code: whisper
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+upstream:
+  repo: openai/whisper
+  package: openai-whisper
+  pinned: "20250625"
+  license: MIT
+
+services:
+  # Named for the template, not "terminal" or "workspace": three templates sharing one service
+  # name collided on the same branch, the second overwriting the first (QA.md finding 1).
+  whisper:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/whisper:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 7681
+    healthcheck: /             # ttyd answers 401 unauthenticated, which counts as healthy
+    # No alwaysOn, which leaves the choice to the platform instead of asserting one: an undefined
+    # alwaysOn resolves to cfg.sleep.alwaysOnDefault on the DEFAULT branch (src/engine.ts,
+    # effectiveAlwaysOn) and to scale-to-zero on every other one, and alwaysOnDefault is true on a
+    # stock config. Verified on prod rather than assumed: the deployed service reports
+    # always_on=true. The identical comment on claude-code, codex and pi says wake-on-request
+    # applies here and predates anyone checking; see the PR for that.
+    # What does bite this template, on every branch and regardless of sleep: ttyd's close signal is
+    # SIGHUP, so closing the browser tab kills the foreground job. Verified both ways on a
+    # 2-minute file: hung up on mid-run it left a zombie and no transcript, and the same run under
+    # `nohup` finished with nobody connected. The README says to use `nohup` for long files.
+    volume: true  # mounts at /data
+    env:
+      fixed:
+        # Shell history, the audio the user brings and the transcripts it produces.
+        HOME: /data/home
+        # The variable whisper itself reads to place its model cache, verified against the source
+        # rather than assumed: whisper/__init__.py resolves $XDG_CACHE_HOME/whisper. Without this
+        # every restart re-downloads whichever model the user had settled on, up to 1.5 GB.
+        XDG_CACHE_HOME: /data/cache
+      required:
+        # Neither a `default:` nor a `generate:`, matching the other terminal templates: this
+        # service is a root shell on the public internet, and a credential shipped in this file
+        # would be the same one on every deploy in the world. Nothing here falls back.
+        ADMIN_USERNAME:
+          description: "Username for the browser terminal sign-in. Pick your own; it may not contain a colon"
+        ADMIN_PASSWORD:
+          description: "Password for the browser terminal sign-in. Pick a strong one: it is all that stands between the URL and a root shell"
+
+meta:
+  name: Whisper
+  tagline: Speech recognition and translation in a browser terminal
+  # The nearest of the three existing categories. Whisper is a speech model rather than a text
+  # one, so neither this nor ai-agent is exact; see the PR for the proposal to add a speech
+  # category, which is a registry-wide call and not this template's to make.
+  category: llm
+  tags: [speech-to-text, ai]
+  # amd64 only, declared rather than hoped: AGENTS.md asks for a proven arm64 build and this
+  # image could not be proven. There is no docker daemon on the machine this template was built
+  # on, so `docker buildx build --platform linux/arm64` was never run, and an emulated arm64 leg
+  # for a torch-sized pip install is a long CI job to discover a failure in. Both wheel sets do
+  # exist (torch publishes manylinux_2_28_aarch64 on its cpu index, and the ttyd aarch64 asset is
+  # already pinned in the Dockerfile), so this is a missing proof, not a known incompatibility:
+  # run the two commands in AGENTS.md and add arm64 in one line if they pass.
+  architectures: [amd64]
+  # Upstream ships no mark of its own: openai/whisper carries an architecture diagram
+  # (approach.png) and a language-breakdown chart, neither of which is a logo, and the OpenAI
+  # corporate mark is the company's rather than this project's. Declared `none` per the logo
+  # rules, which is the reviewed opt-out; consumers fall back to a monogram.
+  logo: none
+  links:
+    upstream: https://github.com/openai/whisper
+    documentation: https://github.com/openai/whisper#readme
+    model-card: https://github.com/openai/whisper/blob/main/model-card.md

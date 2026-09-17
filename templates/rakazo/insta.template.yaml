@@ -1,0 +1,121 @@
+code: rakazo
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# Upstream publishes no release tag yet: the app package carries `edge` plus one `sha-<commit>` tag
+# per main build, and `latest` does not exist (docs/self-host.md says so in as many words). The
+# `sha-` tag is the pinnable one, and the index digest beside it is what the overlay's FROM uses.
+upstream:
+  repo: elie222/rakazo
+  image: ghcr.io/elie222/rakazo/app
+  pinned: "sha-771c18024d46a647ac5cd6e6334190a234bc8e1b@sha256:3e8f80fc055811efaa489c34b1c9dcbb999969bf3925cfd1ebddf8ce9b553b7e"
+  license: Apache-2.0
+
+# Three independent values, because the app refuses to share them: SCREEN_PROXY_SECRET must differ
+# from BETTER_AUTH_SECRET or resolveDedicatedSecret throws at startup naming the collision. None of
+# the three is ever typed or read by a user, which is what puts them here instead of in `required`.
+generated:
+  auth_secret: secret:48
+  encryption_key: secret:64
+  screen_proxy_secret: secret:48
+
+services:
+  # Rakazo's whole state lives in Postgres: accounts, bots, conversations, memory, routines, and
+  # the graphile-worker job queue. Bare, as a managed service must be.
+  db:
+    type: postgres
+
+  web:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/rakazo:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 5173
+    # NOT `/`. The Vite preview server answers `/` with the SPA shell whether or not the API behind
+    # it is alive, so `/` would go green on a deployment whose backend never came up. `/api` is
+    # same-origin-proxied to the API process, and /api/auth/capabilities is the one route it serves
+    # before any session exists (app.ts registers it above the auth handler), so this path proves
+    # the preview server AND the API in one request.
+    healthcheck: /api/auth/capabilities
+    # Routines, scheduled wakeups and bot follow-ups fire from graphile-worker polling Postgres
+    # inside this container. A suspended machine has nothing left to wake it, and "persistent AI
+    # teammates" that stop existing between visits is the one thing this template cannot ship.
+    alwaysOn: true
+    # DATA_DIR below. Small under SANDBOX_PROVIDER=none (agent home directories belong to the
+    # Docker computer provider, which is off here), but the app's default of ./data resolves inside
+    # /app, which the image leaves root-owned while it runs as USER node.
+    volume: true
+    env:
+      fixed:
+        NODE_ENV: production
+        DATA_DIR: /data
+        # The API binds loopback on purpose: the only thing that talks to it is the preview server
+        # in this same container, and 5173 is the sole port the platform exposes.
+        API_HOST: 127.0.0.1
+        API_PORT: "3100"
+        API_PROXY_TARGET: http://127.0.0.1:3100
+        WEB_PORT: "5173"
+        # Cookies, CORS and the auth callback all follow these three, and the browser only ever
+        # reaches the app on its public origin.
+        BETTER_AUTH_URL: ${services.web.url}
+        WEB_ORIGIN: ${services.web.url}
+        API_URL: ${services.web.url}
+        # Vite preview's allowedHosts is exactly [RAKAZO_HOST]. Left at its `localhost` default the
+        # server answers every request, the health probe included, with 403 Blocked request.
+        RAKAZO_HOST: ${services.web.host}
+        # Bot computers are Docker siblings started by a supervisor holding /var/run/docker.sock.
+        # A template service cannot be handed that socket, so the computer surface is off and the
+        # supervisor is not one of the processes the overlay starts. Chat, memory, routines and
+        # tool integrations do not depend on it; Browser/Terminal/Desktop panes do.
+        SANDBOX_PROVIDER: none
+        CLOUD_AGENT_PROVIDER: none
+        AGENT_RUNTIME: pi
+        WAKEUP_DRIVER: graphile
+        LOG_LEVEL: info
+        LOG_FORMAT: json
+      generated:
+        BETTER_AUTH_SECRET: ${auth_secret}
+        # A scrypt passphrase, not a hex key (adapters/src/secrets.ts derives AES-256-GCM material
+        # from it per record), so the generator's base64url alphabet is fine. Rotating it strands
+        # every credential already stored, which is why it is generated once and never surfaced.
+        ENCRYPTION_KEY: ${encryption_key}
+        SCREEN_PROXY_SECRET: ${screen_proxy_secret}
+      platform:
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
+      # Nothing is required. Rakazo has no admin credential to seed: the FIRST account registered
+      # through the web UI becomes the deployment owner, so the operator's first job after deploy is
+      # to open the URL and sign up. Everything below is a deploy-form convenience for someone who
+      # already holds the value; all of it is also settable in the app's own UI afterwards.
+      optional:
+        OPENROUTER_API_KEY:
+          description: "OpenRouter API key for model calls (openrouter.ai/keys). Leave blank to connect a model provider in the app after signing up"
+        SIGNUPS_ENABLED:
+          description: "Set to false to close registration. Read only on the API's FIRST start and never reapplied, so it cannot lock out an owner who has not signed up yet"
+        SIGNUP_ALLOWLIST:
+          description: "Comma-separated emails or @domains allowed to register, e.g. you@example.com,@company.com. A non-empty list makes every sign-in require email verification, so set SMTP_URL too"
+        SMTP_URL:
+          description: "Transactional email for verification and password recovery, e.g. smtps://user:password@smtp.example.com:465. Without it the app has no forgot-password flow"
+        EMAIL_FROM:
+          description: "Sender address for those emails, e.g. Rakazo <no-reply@example.com>. Pairs with SMTP_URL"
+        COMPOSIO_API_KEY:
+          description: "Composio API key enabling the app-integrations catalog (composio.dev). Leave blank to use Pipedream, remote MCP or OpenAPI tool sources instead"
+
+# SMTP_URL and EMAIL_FROM are a pair upstream reads together, but not declared allOf: leaving BOTH
+# blank is the supported keyless deployment, and allOf would only be satisfiable by filling in two
+# fields nobody on a trusted network needs.
+
+meta:
+  name: Rakazo
+  tagline: Persistent AI teammates with their own memory and routines
+  category: ai-agent
+  tags: [ai-agent, ai, automation]
+  # The overlay adds one file to upstream's image, and upstream publishes both architectures
+  # (docs/self-host.md: "Every publish is multi-arch (amd64 + arm64)"; the pinned index above
+  # carries linux/amd64 and linux/arm64).
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  # Draft: this packs a four-process stack into one container and turns the bot-computer surface
+  # off, both of which are product calls a human has to sign off on. See the PR.
+  draft: true
+  links:
+    upstream: https://github.com/elie222/rakazo
+    documentation: https://github.com/elie222/rakazo/blob/main/docs/self-host.md

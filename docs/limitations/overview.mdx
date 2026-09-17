@@ -1,0 +1,26 @@
+---
+title: "Overview"
+description: "The gaps people run into most often, and what to reach for instead."
+---
+
+We are working to turn long-term plans into short-term releases, and some of it has not landed yet. Below are the gaps people run into most often. If something is blocking you and it is not here, say so on [Discord](https://discord.com/invite/MPxwj5xVvW).
+
+## No rollback
+
+Every deploy replaces the one before it, and there is no list of previous deployments to go back to. If you deployed a pinned image you can deploy that tag again, and if you deployed a directory the old build is not addressable at all.
+
+## No build or start command override
+
+Build and start commands come from detection and cannot be set. When detection gets your service wrong, a Dockerfile is the only way to take control of it.
+
+## Schedules stop on a sleeping service
+
+A service that scales to zero has no process while it sleeps and nothing wakes it on a timer, so a cron loop or queue worker inside your container just stops. Keep it always-on if it has to keep time. We may add scheduling at the platform level later.
+
+## No private network
+
+Services reach each other over their public HTTPS URLs. Compute listens on one HTTP port and a raw TCP port cannot be exposed at all, so a container speaking a wire protocol of its own runs fine and nothing reaches it, inside the project or outside. Use the managed Postgres, Redis, MySQL and MongoDB types for that.
+
+## One region per service
+
+You pick a region when you create a service, and `insta services scale` adds replicas in that same region. Multi-region replication is not here yet.

@@ -20,6 +20,7 @@ export const RANGES = {
   '6h': { label: '6 hour', seconds: 21_600, step: '5m', stepSeconds: 300 },
   '1d': { label: '1 day', seconds: 86_400, step: '15m', stepSeconds: 900 },
   '3d': { label: '3 day', seconds: 259_200, step: '1h', stepSeconds: 3_600 },
+  '7d': { label: '7 day', seconds: 604_800, step: '2h', stepSeconds: 7_200 },
 } as const
 
 export type RangeKey = keyof typeof RANGES
@@ -28,7 +29,7 @@ export type RangeKey = keyof typeof RANGES
 export const PRESET_KEYS = Object.keys(RANGES) as RangeKey[]
 
 /** How far back a custom range may reach: the daemon's retention. */
-export const MAX_LOOKBACK_DAYS = 3
+export const MAX_LOOKBACK_DAYS = 7
 
 /** What one poll sends every component it merges: the SAME span, or the lines would not be comparable. */
 export interface MetricsWindow {

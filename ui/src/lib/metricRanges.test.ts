@@ -43,10 +43,10 @@ describe('activeRange — the window a poll asks for (regression: longer ranges 
 })
 
 describe('the presets', () => {
-  it("carry the console's labels, stop at the daemon's three-day retention, and step no finer than its 30 s samples", () => {
-    expect(PRESET_KEYS.map((key) => RANGES[key].label)).toEqual(['5 min', '15 min', '30 min', '1 hour', '3 hour', '6 hour', '1 day', '3 day'])
+  it("carry the console's labels, stop at the daemon's seven-day retention, and step no finer than its 30 s samples", () => {
+    expect(PRESET_KEYS.map((key) => RANGES[key].label)).toEqual(['5 min', '15 min', '30 min', '1 hour', '3 hour', '6 hour', '1 day', '3 day', '7 day'])
     for (const key of PRESET_KEYS) {
-      expect(RANGES[key].seconds).toBeLessThanOrEqual(3 * 86_400)
+      expect(RANGES[key].seconds).toBeLessThanOrEqual(7 * 86_400)
       expect(RANGES[key].stepSeconds).toBeGreaterThanOrEqual(30)
       expect(RANGES[key].seconds % RANGES[key].stepSeconds).toBe(0)
     }
@@ -95,8 +95,8 @@ describe('customRange', () => {
     expect(r.zeroWindow.to).toBeLessThanOrEqual(r.window.to)
   })
 
-  it('refuses a range reaching past the three days the daemon keeps, and an empty or reversed one', () => {
-    expect(customRange(now - 3 * 86_400 - 60, now, T0)).toBeNull()
+  it('refuses a range reaching past the seven days the daemon keeps, and an empty or reversed one', () => {
+    expect(customRange(now - 7 * 86_400 - 60, now, T0)).toBeNull()
     expect(customRange(now, now, T0)).toBeNull()
     expect(customRange(now, now - 60, T0)).toBeNull()
   })

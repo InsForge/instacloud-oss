@@ -4,8 +4,7 @@
 // rows here are that stream filtered to one service and one time window.
 //
 // Self-host divergences: no Status or Machine column (audit events carry neither; a failed deploy
-// reports its error at the call site and emits nothing), and the range picker tops out at the
-// metrics module's 3-day lookback instead of the console's 7 days.
+// reports its error at the call site and emits nothing).
 
 import { eventDetail } from './activity'
 

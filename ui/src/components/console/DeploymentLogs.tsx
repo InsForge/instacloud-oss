@@ -2,8 +2,8 @@
 // table of what deployed, restarted, slept and woke, per service. Self-host divergences (also in
 // lib/deployEvents.ts): the rows come from the daemon's audit stream (`GET /events`) rather than a
 // machine-operation feed, so there is no Status or Machine column — the daemon runs one machine
-// per group and a failed deploy reports at the call site instead of emitting an event — and the
-// widest preset is the metrics module's 3 days, not the console's 7.
+// per group and a failed deploy reports at the call site instead of emitting an event. The widest
+// preset is 7 day, the console's own default here.
 
 import { useState } from 'react'
 import { cn, Skeleton } from '@insforge/ui'

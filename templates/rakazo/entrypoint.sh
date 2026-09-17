@@ -3,10 +3,12 @@
 #
 # Upstream's compose stack is five services: Postgres, an API (Hono, 3100), a graphile-worker, a
 # Vite preview of the web app (5173, same-origin-proxying /api and /rpc to the API), and a sandbox
-# supervisor holding /var/run/docker.sock. Server-side template deploys support web services only
-# in v1, so the middle three run here as siblings, Postgres is the managed `db` service the
-# manifest declares, and the supervisor is left out because no template service can be handed the
-# Docker socket (hence SANDBOX_PROVIDER=none in the manifest).
+# supervisor driving a Docker daemon. Server-side template deploys support web services only in
+# v1, so the middle three run here as siblings, Postgres is the managed `db` service the manifest
+# declares, and the supervisor is left out -- NOT because a template cannot have a Docker daemon.
+# It can: this container ran its own dockerd and a real bot computer, and that was measured. What
+# it cannot do is DRIVE one, because the Docker exec API lands outside the container on this
+# platform. The manifest's SANDBOX_PROVIDER comment has the mechanism.
 #
 # Deliberately not `set -e`: every failure below is handled with a message that names the cause,
 # because the CLI collapses a failed template deploy into "internal template deployment failure"

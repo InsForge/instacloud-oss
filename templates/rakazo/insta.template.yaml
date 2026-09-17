@@ -70,11 +70,19 @@ services:
         #   1. the machine's cgroup root is `domain threaded`, so the memory and io controllers
         #      cannot be enabled in any child cgroup and runc refuses a container spec carrying a
         #      memory or CPU-quota limit at all;
-        #   2. the machine is a chroot, so runc installs a container's rootfs with MS_MOVE+chroot
-        #      rather than pivot_root. A chroot is per-process, not per-namespace, so anything
-        #      joining the container's namespaces -- the Docker exec API included -- lands OUTSIDE
-        #      it. Every computer operation upstream has is a container exec, starting with the
-        #      workspace mkdir, so computer.boot fails on the first one.
+        #   2. a compute machine is a chroot inside a Kata guest, so the mount-namespace root any
+        #      nested runc can build on is the GUEST's root, never the machine's. The container's
+        #      rootfs therefore ends up as an overlay at the machine's own root path plus a chroot,
+        #      and `docker exec`, which only joins namespaces, lands at that guest root -- OUTSIDE
+        #      the container. Creating a private mount namespace first does not change it (a new
+        #      namespace copies the tree from the namespace root, and the chroot is inherited as
+        #      process state), and neither does pivot_root from inside it: pivot_root returns
+        #      success and rewrites only the calling process's root, leaving the namespace root on
+        #      the guest's virtiofs mount. Both were run on prod; the PR has the output. Only
+        #      whatever creates the machine's namespace could fix this, by pivot_root instead of
+        #      chroot -- nothing inside the machine can. Every computer operation upstream has is a
+        #      container exec, starting with the workspace mkdir, so computer.boot fails on the
+        #      first one.
         # Hence `none`, upstream's own supported value for a deployment with no computer host. Note
         # what that costs, because it is the main reason this template is a draft: a run requires a
         # computer, so with `none` chat does not work either, only the UI around it.

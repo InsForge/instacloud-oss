@@ -11,11 +11,13 @@ Persistent AI teammates with their own memory and routines.
 >
 > Running the computers locally was tried. A compute machine can run a Docker daemon of its own, and
 > a bot computer container really does start and run the whole desktop, but the app cannot drive it:
-> the machine is a chroot, so a container's rootfs is installed with `MS_MOVE`+`chroot` instead of
-> `pivot_root`, and the Docker **exec** API — which every one of upstream's computer operations goes
-> through — lands outside the container. Separately, the machine's cgroup root is `domain threaded`,
-> so no container here can carry a memory or CPU limit. Neither is reachable from a manifest. The
-> pull request that added this directory has the measurements.
+> a compute machine is a chroot inside a Kata guest, so the mount-namespace root a nested runc
+> builds on is the guest's root and not the machine's, and the Docker **exec** API — which every one
+> of upstream's computer operations goes through — joins that namespace and lands outside the
+> container. Making a private mount namespace in the entrypoint first, and then `pivot_root`-ing
+> inside it, were both tried on prod and neither moves the namespace root. Separately, the machine's
+> cgroup root is `domain threaded`, so no container here can carry a memory or CPU limit. None of it
+> is reachable from a manifest. The pull request that added this directory has the measurements.
 >
 > The second, smaller call is the shape: upstream's whole backend runs as sibling processes in one
 > container, because server-side template deploys support web services only in v1.

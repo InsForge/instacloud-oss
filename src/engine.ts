@@ -10,7 +10,7 @@ import { dataLayout, ensureDirSync, lazyDataDirOps, probedCapabilities } from '.
 import { migrateLegacyData } from './datadir-migrate'
 import { docker } from './docker'
 import { BRANCH_NAME_RE, SERVICE_NAME_RE } from './names'
-import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseServiceId, pgContainerName, pgServiceId, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
+import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseKeyspaceInfo, parseServiceId, pgContainerName, pgServiceId, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
 import * as observe from './observe'
 import { DEFAULT_STEP_SEC, DEFAULT_WINDOW_SEC, liveSeries, MetricsHistory, statsToSamples, type MetricsTarget, type MetricsWindow } from './metrics-history'
 import { loadState, mutate } from './state'
@@ -1853,6 +1853,67 @@ export class Engine {
     return out
   }
 
+  // ---- managed data browser (platform parity: the console's redis key browser) ----
+
+  /** Resolve a redis-browse target: the managed service on THIS branch, its container and password. */
+  private redisTarget(projectId: string, serviceId: string, branchName?: string): { branch: Branch; sid: string; container: string; password: string } {
+    const { branch, serviceId: sid } = this.resolveSid(projectId, serviceId, branchName)
+    const svc = this.serviceOf(projectId, sid)
+    if (svc.type !== 'redis') throw new Error('key browsing is only supported for redis services')
+    const project = this.getProject(projectId)!
+    this.assertCarries(project, branch, { id: sid }, 'managed')
+    const password = branch.managed?.[sid]?.password
+    if (!password) throw new Error(`redis service not found: ${svc.name}`)
+    return { branch, sid, container: managedContainerName(this.ref(project, branch), 'redis', svc.name), password }
+  }
+
+  private redisCmd(t: { container: string; password: string }, args: string[]): Promise<string> {
+    if (!this.managedDb.command) throw new Error('key browsing is not supported by this managed database adapter')
+    return this.managedDb.command(t.container, t.password, args)
+  }
+
+  /** valkey-cli's `--json` output, parsed; the raw text when a command answers outside JSON. */
+  private async redisJson(t: { container: string; password: string }, args: string[]): Promise<unknown> {
+    const out = (await this.redisCmd(t, ['--json', ...args])).trim()
+    try { return JSON.parse(out) } catch { return out }
+  }
+
+  /** One SCAN page of a logical db plus the keyspace summary (the console's db chips). Never wakes:
+   *  a sleeping instance answers "sleeping" through the same 503 gate as the postgres insight
+   *  reads, and the dashboard's Wake and browse is what wakes it. */
+  async redisKeys(projectId: string, serviceId: string, opts: { branch?: string; db?: number; cursor?: string; count?: number }): Promise<{ dbs: Array<{ db: number; keys: number }>; keys: string[]; cursor?: string }> {
+    const t = this.redisTarget(projectId, serviceId, opts.branch)
+    await this.assertPgAwake(t.branch, t.sid) // pg-named, but it only reads the scheduler state of a key
+    const db = String(opts.db ?? 0)
+    const count = Math.min(Math.max(opts.count ?? 200, 1), 1000)
+    const scan = await this.redisJson(t, ['-n', db, 'SCAN', opts.cursor ?? '0', 'COUNT', String(count)])
+    if (!Array.isArray(scan) || scan.length < 2 || !Array.isArray(scan[1])) {
+      throw new Error('could not read the key listing: the server answered an unexpected shape')
+    }
+    const dbs = parseKeyspaceInfo(await this.redisCmd(t, ['INFO', 'keyspace']))
+    const cursor = String(scan[0])
+    return { dbs, keys: (scan[1] as unknown[]).map(String), ...(cursor === '0' ? {} : { cursor }) }
+  }
+
+  /** One key's type, TTL and value. Collection reads are bounded (first 200 entries), because a
+   *  key browser must never buffer an unbounded structure into the daemon's heap. */
+  async redisValue(projectId: string, serviceId: string, opts: { branch?: string; db?: number; key: string }): Promise<{ type: string; ttl: number; value: unknown }> {
+    const t = this.redisTarget(projectId, serviceId, opts.branch)
+    await this.assertPgAwake(t.branch, t.sid)
+    const db = String(opts.db ?? 0)
+    const read = (args: string[]) => this.redisJson(t, ['-n', db, ...args])
+    const type = String(await read(['TYPE', opts.key]))
+    if (type === 'none') throw new Error('key not found')
+    const ttl = Number(await read(['TTL', opts.key]))
+    const value = type === 'string' ? await read(['GET', opts.key])
+      : type === 'hash' ? await read(['HGETALL', opts.key])
+        : type === 'list' ? await read(['LRANGE', opts.key, '0', '199'])
+          : type === 'set' ? await read(['SSCAN', opts.key, '0', 'COUNT', '200']).then((s) => (Array.isArray(s) ? s[1] : s))
+            : type === 'zset' ? await read(['ZRANGE', opts.key, '0', '199', 'WITHSCORES'])
+              : null
+    return { type, ttl, value }
+  }
+
   /** Resolve a lifecycle target: a compute service id + branch (default branch unless given). */
   private computeTarget(projectId: string, serviceId: string, branchName?: string): { branch: Branch; group: string } {
     // The branch comes from a qualified sid FIRST, then ?branch, then the default (decision 49):
@@ -3090,6 +3151,33 @@ export class Engine {
       if (observe.isExtensionUnavailable(m)) return { stats: [], extensionReady: false }
       throw e
     }
+  }
+
+  /** One ad-hoc SQL statement against a branch's Postgres, for the console's SQL editor and Data
+   *  tab. Never wakes (the tab sits behind the dashboard's wake gate, decision 48). A SELECT-ish
+   *  statement comes back as columns + rows through a json_agg wrap — psql's `-tAc` transport is
+   *  text, so JSON is the one shape that survives it losslessly — and anything else runs as
+   *  written, reporting psql's command tag. Bounded by DOCKER_MAX_OUTPUT_BYTES like every other
+   *  docker read; callers should still LIMIT what they select. */
+  async dbQuery(projectId: string, sql: string, branchName?: string, group?: string): Promise<
+    { columns: string[]; rows: unknown[][]; rowCount: number; ms: number } | { status: string; ms: number }
+  > {
+    const t = this.dbTarget(projectId, branchName, group)
+    await this.assertPgAwake(t.branch, t.serviceId)
+    const started = Date.now()
+    const selectish = /^\s*(select|with|values|table|show|explain)\b/i.test(sql)
+    if (selectish) {
+      const inner = sql.trim().replace(/;+\s*$/, '')
+      const out = await this.db.query(t.container, `select coalesce(json_agg(row_to_json(t)), '[]'::json) from (${inner}) t`)
+      const parsed = JSON.parse(out || '[]') as Array<Record<string, unknown>>
+      // row_to_json preserves column order in its object keys, and JSON.parse keeps insertion
+      // order, so the first row's keys ARE the result's column order. Duplicate output names
+      // collapse (json objects key uniquely); alias them apart in the statement.
+      const columns = parsed.length ? Object.keys(parsed[0]) : []
+      return { columns, rows: parsed.map((r) => columns.map((c) => r[c])), rowCount: parsed.length, ms: Date.now() - started }
+    }
+    const out = await this.db.query(t.container, sql)
+    return { status: out || 'OK', ms: Date.now() - started }
   }
 
   /** Manifest view: project + branches + per-branch resources (db / compute groups). */

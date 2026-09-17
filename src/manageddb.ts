@@ -100,6 +100,17 @@ export const managedServiceId = (type: ManagedDbType, name: string): string => `
 export const managedContainerName = (ref: string, type: ManagedDbType, name: string): string =>
   `io-${ref}-${MANAGED_DB[type].idPrefix}-${name}`
 
+/** `INFO keyspace` → the logical dbs that hold keys ("db0:keys=3,expires=0,avg_ttl=0"), for the
+ *  console's db chips on the redis key browser. Empty dbs are simply absent from the output. */
+export function parseKeyspaceInfo(text: string): Array<{ db: number; keys: number }> {
+  const out: Array<{ db: number; keys: number }> = []
+  for (const line of text.split('\n')) {
+    const m = /^db(\d+):keys=(\d+)/.exec(line.trim())
+    if (m) out.push({ db: Number(m[1]), keys: Number(m[2]) })
+  }
+  return out
+}
+
 // ---- region WP2 (router) ----
 /** Which managed types route by TLS SNI on the shared server-mode lane (redis 6379, mongo 27017).
  *  MySQL greets first and has no SNI, so it gets a plaintext per-service port (decision 38). Kept as

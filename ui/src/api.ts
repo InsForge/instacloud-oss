@@ -42,6 +42,14 @@ export type DbActivityRow = {
 }
 export type DbQueryStatRow = { queryId: string; query: string; calls: number; meanMs: number; totalMs: number; rows: number }
 export type DbQueryStats = { stats: DbQueryStatRow[]; extensionReady: boolean }
+/** `POST /database/query`: rows for a SELECT-ish statement, psql's command tag otherwise. */
+export type DbQueryResult =
+  | { columns: string[]; rows: unknown[][]; rowCount: number; ms: number }
+  | { status: string; ms: number }
+export type DbExtensions = { available: Array<{ name: string }>; enabled: string[] }
+/** The redis key browser (`GET .../redis/keys` and `/redis/value`). */
+export type RedisKeys = { dbs: Array<{ db: number; keys: number }>; keys: string[]; cursor?: string }
+export type RedisValue = { type: string; ttl: number; value: unknown }
 export type Operation = { id: string; action: string; status: string; createdAt?: string }
 export type SecretTree = {
   projectWide: string[]
@@ -165,7 +173,8 @@ export const api = {
     (await get<{ services: Service[] }>(`/projects/${p}/services${qs({ branch })}`)).services,
   approvals: async (p: string) => (await get<{ approvals: Approval[] }>(`/projects/${p}/approvals`)).approvals,
   policy: async (p: string) => (await get<{ policy: Policy }>(`/projects/${p}/policy`)).policy,
-  events: async (p: string, limit = 30) => (await get<{ events: AuditEvent[] }>(`/projects/${p}/events?limit=${limit}`)).events,
+  events: async (p: string, limit = 30, branch?: string) =>
+    (await get<{ events: AuditEvent[] }>(`/projects/${p}/events${qs({ limit, branch })}`)).events,
   /** `group` narrows to ONE service's container. It matters for more than bandwidth: the daemon
    *  merges every container in the component and truncates to `limit` LAST, so a noisy sibling can
    *  fill the whole window and a quiet service looks like it has no logs at all. */
@@ -217,6 +226,21 @@ export const api = {
     call<{ state?: string }>('POST', `/projects/${p}/services/${sid}/wake${qs({ branch })}`),
   setAccess: (p: string, sid: string, isPublic: boolean, branch: string) =>
     call<{ service?: Service }>('PUT', `/projects/${p}/services/${sid}/access`, { public: isPublic, branch }),
+
+  /** The SQL editor and Data tab. Through `call`: db.query is governable, and a sleeping instance
+   *  answers 503 (the wake gate fronts every caller). */
+  dbQuery: (p: string, sql: string, branch: string, group?: string) =>
+    call<DbQueryResult>('POST', `/projects/${p}/database/query`, { sql, branch, ...(group ? { group } : {}) }),
+  dbExtensions: (p: string, branch: string, group?: string) =>
+    get<DbExtensions>(`/projects/${p}/database/extensions${qs({ branch, group })}`),
+  dbPatchExtensions: (p: string, body: { enable?: string[]; disable?: string[] }, branch: string, group?: string) =>
+    call<DbExtensions>('PATCH', `/projects/${p}/database/extensions${qs({ branch, group })}`, body),
+
+  // The redis key browser (governable db.read; 503 while the instance sleeps).
+  redisKeys: (p: string, sid: string, branch: string, opts?: { db?: number; cursor?: string; count?: number }) =>
+    call<RedisKeys>('GET', `/projects/${p}/services/${sid}/redis/keys${qs({ branch, ...opts })}`),
+  redisValue: (p: string, sid: string, key: string, branch: string, db?: number) =>
+    call<RedisValue>('GET', `/projects/${p}/services/${sid}/redis/value${qs({ key, branch, db })}`),
 
   // Object storage (the Buckets tab). All four go through `call`: the actions are governable
   // (storage.read/write/delete), so any of them can answer 202 approval_required.

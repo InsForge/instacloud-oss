@@ -5011,6 +5011,60 @@ test('database management wakes a sleeping instance; observability answers 503 a
   expect((await get(`/projects/${id}/database/metrics`)).statusCode).toBe(200)
 })
 
+test('redis key browser: keys + value routes, typed refusals, and the sleeping 503', async () => {
+  const { engine, id } = await wp3Project()
+  expect((await post(`/projects/${id}/services`, { type: 'redis', name: 'cache' })).statusCode).toBe(201)
+
+  const keys = await get(`/projects/${id}/services/rd-cache/redis/keys`)
+  expect(keys.statusCode).toBe(200)
+  expect(keys.json()).toEqual({ dbs: [{ db: 0, keys: 2 }], keys: ['user:1', 'user:2'] })
+  const value = await get(`/projects/${id}/services/rd-cache/redis/value?key=user:1`)
+  expect(value.statusCode).toBe(200)
+  expect(value.json()).toEqual({ type: 'string', ttl: -1, value: '{"name":"ada"}' })
+  // The recorded exec carries container + args; the password rides the adapter's env, never argv.
+  expect(calls.some((c) => c.startsWith('md.cmd:io-demo-main-rd-cache:'))).toBe(true)
+
+  // Typed refusals: a non-redis target, an out-of-range logical db, a missing key.
+  expect((await get(`/projects/${id}/services/pg-db/redis/keys`)).statusCode).toBe(400)
+  expect((await get(`/projects/${id}/services/rd-cache/redis/keys?db=16`)).statusCode).toBe(400)
+  expect((await get(`/projects/${id}/services/rd-cache/redis/value`)).statusCode).toBe(400)
+
+  // A sleeping instance answers 503 (the dashboard's wake gate keys on it) and runs NO command.
+  const bid = await branchId(id)
+  expect(await engine.sleep(keyFor(bid, 'rd-cache'), 'idle')).toBe(true)
+  calls.length = 0
+  const asleep = await get(`/projects/${id}/services/rd-cache/redis/keys`)
+  expect(asleep.statusCode).toBe(503)
+  expect(asleep.json().error).toMatch(/sleeping/)
+  expect(calls.filter((c) => c.startsWith('md.cmd'))).toEqual([])
+})
+
+test('POST /database/query: rows for a select, a command tag otherwise, 503 asleep, gated db.query', async () => {
+  const { engine, id } = await wp3Project()
+  const r = await post(`/projects/${id}/database/query`, { sql: 'select 1 as one' })
+  expect(r.statusCode).toBe(200)
+  expect(r.json()).toMatchObject({ columns: ['one', 'two'], rows: [[1, 'b']], rowCount: 1 })
+
+  // A non-select runs as written and reports the command tag ('' from the fake reads as OK).
+  const ddl = await post(`/projects/${id}/database/query`, { sql: 'create table t (a int)' })
+  expect(ddl.statusCode).toBe(200)
+  expect(ddl.json()).toMatchObject({ status: 'OK' })
+
+  expect((await post(`/projects/${id}/database/query`, {})).statusCode).toBe(400)
+  expect((await post(`/projects/${id}/database/query`, { sql: '  ' })).statusCode).toBe(400)
+
+  // Asleep: 503 and no SQL runs (decision 48 — a dashboard read never wakes the database).
+  const bid = await branchId(id)
+  expect(await engine.sleep(keyFor(bid, 'pg-db'), 'idle')).toBe(true)
+  calls.length = 0
+  expect((await post(`/projects/${id}/database/query`, { sql: 'select 1' })).statusCode).toBe(503)
+  expect(calls.filter((c) => c.startsWith('db.query'))).toEqual([])
+
+  // The action is governable on its own: deny db.query and the route answers 403.
+  await put(`/projects/${id}/policy/db.query`, { decision: 'deny' })
+  expect((await post(`/projects/${id}/database/query`, { sql: 'select 1' })).statusCode).toBe(403)
+})
+
 test('PATCH database/settings: scaleToZero, idleTimeout and the cpu/memory grid, echoed by the instance', async () => {
   const { id } = await wp3Project()
   const before = (await get(`/projects/${id}/database/instance`)).json()

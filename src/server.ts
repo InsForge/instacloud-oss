@@ -199,6 +199,28 @@ export function buildServer(
     catch (e) { const m = e instanceof Error ? e.message : String(e); return reply.code(obsCode(m)).send({ error: m }) }
   })
 
+  // The console's SQL editor and Data tab: one ad-hoc statement against the branch database.
+  // Gated (`db.query`) because an arbitrary statement writes as easily as it reads; never wakes a
+  // sleeping instance (503, same as the insight reads — the dashboard's wake gate fronts it).
+  app.post('/projects/:id/database/query', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    const { sql, branch, group } = (req.body ?? {}) as { sql?: unknown; branch?: unknown; group?: unknown }
+    if (typeof sql !== 'string' || !sql.trim()) return reply.code(400).send({ error: 'sql required' })
+    if (branch !== undefined && typeof branch !== 'string') return reply.code(400).send({ error: 'branch must be a string' })
+    if (group !== undefined && typeof group !== 'string') return reply.code(400).send({ error: 'group must be a string' })
+    if (!gated(id, 'db.query', reply)) return reply
+    try { return await engine.dbQuery(id, sql, branch, group) }
+    catch (e) {
+      const m = e instanceof Error ? e.message : String(e)
+      // A statement psql refused is the caller's 400, quoted from psql's own ERROR line (the
+      // docker argv around it is redacted noise); everything else keeps the insight mapping.
+      const sqlError = /ERROR: {2}.*/s.exec(m)?.[0]
+      if (sqlError) return reply.code(400).send({ error: sqlError.trim() })
+      return reply.code(obsCode(m)).send({ error: m })
+    }
+  })
+
   app.post('/orgs/:id/projects', async (req, reply) => {
     const { name } = (req.body ?? {}) as { name?: string }
     if (!name) return reply.code(400).send({ error: 'name required' })
@@ -879,6 +901,43 @@ export function buildServer(
     if (!gated(id, 'storage.delete', reply)) return reply
     try { return await engine.deleteServiceObjects(id, sid, { branch: q.branch, keys }) }
     catch (e) { return objErr(reply, e) }
+  })
+
+  // ---- managed data browser (platform parity: the console's redis key browser). Gated `db.read`;
+  // a sleeping instance answers 503 (the dashboard's wake gate keys on it), a missing key 404,
+  // an adapter without command support 501, and provider (docker) trouble 502.
+  const dataErr = (reply: FastifyReply, e: unknown): FastifyReply => {
+    const m = e instanceof Error ? e.message : String(e)
+    const code = /sleeping/.test(m) ? 503
+      : m.includes('not supported by this managed database adapter') ? 501
+      : m.includes('only supported for redis') ? 400
+      : errCode(m)
+    return reply.code(code).send({ error: m })
+  }
+
+  app.get('/projects/:id/services/:sid/redis/keys', async (req, reply) => {
+    const { id, sid } = req.params as { id: string; sid: string }
+    const q = req.query as { branch?: string; db?: string; cursor?: string; count?: string }
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    const db = q.db === undefined ? 0 : Number(q.db)
+    if (!Number.isInteger(db) || db < 0 || db > 15) return reply.code(400).send({ error: 'db must be an integer from 0 to 15' })
+    const count = q.count === undefined ? undefined : Number(q.count)
+    if (count !== undefined && (!Number.isInteger(count) || count < 1 || count > 1000)) return reply.code(400).send({ error: 'count must be an integer from 1 to 1000' })
+    if (!gated(id, 'db.read', reply)) return reply
+    try { return await engine.redisKeys(id, sid, { branch: q.branch, db, cursor: q.cursor, count }) }
+    catch (e) { return dataErr(reply, e) }
+  })
+
+  app.get('/projects/:id/services/:sid/redis/value', async (req, reply) => {
+    const { id, sid } = req.params as { id: string; sid: string }
+    const q = req.query as { branch?: string; db?: string; key?: string }
+    if (!q.key) return reply.code(400).send({ error: 'key is required' })
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    const db = q.db === undefined ? 0 : Number(q.db)
+    if (!Number.isInteger(db) || db < 0 || db > 15) return reply.code(400).send({ error: 'db must be an integer from 0 to 15' })
+    if (!gated(id, 'db.read', reply)) return reply
+    try { return await engine.redisValue(id, sid, { branch: q.branch, db, key: q.key }) }
+    catch (e) { return dataErr(reply, e) }
   })
 
   // Remove a service and answer the cloud's teardown summary (decision 50): how many containers,

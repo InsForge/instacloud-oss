@@ -11,7 +11,12 @@
 #
 # No part of Twenty is rebuilt or repackaged: the upstream release tag is the base and
 # entrypoint.sh calls upstream's own /app/entrypoint.sh for setup and migrations.
-FROM docker.io/twentycrm/twenty:v2.41.0
+
+# Declared before FROM so the tag is written once. Repeated after it because a build stage does
+# not inherit the pre-FROM ARG scope.
+ARG TWENTY_TAG=v2.41.0
+FROM docker.io/twentycrm/twenty:${TWENTY_TAG}
+ARG TWENTY_TAG
 
 USER root
 
@@ -21,7 +26,13 @@ USER root
 # Redis 8 is AGPL-3.0-only OR SSPL-1.0; AGPL is the same license Twenty itself ships under.
 RUN apk add --no-cache 'redis>=8.4.2-r0'
 
+# What the entrypoint keys its "setup already ran" marker on. A file rather than an env var so a
+# bump of the FROM tag above cannot forget to invalidate the marker, and so entrypoint.sh reads no
+# variable the manifest does not declare.
+RUN printf '%s\n' "$TWENTY_TAG" > /insta-twenty-version
+
 COPY entrypoint.sh /insta-entrypoint.sh
+COPY boot-listener.mjs /insta-boot-listener.mjs
 RUN chmod +x /insta-entrypoint.sh
 
 # Upstream runs as uid 1000 and the platform's volume ownership follows the image's USER, so /data

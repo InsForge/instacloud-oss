@@ -6,9 +6,14 @@ set -e
 
 mkdir -p /data/redis "${STORAGE_LOCAL_PATH}"
 
+# Holds the routed port while the rest of this script runs. Twenty's first boot needs about a
+# minute before it listens, and the deploy probe waits 31 seconds. See boot-listener.mjs.
+node /insta-boot-listener.mjs &
+holder_pid=$!
+
 # noeviction matches upstream's compose, and it is not a tuning preference: BullMQ job state lives
 # in this instance, so an evicted key is a dropped job rather than a cold cache. appendonly keeps
-# the queue and the cron registrations across a machine restart, which is what makes the volume
+# the queue and the registered cron jobs across a machine restart, which is what makes the volume
 # worth mounting for redis at all.
 redis-server \
   --dir /data/redis \
@@ -34,9 +39,27 @@ echo "entrypoint: redis is up"
 
 # Upstream's entrypoint creates the schema, runs the migrations and registers the cron jobs, then
 # execs its argument. `true` is that argument, because this script starts the processes itself.
-# On an empty database this is the slow part of the first boot and the server cannot serve before
-# it finishes.
-/app/entrypoint.sh true
+#
+# It replays `command:prod upgrade` and two cache flushes on EVERY boot, and each one pays for a
+# whole Nest context: about 50 seconds between them, spent deciding there is nothing to do
+# whenever the schema already matches the image. The marker records the version setup last ran
+# for, read from the file the Dockerfile writes out of its own FROM tag so a base-image bump
+# cannot forget to invalidate it. It lives on the volume beside the uploads, and losing the volume
+# costs one idempotent re-run.
+twenty_version="$(cat /insta-twenty-version)"
+setup_marker="/data/.twenty-setup-${twenty_version}"
+register_cron=no
+
+if [ -f "$setup_marker" ]; then
+  echo "entrypoint: database already set up for twenty ${twenty_version}, going straight to the server"
+else
+  echo "entrypoint: running upstream setup and migrations for twenty ${twenty_version}"
+  # Cron registration is upstream's last setup step and the slowest thing standing between here
+  # and a listening server, so it is deferred to below where it overlaps the server's own boot.
+  DISABLE_CRON_JOBS_REGISTRATION=true /app/entrypoint.sh true
+  touch "$setup_marker"
+  register_cron=yes
+fi
 
 cd /app/packages/twenty-server
 
@@ -45,6 +68,19 @@ cd /app/packages/twenty-server
 DISABLE_DB_MIGRATIONS=true DISABLE_CRON_JOBS_REGISTRATION=true \
   node dist/queue-worker/queue-worker &
 worker_pid=$!
+
+# Deferred from the setup block. The jobs are BullMQ repeatables in the redis above, which the
+# volume keeps across restarts, so this only has to run when setup did. Non-fatal: a failure here
+# costs the periodic syncs, not the CRM, and upstream's own entrypoint treats it the same way.
+if [ "$register_cron" = yes ]; then
+  (node dist/command/command cron:register:all \
+    || echo "entrypoint: cron registration failed, sync jobs will not run until the next boot" >&2) &
+fi
+
+# Hand the port over. The real server needs a few seconds to bind after this, and a refused
+# connection in that window is what the health gate retries through.
+kill "$holder_pid" 2>/dev/null || true
+wait "$holder_pid" 2>/dev/null || true
 
 node dist/main &
 server_pid=$!

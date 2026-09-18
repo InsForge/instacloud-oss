@@ -95,6 +95,19 @@ function useReviews(projectId: string) {
   return { reviews, pending: pendingCount(reviews), error: refusal?.projectId === projectId ? refusal.message : null, decide }
 }
 
+/** The console's topbar Feedback control. Self-host divergence: feedback about the OSS daemon
+ *  goes to the repository's issues rather than the cloud's in-app form, so this is a plain link. */
+function FeedbackButton() {
+  return (
+    <div className="flex h-full shrink-0 items-center justify-center border-l border-border px-3">
+      <a href="https://github.com/InsForge/instacloud-oss/issues" target="_blank" rel="noreferrer"
+        className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+        Feedback
+      </a>
+    </div>
+  )
+}
+
 export function Layout() {
   const { projectId, branch } = useParams() as { projectId: string; branch: string }
   const { reviews, pending, error, decide } = useReviews(projectId)
@@ -108,6 +121,7 @@ export function Layout() {
             <EnvSwitcher projectId={projectId} branch={branch} />
           </div>
           <div className="flex h-full shrink-0 items-center">
+            <FeedbackButton />
             <ActivitiesButton />
             <NotificationsButton count={pending} />
             <div className="flex h-full items-center justify-center border-l border-border p-2">

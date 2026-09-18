@@ -57,8 +57,14 @@ URL, `REDIS_URL=redis://127.0.0.1:6379` (the in-container Redis), `STORAGE_TYPE=
 TLS lane.
 
 The service is always-on. Twenty registers cron jobs that fire from inside the process, so an idle
-machine would never wake to run them, and every cold boot replays `command:prod upgrade` and two
-cache flushes before the server listens.
+machine would never wake to run them.
+
+**Boot times, measured on this template.** The first deploy takes about 75 seconds from container
+start to a healthy `/healthz`, because upstream's entrypoint creates the schema and runs every
+migration before the server listens. A restart takes about 17 seconds: the image records the
+version setup last ran for on the volume and goes straight to the server when nothing has changed.
+While either is happening, a small listener holds port 3000 and answers 503, which is what stops
+the deploy's port probe from timing out on the first boot.
 
 ## Scope
 
@@ -87,8 +93,8 @@ it means the service is never idle-stopped and is charged from deploy until you 
 2. Create the account. This is the admin login: there is no default password to change.
 3. In **Settings > Security**, decide whether anyone else may sign up or join by invite link.
 4. Add a company and a person, or import a CSV from the record list, and the CRM is in use.
-5. An API key from **Settings > APIs** gets you the REST and GraphQL APIs at `/rest` and
-   `/graphql` on the same URL.
+5. A token from **Settings > Playground** gets you the REST API at `/rest/core/...` and the
+   GraphQL API at `/graphql` on the same URL.
 
 ## Licensing
 

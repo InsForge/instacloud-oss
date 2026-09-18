@@ -1,0 +1,73 @@
+code: twenty
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+upstream:
+  repo: twentyhq/twenty
+  image: docker.io/twentycrm/twenty
+  pinned: v2.41.0
+  # AGPL-3.0-only for the codebase this image is built from. A handful of files carry an
+  # `@license Enterprise` header and a separate commercial license; none of them are enabled here
+  # (IS_BILLING_ENABLED is off and no enterprise key is set).
+  license: AGPL-3.0-only
+
+# Both are env-only on Twenty's side and neither has any reason to be read back: APP_SECRET signs
+# tokens and ENCRYPTION_KEY encrypts stored third-party credentials. A `required:` variable would
+# be stored write-only and lost, which is the trap n8n's encryption key documents.
+generated:
+  app_secret: secret:64
+  encryption_key: secret:64
+
+services:
+  # Bare on purpose: the platform owns a managed database's image, size and credentials.
+  db:
+    type: postgres
+
+  crm:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/twenty:1.0.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 3000
+    healthcheck: /healthz     # Twenty's own liveness route, the one upstream's compose probes
+    # Two reasons, both about work that happens with nobody watching. Twenty registers cron jobs
+    # (message and calendar sync, workflow schedules) that fire from inside the process, so an
+    # idle machine never wakes to run them. And every cold boot replays `command:prod upgrade`
+    # plus two cache flushes before the server listens, so a woken machine answers its first
+    # request roughly a minute late.
+    alwaysOn: true
+    # Holds three things: uploaded attachments and workspace logos (STORAGE_LOCAL_PATH), redis's
+    # append-only file, and nothing else. The records themselves are in the managed postgres.
+    volume: true
+    env:
+      fixed:
+        NODE_PORT: "3000"
+        # Twenty builds invite links, email links and its own CORS origin from this, so it has to
+        # be the public URL rather than localhost.
+        SERVER_URL: ${services.crm.url}
+        # Loopback: redis runs inside this container because a template manifest cannot declare
+        # a managed one. See the Dockerfile.
+        REDIS_URL: redis://127.0.0.1:6379
+        STORAGE_TYPE: local
+        STORAGE_LOCAL_PATH: /data/storage
+        # The managed postgres lane terminates TLS with the platform's own certificate, which the
+        # node pg client will not chain by default; without this the first connection fails
+        # `self-signed certificate in certificate chain` and the deploy looks like a crash loop.
+        PG_SSL_ALLOW_SELF_SIGNED: "true"
+      platform:
+        PG_DATABASE_URL: ${{services.db.DATABASE_URL}}
+      generated:
+        APP_SECRET: ${app_secret}
+        ENCRYPTION_KEY: ${encryption_key}
+
+meta:
+  name: Twenty
+  tagline: Open-source CRM for contacts, companies and deals
+  category: crm
+  tags: [crm, business]
+  # The upstream index for v2.41.0 carries both, and this image only adds an alpine package and a
+  # shell script on top of it.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/twentyhq/twenty
+    documentation: https://twenty.com/developers/section/self-hosting

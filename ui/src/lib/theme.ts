@@ -1,6 +1,7 @@
 // Light / Dark / System, like the console's account menu. Class-based (`.dark` on <html>), the
-// console's convention; the default is dark, as it is there. index.html applies the stored choice
-// before first paint so the page never flashes the other theme.
+// console's convention; the default is System, as it is there (measured live: a fresh console
+// session follows the OS scheme). index.html applies the stored choice before first paint so the
+// page never flashes the other theme.
 
 import { useEffect } from 'react'
 import { useLocalPref } from './localPref'
@@ -8,7 +9,7 @@ import { useLocalPref } from './localPref'
 export type ThemePreference = 'light' | 'dark' | 'system'
 
 export const THEME_KEY = 'insta_theme'
-export const DEFAULT_THEME: ThemePreference = 'dark'
+export const DEFAULT_THEME: ThemePreference = 'system'
 
 export function asTheme(v: string | null): ThemePreference {
   return v === 'light' || v === 'dark' || v === 'system' ? v : DEFAULT_THEME

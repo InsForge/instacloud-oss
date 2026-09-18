@@ -60,6 +60,7 @@ Where the record stands, and what each row rests on:
 | `n8n` | yes | yes | The official `n8nio/n8n:2.36.5` index carries both. Nothing is rebuilt here |
 | `openclaw` | yes | yes | Upstream's index carries both; this image only adds an entrypoint |
 | `pi` | yes | yes | Same base and ttyd asset as the other terminal templates |
+| `twenty` | yes | yes | Upstream's `v2.41.0` index carries both; this image only adds alpine's `redis` (8.4.2-r0 on both arches) and an entrypoint |
 
 Every row above was checked by building the template for `linux/arm64` on an arm64 machine and
 starting the resulting image until it answered its own manifest healthcheck. Re-check a row the
@@ -80,6 +81,7 @@ because an RGBA file can still be fully opaque.
 | `dsh` | `logo.svg` 2.0 KB | yes (vector) | fixed `#5786FE` | DeepSeek's mark, on DeepSeek's own project. The same file the delisted `deepseek-hermes` carried, where it was the weaker case: branding someone else's agent. Upstream's `BRAND_GUIDELINES.md` asks projects not to imply endorsement, which naming their own harness does not |
 | `n8n` | `logo.svg` 1.6 KB | yes (vector) | fixed `#EA4B71` | n8n's brand mark |
 | `openclaw` | `logo.svg` 4.6 KB | yes (vector) | fixed; includes a near-black `#050810` element | OpenClaw's mark |
+| `twenty` | `logo.svg` 2.6 KB | yes (corner alpha 0, rounded-rect clip) | fixed black plate | Twenty's own mark, `packages/twenty-website/public/images/core/logo.svg`. The black rounded square is the artwork, not a background: the glyph is white and cutting the plate away would leave nothing. No dark-mode variant is published |
 | `9router` | `logo.png` 500x500 | yes (corner alpha 0) | fixed orange `#F34E21` | 9router's own mark, taken from the copy at `i.imgur.com/yjb5HvR.png`. Upstream's repo PNG (`images/9router.png`) is a 2940x2594 screenshot of the app, not this mark, so that copy is the only place the asset is available. Please do not "correct" this row to the repo URL |
 
 Logos are served to the gallery from jsDelivr, pinned to the commit that published the template:

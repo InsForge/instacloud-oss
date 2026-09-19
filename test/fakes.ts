@@ -41,10 +41,11 @@ export const db: DatabaseAdapter = {
       enabled: ['pg_stat_statements', 'plpgsql'],
     })
     if (sql.includes('not datistemplate')) return JSON.stringify([{ name: 'app' }, { name: 'postgres' }])
-    // The ad-hoc query route's wrap (before the metrics SQL's bare row_to_json below). A wrapped
-    // statement the subquery cannot host (WITH … UPDATE) fails at parse time, like postgres.
-    if (sql.includes('json_agg(row_to_json') && / update /i.test(sql)) throw new Error('psql: ERROR:  syntax error at or near "UPDATE"')
-    if (sql.includes('json_agg(row_to_json')) return JSON.stringify([{ one: 1, two: 'b' }])
+    // The ad-hoc query route's wrap (before the metrics SQL's bare row_to_json below). Values are
+    // TEXT, as json_each_text answers — including a bigint past 2^53, which must survive as-is.
+    if (sql.includes("json_build_object('columns'")) {
+      return JSON.stringify({ columns: ['one', 'two'], rows: [['1', 'b'], ['9007199254740993', null]] })
+    }
     if (sql.includes('row_to_json')) return JSON.stringify({ total: 3, active: 1, idle: 2, max: 100, db_size_bytes: 123456, deadlocks: 0, inserted: 10, updated: 5, deleted: 1, blks_hit: 90, blks_read: 10 })
     if (sql.includes('pg_stat_statements')) return JSON.stringify([{ queryId: 'q1', query: 'select 1', calls: 3, totalMs: 9, meanMs: 3, rows: 3 }])
     if (sql.includes('pg_stat_activity')) return JSON.stringify([{ pid: 42, state: 'active', durationMs: 12.5, query: 'select 1' }])

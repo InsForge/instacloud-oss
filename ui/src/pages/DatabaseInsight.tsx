@@ -232,6 +232,9 @@ export function DatabaseInsight() {
   const { data: services, error } = usePoll(() => api.services(projectId, branch), [projectId, branch], 15000)
   const pg = useMemo(() => (services ?? []).find((s) => s.type === 'postgres'), [services])
   const [approval, setApproval] = useState<PendingApproval>(null)
+  // A pending approval names ONE project + branch; carrying it across a switch would send the old
+  // approval id (and its retry) at whatever is now on screen.
+  useEffect(() => { setApproval(null) }, [projectId, branch])
 
   return (
     <ConsolePage title="Database">

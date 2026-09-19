@@ -5074,32 +5074,40 @@ test('the *SCAN page parsers hold the 200-entry bound however large the page the
 
 test('POST /database/query: rows for a select, a command tag otherwise, 503 asleep, gated db.query', async () => {
   const { engine, id } = await wp3Project()
-  const r = await post(`/projects/${id}/database/query`, { sql: 'select 1 as one' })
+  // Every statement executes EXACTLY once, whatever the classifier decides.
+  const queriesRun = () => calls.filter((c) => c.startsWith('db.query:')).length
+  const one = async (sql: string) => {
+    const before = queriesRun()
+    const r = await post(`/projects/${id}/database/query`, { sql })
+    expect(queriesRun() - before, sql).toBe(1)
+    return r
+  }
+
+  const r = await one('select 1 as one')
   expect(r.statusCode).toBe(200)
-  expect(r.json()).toMatchObject({ columns: ['one', 'two'], rows: [[1, 'b']], rowCount: 1 })
+  // Values travel as TEXT: a bigint past 2^53 survives un-rounded, null stays null.
+  expect(r.json()).toMatchObject({ columns: ['one', 'two'], rows: [['1', 'b'], ['9007199254740993', null]], rowCount: 2 })
 
   // A non-select runs as written and reports the command tag ('' from the fake reads as OK).
-  const ddl = await post(`/projects/${id}/database/query`, { sql: 'create table t (a int)' })
-  expect(ddl.statusCode).toBe(200)
-  expect(ddl.json()).toMatchObject({ status: 'OK' })
-
+  expect((await one('create table t (a int)')).json()).toMatchObject({ status: 'OK' })
   // A leading comment does not demote a SELECT to a command…
-  const commented = await post(`/projects/${id}/database/query`, { sql: '-- note\nselect 1 as one' })
-  expect(commented.json()).toMatchObject({ columns: ['one', 'two'] })
+  expect((await one('-- note\nselect 1 as one')).json()).toMatchObject({ columns: ['one', 'two'] })
+  // …a `;` inside a string literal does not either…
+  expect('columns' in (await one("select 'a;b' as v")).json()).toBe(true)
   // …SHOW runs as written (a utility statement the wrapper cannot host)…
-  expect(await post(`/projects/${id}/database/query`, { sql: 'show search_path' }).then((x) => 'status' in x.json())).toBe(true)
+  expect('status' in (await one('show search_path')).json()).toBe(true)
   expect(calls.some((c) => c === 'db.query:show search_path')).toBe(true)
-  // …several statements skip the wrapper too (psql rejects `;` inside a subquery)…
-  expect(await post(`/projects/${id}/database/query`, { sql: 'select 1; select 2' }).then((x) => 'status' in x.json())).toBe(true)
-  // …and a WITH that ends in UPDATE fails the wrapper at PARSE time and falls through to the raw
-  // run — one execution, not two.
-  const withUpdate = await post(`/projects/${id}/database/query`, { sql: 'with d as (select 1) update t set a = 1' })
-  expect(withUpdate.statusCode).toBe(200)
-  expect(withUpdate.json()).toMatchObject({ status: 'OK' })
+  // …several statements skip the wrapper (psql rejects `;` inside a subquery)…
+  expect('status' in (await one('select 1; select 2')).json()).toBe(true)
+  // …a WITH ending in SELECT is row-shaped, one ending in UPDATE runs as a command.
+  expect('columns' in (await one('with a as (select 1) select * from a')).json()).toBe(true)
+  expect((await one('with d as (select 1) update t set a = 1')).json()).toMatchObject({ status: 'OK' })
+  // The row transport is server-bounded: a statement timeout and a row cap ride every call.
+  expect(calls.some((c) => c.startsWith('db.query:select json_build_object'))).toBe(true)
 
   // Every successful statement lands on the audit timeline — action metadata only, never SQL text.
   const audited = loadState().events.filter((e) => e.kind === 'db.query')
-  expect(audited.length).toBeGreaterThanOrEqual(4)
+  expect(audited.length).toBeGreaterThanOrEqual(8)
   expect(audited.every((e) => (e.payload as { service?: string }).service === 'pg-db')).toBe(true)
   expect(audited.every((e) => !JSON.stringify(e.payload).includes('select'))).toBe(true)
 

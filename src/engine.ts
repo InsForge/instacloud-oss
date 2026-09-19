@@ -12,6 +12,7 @@ import { docker } from './docker'
 import { BRANCH_NAME_RE, SERVICE_NAME_RE } from './names'
 import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseKeyspaceInfo, parseRedisInfo, parseServiceId, pgContainerName, pgServiceId, scanPageMembers, scanPageToHash, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
 import * as observe from './observe'
+import { isSingleStatement, lastStatementKeyword, maskSqlText, stripLeadingSqlComments } from './sqlsurface'
 import { DEFAULT_STEP_SEC, DEFAULT_WINDOW_SEC, liveSeries, MetricsHistory, statsToSamples, type MetricsTarget, type MetricsWindow } from './metrics-history'
 import { loadState, mutate } from './state'
 import type { Branch, Project, DatabaseAdapter, ComputeAdapter, StorageAdapter, ManagedDbAdapter, ManagedDbType, ObservedComponent, ObjectListing, AuditEvent, UserSecret, DataDirOps, PgTarget, ServiceKey, ServiceLimits, ServiceSettings } from './types'
@@ -51,16 +52,10 @@ function assertServiceName(name: string): void {
 }
 const slug = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 20)
 
-/** Leading `--` and `/* *​/` comments off a statement, so `dbQuery` classifies what actually
- *  runs: a commented SELECT is still row-shaped. */
-function stripLeadingSqlComments(sql: string): string {
-  let t = sql
-  for (;;) {
-    const next = t.replace(/^\s+/, '').replace(/^--[^\n]*\n?/, '').replace(/^\/\*[\s\S]*?\*\//, '')
-    if (next === t) return t.trim()
-    t = next
-  }
-}
+/** The ad-hoc query route's server-side bounds: a browsing statement gets 30 s and the first
+ *  5000 rows — the docker output cap alone let a query hold the request open indefinitely. */
+const DB_QUERY_TIMEOUT_MS = 30_000
+const DB_QUERY_MAX_ROWS = 5_000
 
 // Volume-cap parity (platform #166–169): the cloud caps volumes per billing tier; oss has no
 // tiers, so one fixed generous cap serves every project. Grow-only validation is kept so the
@@ -3205,35 +3200,35 @@ export class Engine {
     const t = this.dbTarget(projectId, branchName, group)
     await this.assertPgAwake(t.branch, t.serviceId)
     const started = Date.now()
-    // Classify on the statement itself, not on a leading comment. SHOW/EXPLAIN are utility
-    // statements a subquery cannot host, so they run as written (their text output is the
-    // status). WITH is row-shaped when it ends in SELECT — and when it does not (WITH … UPDATE),
-    // the wrapper fails at PARSE time, before anything executes, so falling through to the raw
-    // run is a first execution, not a second.
+    // EXACTLY-ONCE, whatever the classification says: the statement runs through ONE transport,
+    // chosen up front, and no error ever re-runs it (an error-text fallback re-executed volatile
+    // side effects). Classification reads the MASKED text (src/sqlsurface.ts), so a `;` or an
+    // `update` inside a string literal never changes the route; SHOW/EXPLAIN are utility
+    // statements a subquery cannot host and run as written; a WITH is row-shaped only when its
+    // last statement keyword is SELECT (a data-modifying CTE runs as a command).
     const bare = stripLeadingSqlComments(sql)
+    const masked = maskSqlText(bare)
     const inner = bare.replace(/;+\s*$/, '')
-    // A statement that still holds `;` after the trailing strip (several statements, or a
-    // trailing comment after the semicolon) cannot live inside the wrapper — psql runs it as
-    // written instead, exactly as it would have without the wrap.
-    const rowShaped = /^(select|values|table|with)\b/i.test(bare) && !inner.includes(';')
+    const rowShaped = isSingleStatement(masked)
+      && (/^(select|values|table)\b/i.test(bare) || (/^with\b/i.test(bare) && lastStatementKeyword(masked) === 'select'))
+    const opts = { statementTimeoutMs: DB_QUERY_TIMEOUT_MS }
     if (rowShaped) {
-      try {
-        const out = await this.db.query(t.container, `select coalesce(json_agg(row_to_json(t)), '[]'::json) from (${inner}) t`)
-        const parsed = JSON.parse(out || '[]') as Array<Record<string, unknown>>
-        // row_to_json preserves column order in its object keys, and JSON.parse keeps insertion
-        // order, so the first row's keys ARE the result's column order. Duplicate output names
-        // collapse (json objects key uniquely); alias them apart in the statement.
-        const columns = parsed.length ? Object.keys(parsed[0]) : []
-        this.emit(projectId, t.branch.name, 'resource', 'db.query', { service: t.serviceId, mode: 'rows' })
-        return { columns, rows: parsed.map((r) => columns.map((c) => r[c])), rowCount: parsed.length, ms: Date.now() - started }
-      } catch (e) {
-        // ONLY a parse failure of the wrapper falls through: a runtime error re-run raw would
-        // execute the statement's side effects twice.
-        const m = e instanceof Error ? e.message : String(e)
-        if (!/syntax error/i.test(m)) throw e
-      }
+      // The values travel as TEXT (json_each_text), because row_to_json + JSON.parse silently
+      // rounds bigint/numeric past 2^53. Column order and names come from the same single
+      // execution (row_to_json's key order); zero rows answer empty columns. Bounded at
+      // DB_QUERY_MAX_ROWS on the server side — the editor is a browser, not an exporter.
+      const wrapped = `select json_build_object('columns', coalesce((array_agg(cols))[1], array[]::text[]), 'rows', coalesce(json_agg(vals), '[]'::json))
+from (select array(select json_object_keys(row_to_json(t))) as cols,
+             (select json_agg(v.value) from json_each_text(row_to_json(t)) v) as vals
+      from (${inner}) t limit ${DB_QUERY_MAX_ROWS}) s`
+      const out = await this.db.query(t.container, wrapped, opts)
+      const parsed = JSON.parse(out || '{}') as { columns?: string[]; rows?: Array<Array<string | null>> }
+      const columns = parsed.columns ?? []
+      const rows = parsed.rows ?? []
+      this.emit(projectId, t.branch.name, 'resource', 'db.query', { service: t.serviceId, mode: 'rows' })
+      return { columns, rows, rowCount: rows.length, ms: Date.now() - started }
     }
-    const out = await this.db.query(t.container, sql)
+    const out = await this.db.query(t.container, sql, opts)
     // The audit row carries what ran and where — never the SQL text (README: governed actions
     // land in `insta events`; the statement itself may hold data or credentials).
     this.emit(projectId, t.branch.name, 'resource', 'db.query', { service: t.serviceId, mode: 'command' })

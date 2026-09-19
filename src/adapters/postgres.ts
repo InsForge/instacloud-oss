@@ -136,11 +136,15 @@ export class LocalPostgres implements DatabaseAdapter {
     return { url: swapHost(src.url, dst.container), method: 'basebackup', ms: Date.now() - t0 }
   }
 
-  async query(container: string, sql: string): Promise<string> {
+  async query(container: string, sql: string, opts: { statementTimeoutMs?: number } = {}): Promise<string> {
     const deadline = Date.now() + QUERY_DEADLINE_MS
+    // A per-statement bound through the server's own option (PGOPTIONS), so an ad-hoc statement
+    // cannot hold the request and the docker child open indefinitely.
+    const timeout = opts.statementTimeoutMs
+      ? ['-e', `PGOPTIONS=-c statement_timeout=${Math.trunc(opts.statementTimeoutMs)}`] : []
     for (;;) {
       try {
-        const out = await this.exec(['exec', '-i', container, 'psql', '-U', 'postgres', '-d', DB,
+        const out = await this.exec(['exec', '-i', ...timeout, container, 'psql', '-U', 'postgres', '-d', DB,
           '-v', 'ON_ERROR_STOP=1', '-tAc', sql])
         return out.toString().trim()
       } catch (e) {

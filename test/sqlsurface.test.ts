@@ -1,0 +1,29 @@
+import { test, expect } from 'vitest'
+import { isSingleStatement, lastStatementKeyword, maskSqlText, stripLeadingSqlComments } from '../src/sqlsurface'
+
+test('stripLeadingSqlComments: line and block comments fall off, the statement stays', () => {
+  expect(stripLeadingSqlComments('-- note\nselect 1')).toBe('select 1')
+  expect(stripLeadingSqlComments('/* a */ /* b */\n-- c\nselect 1')).toBe('select 1')
+  expect(stripLeadingSqlComments('select 1 -- trailing stays')).toBe('select 1 -- trailing stays')
+})
+
+test('maskSqlText blanks literals, identifiers and comments but nothing else', () => {
+  expect(maskSqlText("select 'a;b' as v")).toBe("select '   ' as v")
+  expect(maskSqlText('select "we;ird" from t')).toBe('select "      " from t')
+  expect(maskSqlText("select 'it''s;fine'")).toBe("select '          '")
+  expect(maskSqlText("select E'a\\';b'")).toBe("select E'     '")
+  expect(maskSqlText('select $x$ a;b $x$')).toBe('select $x$     $x$')
+  expect(maskSqlText('select 1 -- a;b')).toBe('select 1       ')
+  expect(maskSqlText('select /* x /* y */ z */ 1')).toBe('select                   1')
+})
+
+test('isSingleStatement: semicolons in literals and a trailing one do not split', () => {
+  expect(isSingleStatement(maskSqlText("select 'a;b' as v;"))).toBe(true)
+  expect(isSingleStatement(maskSqlText('select 1; select 2'))).toBe(false)
+})
+
+test('lastStatementKeyword tells a WITH…SELECT from a WITH…UPDATE, ignoring quoted text', () => {
+  expect(lastStatementKeyword(maskSqlText('with a as (select 1) select * from a'))).toBe('select')
+  expect(lastStatementKeyword(maskSqlText('with d as (select 1) update t set a = 1'))).toBe('update')
+  expect(lastStatementKeyword(maskSqlText("select 'please update me' as note"))).toBe('select')
+})

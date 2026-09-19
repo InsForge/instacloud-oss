@@ -98,6 +98,9 @@ export function RedisPanel({ projectId, branch, service, onApproval }: {
   // state, so a slow db0 listing can never wear db1's name, nor key A's value key B's pane.
   const listSeq = useRef(0)
   const valueSeq = useRef(0)
+  // Stable, or every parent render (the approval prompt opening included) re-fires the stats
+  // effect and mints a fresh gated request — an approval loop instead of one retryable prompt.
+  const onStatsSleeping = useCallback(() => setSleeping(true), [])
 
   const load = useCallback(async (nextDb: number, cursor?: string) => {
     setError(undefined)
@@ -175,7 +178,7 @@ export function RedisPanel({ projectId, branch, service, onApproval }: {
       <TopTabs tabs={REDIS_TABS} value={sub} onChange={setSub} label="Redis views" />
       {sub === 'stats' && (
         <RedisStatsView projectId={projectId} branch={branch} service={service} onApproval={onApproval}
-          onSleeping={() => setSleeping(true)} />
+          onSleeping={onStatsSleeping} />
       )}
       {sub === 'data' && <>
       <div className="flex items-center gap-2">

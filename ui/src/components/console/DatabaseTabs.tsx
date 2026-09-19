@@ -9,7 +9,7 @@
 // pooler) and never shows the regenerated value (credentials live behind `insta secrets` and the
 // Connect dialog), and query tabs live in component state, not the URL.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, ConfirmDialog, Skeleton, Switch, cn } from '@insforge/ui'
 import { Plus, Table2 } from 'lucide-react'
 import { api, type DbExtensions, type DbQueryResult } from '../../api'
@@ -61,42 +61,46 @@ export function DataTab({ projectId, branch, group, onApproval }: TabProps) {
   const [picked, setPicked] = useState<{ schema: string; name: string } | null>(null)
   const [rows, setRows] = useState<DbQueryResult | null>(null)
   const [error, setError] = useState<string>()
+  // A slower earlier response must not wear a later selection's name.
+  const rowsSeq = useRef(0)
 
-  // An approval retries the SAME attempt and resolves the ORIGINAL promise, so the caller's
-  // post-processing runs on the granted result rather than being lost with the 202.
-  const run = useCallback((sql: string) => new Promise<DbQueryResult | null>((resolve) => {
-    const attempt = async (): Promise<void> => {
-      const r = await api.dbQuery(projectId, sql, branch, group)
-      if (r.kind === 'approval') return onApproval({ ...r, retry: () => { void attempt() } })
-      if (r.kind === 'error') { setError(r.error); return resolve(null) }
-      resolve(r.data)
+  // State-driven loaders, not a held promise: an approval hands the prompt a retry of the SAME
+  // loader (which applies its own result), and a denied or dismissed prompt leaves a message
+  // rather than a skeleton waiting on a promise nobody will resolve.
+  const loadTables = useCallback(async () => {
+    setError(undefined)
+    const r = await api.dbQuery(projectId, TABLES_SQL, branch, group)
+    if (r.kind === 'approval') {
+      setError('Waiting for approval (db.query) — grant it in the prompt and this loads itself.')
+      return onApproval({ ...r, retry: () => { void loadTables() } })
     }
-    void attempt()
-  }), [projectId, branch, group, onApproval])
+    if (r.kind === 'error') return setError(r.error)
+    if ('rows' in r.data) {
+      const list = r.data.rows.map(([schema, name]) => ({ schema: String(schema), name: String(name) }))
+      setTables(list)
+      setPicked((prev) => prev ?? list[0] ?? null)
+    }
+  }, [projectId, branch, group, onApproval])
+  useEffect(() => { void loadTables() }, [loadTables])
 
-  useEffect(() => {
-    void (async () => {
-      const r = await run(TABLES_SQL)
-      if (r && 'rows' in r) {
-        const list = r.rows.map(([schema, name]) => ({ schema: String(schema), name: String(name) }))
-        setTables(list)
-        setPicked((prev) => prev ?? list[0] ?? null)
-      }
-    })()
-  }, [run])
+  const loadRows = useCallback(async (table: { schema: string; name: string }) => {
+    setError(undefined)
+    setRows(null)
+    const seq = ++rowsSeq.current
+    const r = await api.dbQuery(projectId, tableRowsSql(table.schema, table.name), branch, group)
+    if (seq !== rowsSeq.current) return
+    if (r.kind === 'approval') {
+      setError('Waiting for approval (db.query) — grant it in the prompt and this loads itself.')
+      return onApproval({ ...r, retry: () => { void loadRows(table) } })
+    }
+    if (r.kind === 'error') return setError(r.error)
+    setRows(r.data)
+  }, [projectId, branch, group, onApproval])
 
   useEffect(() => {
     if (!picked) return
-    setRows(null)
-    // A slower earlier response must not wear a later selection's name: the cleanup marks this
-    // request stale the moment the picked table (or the panel) changes.
-    let stale = false
-    void (async () => {
-      const r = await run(tableRowsSql(picked.schema, picked.name))
-      if (r && !stale) setRows(r)
-    })()
-    return () => { stale = true }
-  }, [picked, run])
+    void loadRows(picked)
+  }, [picked, loadRows])
 
   if (error) return <p className="px-1 py-4 text-sm text-destructive">{error}</p>
   if (!tables) return <Skeleton className="h-40 rounded-lg" />

@@ -85,15 +85,14 @@ jsel() {
 # more than one branch.created, and reading [0] of the unfiltered list silently grades the wrong
 # fork.
 fork_method() {
-  insta events --json | jsel '(d.events||d).filter(function(e){return e.kind==="branch.created"&&e.branch==="'"$1"'"}).map(function(e){return (e.payload&&e.payload.db&&e.payload.db.method)||""}).filter(Boolean)[0]||""'
+  insta agent events --json | jsel '(d.events||d).filter(function(e){return e.kind==="branch.created"&&e.branch==="'"$1"'"}).map(function(e){return (e.payload&&e.payload.db&&e.payload.db.method)||""}).filter(Boolean)[0]||""'
 }
 
 # allow_delete : flip the linked project's project.delete gate to allow, so the teardown is not
-# stopped by an approval. Through the route, because the shipped CLI has no `policy` verb: the
-# governance surface it exposes is `insta approvals`, and a cleanup path must not depend on
-# consuming a one-shot grant.
+# stopped by an approval. Through the route, not `insta agent policy` or `insta agent approvals`:
+# a cleanup path must not depend on the CLI's governance verbs or on consuming a one-shot grant.
 allow_delete() {
-  _pid=$(insta manifest --json 2>/dev/null | jsel 'd.project.id')
+  _pid=$(insta agent manifest --json 2>/dev/null | jsel 'd.project.id')
   [ -n "$_pid" ] || return 1
   [ "$(api_code PUT "/projects/$_pid/policy/project.delete" '{"decision":"allow"}')" = "200" ]
 }

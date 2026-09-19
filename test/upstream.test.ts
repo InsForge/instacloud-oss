@@ -118,3 +118,34 @@ test('dial connects to a live listener and answers false on a refused port', asy
   up.forget('c')
   expect(await up.dial('c', 'n', port)).toBe(false)
 })
+
+/** Listen on an ephemeral loopback port and answer it. */
+const listenOn = (srv: ReturnType<typeof createServer>): Promise<number> =>
+  new Promise((resolve) => { srv.listen(0, '127.0.0.1', () => { resolve((srv.address() as { port: number }).port) }) })
+const closeSrv = (srv: ReturnType<typeof createServer>): Promise<void> =>
+  new Promise((resolve) => srv.close(() => resolve()))
+
+test('local mode: a published port that accepts and hangs up at once is NOT ready', async () => {
+  // docker-proxy accepts before the container listens, then closes when its own dial is refused
+  const hangup = createServer((c) => c.destroy())
+  const port = await listenOn(hangup)
+  mockDocker({ ip: '172.19.0.4', id: 'cid1', hostPort: port })
+  expect(await new Upstream(testConfig()).dial('c', 'n', 80)).toBe(false)
+  await closeSrv(hangup)
+})
+
+test('local mode: a published port whose peer holds the connection is ready', async () => {
+  const holds = createServer()
+  const port = await listenOn(holds)
+  mockDocker({ ip: '172.19.0.4', id: 'cid1', hostPort: port })
+  expect(await new Upstream(testConfig()).dial('c', 'n', 80)).toBe(true)
+  await closeSrv(holds)
+})
+
+test('server mode dials the container itself, so an accept counts even if the peer hangs up', async () => {
+  const hangup = createServer((c) => c.destroy())
+  const port = await listenOn(hangup)
+  mockDocker({ ip: '127.0.0.1', id: 'cid1' })
+  expect(await new Upstream(serverConfig()).dial('c', 'n', port)).toBe(true)
+  await closeSrv(hangup)
+})

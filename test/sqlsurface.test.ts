@@ -26,4 +26,7 @@ test('lastStatementKeyword tells a WITH…SELECT from a WITH…UPDATE, ignoring 
   expect(lastStatementKeyword(maskSqlText('with a as (select 1) select * from a'))).toBe('select')
   expect(lastStatementKeyword(maskSqlText('with d as (select 1) update t set a = 1'))).toBe('update')
   expect(lastStatementKeyword(maskSqlText("select 'please update me' as note"))).toBe('select')
+  // Depth-aware: a nested SELECT after the top-level UPDATE must not flip the verdict.
+  expect(lastStatementKeyword(maskSqlText('with c as (select 1) update t set v = (select 2)'))).toBe('update')
+  expect(lastStatementKeyword(maskSqlText('select (select 1), (select 2)'))).toBe('select')
 })

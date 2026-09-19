@@ -5104,8 +5104,12 @@ test('POST /database/query: rows for a select, a command tag otherwise, 503 asle
   // …SHOW runs as written (a utility statement the wrapper cannot host)…
   expect('status' in (await one('show search_path')).json()).toBe(true)
   expect(calls.some((c) => c === 'db.query:show search_path')).toBe(true)
-  // …several statements skip the wrapper (psql rejects `;` inside a subquery)…
-  expect('status' in (await one('select 1; select 2')).json()).toBe(true)
+  // …several statements are REFUSED (one statement per request), executing nothing…
+  const beforeMulti = queriesRun()
+  const multi = await post(`/projects/${id}/database/query`, { sql: 'select 1; select 2' })
+  expect(multi.statusCode).toBe(400)
+  expect(multi.json().error).toContain('one statement per request')
+  expect(queriesRun() - beforeMulti).toBe(0)
   // …a WITH ending in SELECT is row-shaped, one ending in UPDATE runs as a command.
   expect('columns' in (await one('with a as (select 1) select * from a')).json()).toBe(true)
   expect((await one('with d as (select 1) update t set a = 1')).json()).toMatchObject({ status: 'OK' })
@@ -5116,7 +5120,7 @@ test('POST /database/query: rows for a select, a command tag otherwise, 503 asle
   // action metadata only, never SQL text.
   flushTouchLater()
   const audited = loadState().events.filter((e) => e.kind === 'db.query')
-  expect(audited.length).toBeGreaterThanOrEqual(8)
+  expect(audited.length).toBeGreaterThanOrEqual(7)
   expect(audited.every((e) => (e.payload as { service?: string }).service === 'pg-db')).toBe(true)
   expect(audited.every((e) => !JSON.stringify(e.payload).includes('select'))).toBe(true)
 

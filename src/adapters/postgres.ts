@@ -144,8 +144,12 @@ export class LocalPostgres implements DatabaseAdapter {
       ? ['-e', `PGOPTIONS=-c statement_timeout=${Math.trunc(opts.statementTimeoutMs)}`] : []
     for (;;) {
       try {
-        const out = await this.exec(['exec', '-i', ...timeout, container, 'psql', '-U', 'postgres', '-d', DB,
-          '-v', 'ON_ERROR_STOP=1', '-tAc', sql])
+        // The SQL rides STDIN, not argv: `-tAc <sql>` sat in the host's process listing for the
+        // life of the exec (redaction only covered error MESSAGES). `-X` skips psqlrc; `-f -`
+        // does process psql meta-commands and :variables, which internal SQL never contains and
+        // which grant an ad-hoc author nothing beyond the superuser SQL they already hold.
+        const out = await this.exec(['exec', '-i', ...timeout, container, 'psql', '-X', '-U', 'postgres', '-d', DB,
+          '-v', 'ON_ERROR_STOP=1', '-tA', '-f', '-'], { input: Buffer.from(sql) })
         return out.toString().trim()
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)

@@ -1954,7 +1954,8 @@ export class Engine {
         : type === 'list' ? await read(['LRANGE', opts.key, '0', '199'])
           : type === 'set' ? scanPageMembers(await read(['SSCAN', opts.key, '0', 'COUNT', '200']))
             : type === 'zset' ? await read(['ZRANGE', opts.key, '0', '199', 'WITHSCORES'])
-              : null
+              : type === 'stream' ? await read(['XRANGE', opts.key, '-', '+', 'COUNT', '200'])
+                : null
     this.emitLater(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'value', db: Number(db) })
     return { type, ttl, value }
   }
@@ -3219,8 +3220,12 @@ export class Engine {
     const bare = stripLeadingSqlComments(sql)
     const masked = maskSqlText(bare)
     const inner = bare.replace(/;+\s*$/, '')
-    const rowShaped = isSingleStatement(masked)
-      && (/^(select|values|table)\b/i.test(bare) || (/^with\b/i.test(bare) && lastStatementKeyword(masked) === 'select'))
+    // The contract is ONE statement per request (COMPATIBILITY): several used to run raw, which
+    // both broke the documented shape and let a request chain sub-timeout statements past the
+    // per-statement bound. Refused outright, with the `;` read from the MASKED text.
+    if (!isSingleStatement(masked)) throw new Error('one statement per request: split the input and run each statement on its own')
+    const rowShaped = /^(select|values|table)\b/i.test(bare)
+      || (/^with\b/i.test(bare) && lastStatementKeyword(masked) === 'select')
     const opts = { statementTimeoutMs: DB_QUERY_TIMEOUT_MS }
     if (rowShaped) {
       // The values travel as TEXT (json_each_text), because row_to_json + JSON.parse silently

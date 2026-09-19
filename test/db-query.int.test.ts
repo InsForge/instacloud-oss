@@ -50,6 +50,10 @@ test('dbQuery against a real Postgres: text-exact values, order, zero rows, lite
   expect(await engine.dbQuery(projectId, 'create table t (a int)')).toMatchObject({ status: expect.stringContaining('CREATE') })
   expect(await engine.dbQuery(projectId, "insert into t values (1), (2)")).toMatchObject({ status: expect.stringContaining('INSERT') })
   expect(await engine.dbQuery(projectId, 'with d as (select 1) update t set a = a')).toMatchObject({ status: expect.stringContaining('UPDATE') })
+  // Depth-aware routing: a nested SELECT after the top-level UPDATE still runs the UPDATE.
+  expect(await engine.dbQuery(projectId, 'with c as (select 1) update t set a = (select 2)')).toMatchObject({ status: expect.stringContaining('UPDATE') })
+  // Several statements are refused before anything executes (one statement per request).
+  await expect(engine.dbQuery(projectId, 'select 1; select 2')).rejects.toThrow(/one statement per request/)
   expect(await engine.dbQuery(projectId, 'table t')).toMatchObject({ rowCount: 2 })
 
   // The statement timeout is real: pg_sleep past the bound cancels instead of holding the exec.

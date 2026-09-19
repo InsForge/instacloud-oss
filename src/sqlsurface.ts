@@ -74,9 +74,18 @@ export function isSingleStatement(masked: string): boolean {
   return !masked.replace(/;+\s*$/, '').includes(';')
 }
 
-/** The last top-level DML/SELECT keyword in the masked text — how a WITH statement's shape is
- *  told: `with … select` returns rows, `with … update/insert/delete` is a command. */
+/** The last TOP-LEVEL DML/SELECT keyword in the masked text — how a WITH statement's shape is
+ *  told: `with … select` returns rows, `with … update/insert/delete` is a command. Depth-aware,
+ *  because `with c as (select 1) update t set v = (select 2)` ends in a nested SELECT while its
+ *  top-level statement is the UPDATE; parens inside literals are already blanked by the mask. */
 export function lastStatementKeyword(masked: string): string | null {
-  const all = masked.toLowerCase().match(/\b(select|insert|update|delete)\b/g)
-  return all ? all[all.length - 1] : null
+  let depth = 0
+  let last: string | null = null
+  const re = /[()]|\b(select|insert|update|delete)\b/gi
+  for (let m = re.exec(masked); m; m = re.exec(masked)) {
+    if (m[0] === '(') depth++
+    else if (m[0] === ')') depth = Math.max(0, depth - 1)
+    else if (depth === 0) last = m[0].toLowerCase()
+  }
+  return last
 }

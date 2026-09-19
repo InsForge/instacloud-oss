@@ -215,7 +215,8 @@ export function buildServer(
       const m = e instanceof Error ? e.message : String(e)
       // A statement psql refused is the caller's 400, quoted from psql's own ERROR line — the
       // FIRST line only: the LINE/caret context that follows points into the daemon's private
-      // wrapper SQL, text the user never wrote.
+      // wrapper SQL, text the user never wrote. Multi-statement input is the same 400 class.
+      if (m.includes('one statement per request')) return reply.code(400).send({ error: m })
       const sqlError = /ERROR: {2}[^\n]*/.exec(m)?.[0]
       if (sqlError) return reply.code(400).send({ error: sqlError.trim() })
       return reply.code(obsCode(m)).send({ error: m })

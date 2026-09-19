@@ -1,7 +1,7 @@
 // src/types.ts
 export type Decision = 'allow' | 'deny' | 'approve'
 // ---- region WP3 (scheduler): 'service.upgrade' added (cloud gates PUT limits on it, platform server.ts:2024 comment + agent guard) ----
-export const GATED_ACTIONS = ['secrets.read', 'secrets.write', 'storage.read', 'storage.write', 'storage.delete', 'deploy', 'project.delete', 'branch.delete', 'service.add', 'service.remove', 'service.setAccess', 'service.rename', 'service.upgrade'] as const
+export const GATED_ACTIONS = ['secrets.read', 'secrets.write', 'storage.read', 'storage.write', 'storage.delete', 'db.read', 'db.query', 'deploy', 'project.delete', 'branch.delete', 'service.add', 'service.remove', 'service.setAccess', 'service.rename', 'service.upgrade'] as const
 export type GatedAction = (typeof GATED_ACTIONS)[number]
 export const isGatedAction = (a: string): a is GatedAction => (GATED_ACTIONS as readonly string[]).includes(a)
 
@@ -117,7 +117,10 @@ export interface DatabaseAdapter {
   provision(t: PgTarget, opts?: { publishLoopback?: boolean; limits?: ServiceLimits }): Promise<{ url: string }>
   /** File-level fork: a reflink copy of a source AT REST, else pg_basebackup (a running source, or no reflinks; it wakes a sleeping source through ensureSourceRunning). Returns the clone's URL (source password preserved). */
   fork(src: PgTarget & { url: string }, dst: PgTarget, opts?: { publishLoopback?: boolean; limits?: ServiceLimits; ensureSourceRunning?: () => Promise<void> }): Promise<{ url: string; method: 'reflink' | 'basebackup'; ms: number }>
-  query(container: string, sql: string): Promise<string>
+  /** `statementTimeoutMs` bounds the STATEMENT (PGOPTIONS) and `sqlOnly` refuses psql
+   *  meta-commands, both for callers running USER-authored SQL; management and observability
+   *  queries pass neither and run as before. */
+  query(container: string, sql: string, opts?: { statementTimeoutMs?: number; sqlOnly?: boolean }): Promise<string>
   /** Container only (rm -f -v); the engine removes the directory. */
   destroy(container: string): Promise<void>
   rename?(container: string, to: string): Promise<void>
@@ -148,6 +151,10 @@ export interface ManagedDbAdapter {
   provision(t: ManagedDbTarget, opts?: { publishLoopback?: boolean; limits?: ServiceLimits }): Promise<void>
   destroy(container: string): Promise<void>
   rename(container: string, to: string): Promise<void>
+  /** Run one client command inside the managed container (valkey-cli for redis) and return its
+   *  output. Optional like the storage adapter's object methods: absent, the data browser answers
+   *  "not supported" instead of failing deep inside an exec. */
+  command?(container: string, password: string, args: string[]): Promise<string>
 }
 
 export type ObjectListing = { objects: Array<{ key: string; size: number; lastModified: string; etag: string }>; nextCursor?: string }

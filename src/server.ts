@@ -123,6 +123,16 @@ export function buildServer(
   app.get('/orgs/:id/invitations', async (_req, reply) => notCloud(reply, 'org invitations'))
   app.delete('/orgs/:id/invitations/:iid', async (_req, reply) => notCloud(reply, 'org invitations'))
   app.post('/invitations/accept', async (_req, reply) => notCloud(reply, 'org invitations'))
+  // insta 0.1.0 `domain attach|detach` read the org's bought domains first; OSS sells none, so both lists are empty.
+  app.get('/orgs/:id/domains', async () => ({ items: [] }))
+  app.get('/orgs/:id/domains/orders', async () => ({ items: [] }))
+  app.get('/orgs/:id/domains/search', async (_req, reply) => notCloud(reply, 'domain purchase'))
+  app.post('/orgs/:id/domains/orders', async (_req, reply) => notCloud(reply, 'domain purchase'))
+  app.post('/projects/:id/domains/:name/attach', async (_req, reply) => notCloud(reply, 'attaching a bought domain'))
+  app.get('/orgs/:id/domains/:name/records', async (_req, reply) => notCloud(reply, 'DNS records of a bought domain'))
+  app.post('/orgs/:id/domains/:name/records', async (_req, reply) => notCloud(reply, 'DNS records of a bought domain'))
+  app.patch('/orgs/:id/domains/:name/records/:rid', async (_req, reply) => notCloud(reply, 'DNS records of a bought domain'))
+  app.delete('/orgs/:id/domains/:name/records/:rid', async (_req, reply) => notCloud(reply, 'DNS records of a bought domain'))
   // Registry image inspection is the cloud console's helper (fans out to 3rd-party registries).
   app.get('/images/inspect', async (_req, reply) => notCloud(reply, 'registry image inspection'))
   // Everything is one region here: the machine the daemon runs on (CLI shape: {slug, label}).
@@ -199,6 +209,30 @@ export function buildServer(
     catch (e) { const m = e instanceof Error ? e.message : String(e); return reply.code(obsCode(m)).send({ error: m }) }
   })
 
+  // The console's SQL editor and Data tab: one ad-hoc statement against the branch database.
+  // Gated (`db.query`) because an arbitrary statement writes as easily as it reads; never wakes a
+  // sleeping instance (503, same as the insight reads — the dashboard's wake gate fronts it).
+  app.post('/projects/:id/database/query', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    const { sql, branch, group } = (req.body ?? {}) as { sql?: unknown; branch?: unknown; group?: unknown }
+    if (typeof sql !== 'string' || !sql.trim()) return reply.code(400).send({ error: 'sql required' })
+    if (branch !== undefined && typeof branch !== 'string') return reply.code(400).send({ error: 'branch must be a string' })
+    if (group !== undefined && typeof group !== 'string') return reply.code(400).send({ error: 'group must be a string' })
+    if (!gated(id, 'db.query', reply)) return reply
+    try { return await engine.dbQuery(id, sql, branch, group) }
+    catch (e) {
+      const m = e instanceof Error ? e.message : String(e)
+      // A statement psql refused is the caller's 400, quoted from psql's own ERROR line — the
+      // FIRST line only: the LINE/caret context that follows points into the daemon's private
+      // wrapper SQL, text the user never wrote. Multi-statement input is the same 400 class.
+      if (m.includes('one statement per request') || m.includes('meta-commands are not supported')) return reply.code(400).send({ error: m })
+      const sqlError = /ERROR: {2}[^\n]*/.exec(m)?.[0]
+      if (sqlError) return reply.code(400).send({ error: sqlError.trim() })
+      return reply.code(obsCode(m)).send({ error: m })
+    }
+  })
+
   app.post('/orgs/:id/projects', async (req, reply) => {
     const { name } = (req.body ?? {}) as { name?: string }
     if (!name) return reply.code(400).send({ error: 'name required' })
@@ -252,14 +286,16 @@ export function buildServer(
 
   app.post('/projects/:id/branches', async (req, reply) => {
     const { id } = req.params as { id: string }
-    const { name, from } = (req.body ?? {}) as { name?: unknown; from?: unknown }
+    const { name, from, excludeServices } = (req.body ?? {}) as { name?: unknown; from?: unknown; excludeServices?: unknown }
     // Typed at the boundary, not just truthy: `{"name": 123}` used to pass, because RegExp.test
     // coerces its argument, and then failed deep in provisioning as a state-ish error instead of
     // the malformed-request 400 it is. Same for a non-string `from`.
     if (typeof name !== 'string' || !name) return reply.code(400).send({ error: 'name required' })
     if (from !== undefined && typeof from !== 'string') return reply.code(400).send({ error: 'from must be a string' })
+    // The console's "Exclude all services": an empty branch, nothing of the parent is copied.
+    if (excludeServices !== undefined && typeof excludeServices !== 'boolean') return reply.code(400).send({ error: 'excludeServices must be a boolean' })
     try {
-      const b = await engine.createBranch(id, name, from)
+      const b = await engine.createBranch(id, name, from, { excludeServices: excludeServices === true })
       return reply.code(201).send({ branch: { id: b.id, name: b.name } })
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e)
@@ -879,6 +915,55 @@ export function buildServer(
     catch (e) { return objErr(reply, e) }
   })
 
+  // ---- managed data browser (platform parity: the console's redis key browser). Gated `db.read`;
+  // a sleeping instance answers 503 (the dashboard's wake gate keys on it), a missing key 404,
+  // an adapter without command support 501, and provider (docker) trouble 502.
+  const dataErr = (reply: FastifyReply, e: unknown): FastifyReply => {
+    const m = e instanceof Error ? e.message : String(e)
+    const code = /sleeping/.test(m) ? 503
+      : m.includes('not supported by this managed database adapter') ? 501
+      : m.includes('only supported for redis') ? 400
+      // A docker exec that failed, or a listing the server answered in an unexpected shape, is
+      // provider trouble — 502, never a 400 that blames the request for an outage.
+      : m.includes('docker ') || m.includes('unexpected shape') ? 502
+      : errCode(m)
+    return reply.code(code).send({ error: m })
+  }
+
+  app.get('/projects/:id/services/:sid/redis/keys', async (req, reply) => {
+    const { id, sid } = req.params as { id: string; sid: string }
+    const q = req.query as { branch?: string; db?: string; cursor?: string; count?: string }
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    const db = q.db === undefined ? 0 : Number(q.db)
+    if (!Number.isInteger(db) || db < 0 || db > 15) return reply.code(400).send({ error: 'db must be an integer from 0 to 15' })
+    const count = q.count === undefined ? undefined : Number(q.count)
+    if (count !== undefined && (!Number.isInteger(count) || count < 1 || count > 1000)) return reply.code(400).send({ error: 'count must be an integer from 1 to 1000' })
+    if (!gated(id, 'db.read', reply)) return reply
+    try { return await engine.redisKeys(id, sid, { branch: q.branch, db, cursor: q.cursor, count }) }
+    catch (e) { return dataErr(reply, e) }
+  })
+
+  app.get('/projects/:id/services/:sid/redis/stats', async (req, reply) => {
+    const { id, sid } = req.params as { id: string; sid: string }
+    const q = req.query as { branch?: string }
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    if (!gated(id, 'db.read', reply)) return reply
+    try { return await engine.redisStats(id, sid, { branch: q.branch }) }
+    catch (e) { return dataErr(reply, e) }
+  })
+
+  app.get('/projects/:id/services/:sid/redis/value', async (req, reply) => {
+    const { id, sid } = req.params as { id: string; sid: string }
+    const q = req.query as { branch?: string; db?: string; key?: string }
+    if (!q.key) return reply.code(400).send({ error: 'key is required' })
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    const db = q.db === undefined ? 0 : Number(q.db)
+    if (!Number.isInteger(db) || db < 0 || db > 15) return reply.code(400).send({ error: 'db must be an integer from 0 to 15' })
+    if (!gated(id, 'db.read', reply)) return reply
+    try { return await engine.redisValue(id, sid, { branch: q.branch, db, key: q.key }) }
+    catch (e) { return dataErr(reply, e) }
+  })
+
   // Remove a service and answer the cloud's teardown summary (decision 50): how many containers,
   // buckets and directories went, and how many refused to. EVERY type is removed from ONE branch,
   // resolved exactly as an add resolves one: the qualifier on the id first, then `?branch`, then
@@ -945,11 +1030,18 @@ export function buildServer(
 
   app.get('/projects/:id/events', async (req, reply) => {
     const { id } = req.params as { id: string }
-    const q = req.query as { branch?: string; limit?: string }
+    const q = req.query as { branch?: string; limit?: string; kinds?: string }
     const limit = eventsLimit(q.limit)
     if (limit === null) return reply.code(400).send({ error: `limit must be an integer from 1 to ${EVENTS_LIMIT_MAX}` })
     let events = engine.listEvents(id)
     if (q.branch) events = events.filter((e) => e.branch === q.branch)
+    // `kinds` (comma-separated) filters BEFORE the limit slice, so a page asked for deploy events
+    // spends its budget on deploy events — the audit stream also carries browse-rate reads
+    // (db.read, db.query, storage.objects.*) that would otherwise push them off the page.
+    if (q.kinds) {
+      const wanted = new Set(q.kinds.split(',').map((k) => k.trim()).filter(Boolean))
+      if (wanted.size) events = events.filter((e) => wanted.has(e.kind))
+    }
     return { events: events.slice(-limit).map(eventOut) }
   })
 
@@ -973,7 +1065,7 @@ export function buildServer(
 
   // ---- region B (WP2 router) ----
   // Custom domains: the cloud's four hidden routes (platform server.ts:2740-2766), rendered by
-  // `insta compute set-domain | check-domain | remove-domain`. The envelope carries NO `ssl`,
+  // `insta domain attach | check | detach` for bring-your-own names. The envelope carries NO `ssl`,
   // `origin` or `originStatus` key: the CLI reads an `ssl` field as a cloud-plane answer, then
   // demands an ownership TXT record and prints UNCONFIRMED (decision 25).
   const domainQuery = (req: { query: unknown; body: unknown }): { hostname?: unknown; branch?: string; group?: string } => {

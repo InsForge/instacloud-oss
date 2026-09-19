@@ -3,8 +3,8 @@
 // zone to match the chart axis. Every choice applies as it is made (a preset, a calendar day, a time, or
 // Enter in a field), so there is no Apply button, and focus moving on its own applies nothing.
 //
-// Self-host divergence: the quick ranges stop at 3 day and a custom range may reach back only three days,
-// the daemon's retention (lib/metricRanges.ts).
+// Self-host divergence: the quick ranges stop at 7 day (no console 30 day) and a custom range may reach
+// back only seven days, the daemon's retention (lib/metricRanges.ts).
 
 import { useRef, useState } from 'react'
 import { Calendar, ClockColumn, cn, Input, Popover, PopoverContent, PopoverTrigger } from '@insforge/ui'

@@ -10,10 +10,11 @@ import { dataLayout, ensureDirSync, lazyDataDirOps, probedCapabilities } from '.
 import { migrateLegacyData } from './datadir-migrate'
 import { docker } from './docker'
 import { BRANCH_NAME_RE, SERVICE_NAME_RE } from './names'
-import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseServiceId, pgContainerName, pgServiceId, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
+import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseKeyspaceInfo, parseRedisInfo, parseServiceId, pgContainerName, pgServiceId, scanPageMembers, scanPageToHash, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
 import * as observe from './observe'
+import { isSingleStatement, lastStatementKeyword, maskSqlText, stripLeadingSqlComments, trailingTrimIndex } from './sqlsurface'
 import { DEFAULT_STEP_SEC, DEFAULT_WINDOW_SEC, liveSeries, MetricsHistory, statsToSamples, type MetricsTarget, type MetricsWindow } from './metrics-history'
-import { loadState, mutate } from './state'
+import { loadState, mutate, touchLater } from './state'
 import type { Branch, Project, DatabaseAdapter, ComputeAdapter, StorageAdapter, ManagedDbAdapter, ManagedDbType, ObservedComponent, ObjectListing, AuditEvent, UserSecret, DataDirOps, PgTarget, ServiceKey, ServiceLimits, ServiceSettings } from './types'
 // ---- region WP2 (router): the router's pure modules feed the seams at the end of this class ----
 import { findCertFiles, suppliedFiles } from './router/certs'
@@ -50,6 +51,11 @@ function assertServiceName(name: string): void {
   if (!SERVICE_NAME_RE.test(name)) throw new Error('service name must be lower-kebab (a-z, 0-9, -)')
 }
 const slug = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 20)
+
+/** The ad-hoc query route's server-side bounds: a browsing statement gets 30 s and the first
+ *  5000 rows — the docker output cap alone let a query hold the request open indefinitely. */
+const DB_QUERY_TIMEOUT_MS = 30_000
+const DB_QUERY_MAX_ROWS = 5_000
 
 // Volume-cap parity (platform #166–169): the cloud caps volumes per billing tier; oss has no
 // tiers, so one fixed generous cap serves every project. Grow-only validation is kept so the
@@ -337,6 +343,16 @@ export class Engine {
     }, { audit: true })
   }
 
+  /** `emit` for BROWSE-RATE reads (the redis key browser, the SQL editor): the row is minted now
+   *  but rides `touchLater`'s coalesced audit write, because a synchronous full-state save per
+   *  key click measurably blocks the event loop the router shares. The cost is bounded loss: a
+   *  crash forgets at most one flush window of read-audit rows, which is the same durability
+   *  `touchLater` already gives token lastUsedAt. */
+  private emitLater(projectId: string, branch: string | null, source: AuditEvent['source'], kind: string, payload: unknown = {}): void {
+    const row: AuditEvent = { id: randomUUID(), projectId, branch, source, kind, payload, dedupKey: null, createdAt: new Date().toISOString() }
+    touchLater((s) => { s.events.push(row) })
+  }
+
   getProject(id: string): Project | undefined { return loadState().projects[id] }
   listEvents(projectId: string): AuditEvent[] { return loadState().events.filter((e) => e.projectId === projectId) }
   listProjects(): Project[] { return Object.values(loadState().projects) }
@@ -445,8 +461,10 @@ export class Engine {
   /** Provision one branch stack. `source` null = fresh (initdb); a Branch = fork its database
    *  (adapter-level: reflink or dump/restore). `branchId` is minted by the caller so the lane
    *  reservation and the op lock have an owner from the start (decision 51). WP5 rewrites this method
-   *  over registrations; the hooks it calls (contract 7.2) are already in place. */
-  private async provisionBranch(project: Project, name: string, isDefault: boolean, source: Branch | null, branchId: string): Promise<Branch> {
+   *  over registrations; the hooks it calls (contract 7.2) are already in place.
+   *  `empty` (the console's "Exclude all services") provisions only the branch shell — ref, network
+   *  and row — and materialises none of the source's services. */
+  private async provisionBranch(project: Project, name: string, isDefault: boolean, source: Branch | null, branchId: string, opts?: { empty?: boolean }): Promise<Branch> {
     const ref = this.ref(project, name)
     // FIRST, and synchronously: the name and the ref are claimed before a single resource exists
     // (decision 51). A concurrent create of the same branch refuses here, having created nothing,
@@ -481,9 +499,10 @@ export class Engine {
     // `forkFromParent`, which iterates the parent BRANCH's services (platform
     // `src/provisioning/branch.ts:270`). A project's first branch has no source and, at that point,
     // no registrations either.
-    const dbs = this.dbList(project.id).filter((d) => !source || this.carries(project, source, d, 'postgres'))
-    const stores = this.stList(project.id).filter((s) => !source || this.carries(project, source, s, 'storage'))
-    const managedRegs = this.managedList(project.id).filter((m) => !source || this.carries(project, source, m, 'managed'))
+    const empty = opts?.empty === true
+    const dbs = empty ? [] : this.dbList(project.id).filter((d) => !source || this.carries(project, source, d, 'postgres'))
+    const stores = empty ? [] : this.stList(project.id).filter((s) => !source || this.carries(project, source, s, 'storage'))
+    const managedRegs = empty ? [] : this.managedList(project.id).filter((m) => !source || this.carries(project, source, m, 'managed'))
     // Check every hostname this branch will mint and reserve every lane port it needs BEFORE the
     // first provisioning await, inside the engine-wide provision chain (decision 51). The check
     // itself writes nothing, so it stays out of a mutate: the chain is what makes it atomic.
@@ -643,9 +662,15 @@ export class Engine {
     }))
   }
 
-  async createBranch(projectId: string, name: string, from?: string): Promise<Branch> {
+  async createBranch(projectId: string, name: string, from?: string, opts?: { excludeServices?: boolean }): Promise<Branch> {
     const project = this.getProject(projectId)
     if (!project) throw new Error('project not found')
+    // The console's "Exclude all services": an empty branch, none of the parent's services,
+    // secrets, or secret bindings are copied. The parent still names what the branch was cut
+    // from (the event records it), it just contributes nothing to the clone. One known
+    // divergence: compute registrations are project-scoped here (`computeGroupNames`), so the
+    // empty branch still lists them as not-deployed rows — no container, data or secret is copied.
+    const excludeServices = opts?.excludeServices === true
     // Rename has always enforced this; create had not, so the API accepted a name that the
     // per-branch hostnames and URLs cannot express (`my branch`, `a/b`, `x?`). Same rule both
     // ways, at the daemon, so the CLI and agents get it too and not just the dashboard.
@@ -683,7 +708,7 @@ export class Engine {
     // grows, and from the first round on this holds `branchOp(source)`, which every add now
     // needs, so a second divergence would take an add landing in the gap between two rounds.
     // Bounded anyway, and a create that cannot settle says so rather than spinning.
-    let keys = this.createBranchKeys(project, source, branchId)
+    let keys = this.createBranchKeys(project, source, branchId, excludeServices)
     for (let round = 1; ; round++) {
       const settled = new Set(keys)
       const out = await this.withOp([...settled], async (): Promise<{ branch: Branch } | { union: ServiceKey[] }> => {
@@ -692,9 +717,9 @@ export class Engine {
         if (!this.getProject(projectId)) throw new Error('project not found')
         const live = loadState().branches[source.id]
         if (!live) throw new Error(`source branch "${source.name}" not found`)
-        const needed = this.createBranchKeys(project, live, branchId)
+        const needed = this.createBranchKeys(project, live, branchId, excludeServices)
         if (needed.every((k) => settled.has(k))) {
-          return { branch: await this.createBranchLocked(project, name, live, branchId) }
+          return { branch: await this.createBranchLocked(project, name, live, branchId, excludeServices) }
         }
         return { union: [...new Set([...settled, ...needed])] }
       })
@@ -709,8 +734,13 @@ export class Engine {
   /** Every ServiceKey a create of `branchId` from `source` touches: the project, both branch
    *  keys, and the source's carried services and compute groups on BOTH sides (what the source
    *  carries is exactly what the clone will carry, so one list keys both). Recomputed under the
-   *  lock from the re-read row, which is what makes the union check above meaningful. */
-  private createBranchKeys(project: Project, source: Branch, branchId: string): ServiceKey[] {
+   *  lock from the re-read row, which is what makes the union check above meaningful.
+   *
+   *  An exclude-services create forks nothing, so it needs no service keys at all — only the
+   *  project and the two branch keys. The set is static, so the union re-drive above settles on
+   *  the first round no matter what is being added to the source concurrently. */
+  private createBranchKeys(project: Project, source: Branch, branchId: string, excludeServices = false): ServiceKey[] {
+    if (excludeServices) return [this.projectOp(project), this.branchOp(source), this.branchOp(branchId)]
     const ids = this.carriedServiceIds(project, source)
     const groups = Object.keys(source.apps ?? {})
     return [
@@ -726,7 +756,7 @@ export class Engine {
     ]
   }
 
-  private async createBranchLocked(projectAtCall: Project, name: string, sourceAtCall: Branch, branchId: string): Promise<Branch> {
+  private async createBranchLocked(projectAtCall: Project, name: string, sourceAtCall: Branch, branchId: string, excludeServices = false): Promise<Branch> {
     const projectId = projectAtCall.id
     // Everything above was read BEFORE the lock, and the rows can have moved while this waited.
     // A project delete holding the same project key may have taken the project, the source
@@ -743,8 +773,11 @@ export class Engine {
     if (!source) throw new Error(`source branch "${sourceAtCall.name}" not found`)
     this.assertUsable(source, 'forked')
     if (this.getBranchByName(projectId, name)) throw new Error(`branch "${name}" already exists`)
-    // Each database forks inside provisionBranch (db.fork); each bucket copies here; compute redeploys.
-    const b = await this.serialize('provision', () => this.provisionBranch(project, name, false, source, branchId))
+    // Each database forks inside provisionBranch (db.fork); each bucket copies here; compute
+    // redeploys. An exclude-services create provisions only the branch shell (ref, network, row):
+    // passing `source` with `empty` keeps the fork semantics ("cut from that branch") without
+    // materialising anything it carries.
+    const b = await this.serialize('provision', () => this.provisionBranch(project, name, false, source, branchId, { empty: excludeServices }))
     // `provisionBranch` COMMITS the branch row, and every step below it -- the volume forks, the
     // bucket copies, the compute deploys, the inherited secrets -- builds resources that row
     // already advertises. `provisionBranch`'s own rollback cannot reach any of them, so a failure
@@ -770,17 +803,20 @@ export class Engine {
     let cloneName = name
     try {
       // WP4 hook: /data volumes fork BEFORE the redeploy loop, so each new container starts on its
-      // own copy rather than sharing the source's bytes.
-      const volumes = await this.forkVolumes(project, source, b)
-      for (const s of this.stList(projectId)) {
-        const from = this.bucketHandle(project, source, s.id)
-        const to = this.bucketHandle(project, b, s.id)
-        if (from && to) await this.storage.cloneInto(from.bucket, to.bucket, b.network)
-      }
-      // compute = redeploy: same image, SAME listen port, allocated host mapping.
-      for (const [group, app] of Object.entries(source.apps)) {
-        // WP3 hook: a clone of a non-always-on service starts asleep (false until the scheduler lands).
-        await this.deployAllocatingPort(projectId, name, group, app, { startAsleep: this.startAsleepFor(project, b, group) })
+      // own copy rather than sharing the source's bytes. An exclude-services create carries no
+      // compute, so there is nothing to fork, clone or redeploy.
+      const volumes = excludeServices ? [] : await this.forkVolumes(project, source, b)
+      if (!excludeServices) {
+        for (const s of this.stList(projectId)) {
+          const from = this.bucketHandle(project, source, s.id)
+          const to = this.bucketHandle(project, b, s.id)
+          if (from && to) await this.storage.cloneInto(from.bucket, to.bucket, b.network)
+        }
+        // compute = redeploy: same image, SAME listen port, allocated host mapping.
+        for (const [group, app] of Object.entries(source.apps)) {
+          // WP3 hook: a clone of a non-always-on service starts asleep (false until the scheduler lands).
+          await this.deployAllocatingPort(projectId, name, group, app, { startAsleep: this.startAsleepFor(project, b, group) })
+        }
       }
       // platform parity: the parent branch's user-defined (branch-scoped) secrets clone onto the new
       // branch, and so do its bindings (a template's platform credential renames must survive a fork).
@@ -806,6 +842,9 @@ export class Engine {
         const parent = st.branches[source.id]
         sourceName = parent?.name ?? source.name
         cloneName = st.branches[b.id]?.name ?? name
+        // Exclude-services: the names above are still needed for the event, but none of the
+        // parent's secrets, bindings or db settings are copied ("Creates an empty branch").
+        if (excludeServices) return
         const list = st.userSecrets[projectId] ?? []
         const inherited = list.filter((u) => u.branch === sourceName).map((u) => ({ ...u, branch: cloneName }))
         st.userSecrets[projectId] = [...list, ...inherited]
@@ -815,7 +854,7 @@ export class Engine {
         const dbVolumeGib = parent?.dbVolumeGib ?? source.dbVolumeGib
         if (dbVolumeGib !== undefined) st.branches[b.id].dbVolumeGib = dbVolumeGib
       })
-      secretsCloned = true
+      secretsCloned = !excludeServices
       // WP3 hook: the clone's databases sleep until first use (no-op until the scheduler lands).
       await this.sleepNewBranch(project, b)
       // WP4: how the database and each /data volume were copied (decision 39), so `insta events`
@@ -825,7 +864,7 @@ export class Engine {
       // Both names as the copy actually found them, so the event does not report a branch that
       // no longer answers to the name in it, and the caller gets the row as it stands rather
       // than the snapshot taken at commit time.
-      this.emit(projectId, cloneName, 'resource', 'branch.created', { from: sourceName, ...(db ? { db } : {}), volumes })
+      this.emit(projectId, cloneName, 'resource', 'branch.created', { from: sourceName, ...(db ? { db } : {}), volumes, ...(excludeServices ? { excludedServices: true } : {}) })
       return loadState().branches[b.id] ?? b
     } catch (e) {
       const undone = await this.unwindBranch(project, b, secretsCloned)
@@ -1828,6 +1867,97 @@ export class Engine {
     // `failed` rides along for the same reason: a partial success has to read as one.
     this.emit(projectId, b.name, 'resource', 'storage.objects.delete', { service: serviceId, count: out.deleted, requested: opts.keys.length, failed: out.failed.length })
     return out
+  }
+
+  // ---- managed data browser (platform parity: the console's redis key browser) ----
+
+  /** Resolve a redis-browse target: the managed service on THIS branch, its container and password. */
+  private redisTarget(projectId: string, serviceId: string, branchName?: string): { branch: Branch; sid: string; container: string; password: string } {
+    const { branch, serviceId: sid } = this.resolveSid(projectId, serviceId, branchName)
+    const svc = this.serviceOf(projectId, sid)
+    if (svc.type !== 'redis') throw new Error('key browsing is only supported for redis services')
+    const project = this.getProject(projectId)!
+    this.assertCarries(project, branch, { id: sid }, 'managed')
+    const password = branch.managed?.[sid]?.password
+    if (!password) throw new Error(`redis service not found: ${svc.name}`)
+    return { branch, sid, container: managedContainerName(this.ref(project, branch), 'redis', svc.name), password }
+  }
+
+  private redisCmd(t: { container: string; password: string }, args: string[]): Promise<string> {
+    if (!this.managedDb.command) throw new Error('key browsing is not supported by this managed database adapter')
+    return this.managedDb.command(t.container, t.password, args)
+  }
+
+  /** valkey-cli's `--json` output, parsed; the raw text when a command answers outside JSON. */
+  private async redisJson(t: { container: string; password: string }, args: string[]): Promise<unknown> {
+    const out = (await this.redisCmd(t, ['--json', ...args])).trim()
+    try { return JSON.parse(out) } catch { return out }
+  }
+
+  /** One SCAN page of a logical db plus the keyspace summary (the console's db chips). Never wakes:
+   *  a sleeping instance answers "sleeping" through the same 503 gate as the postgres insight
+   *  reads, and the dashboard's Wake and browse is what wakes it. */
+  async redisKeys(projectId: string, serviceId: string, opts: { branch?: string; db?: number; cursor?: string; count?: number }): Promise<{ dbs: Array<{ db: number; keys: number }>; keys: string[]; cursor?: string }> {
+    const t = this.redisTarget(projectId, serviceId, opts.branch)
+    await this.assertPgAwake(t.branch, t.sid) // pg-named, but it only reads the scheduler state of a key
+    const db = String(opts.db ?? 0)
+    const count = Math.min(Math.max(opts.count ?? 200, 1), 1000)
+    const scan = await this.redisJson(t, ['-n', db, 'SCAN', opts.cursor ?? '0', 'COUNT', String(count)])
+    if (!Array.isArray(scan) || scan.length < 2 || !Array.isArray(scan[1])) {
+      throw new Error('could not read the key listing: the server answered an unexpected shape')
+    }
+    const dbs = parseKeyspaceInfo(await this.redisCmd(t, ['INFO', 'keyspace']))
+    const cursor = String(scan[0])
+    // Governed reads land on the audit timeline (README: `insta events`) — the op and db only,
+    // never key names or values.
+    this.emitLater(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'keys', db: Number(db) })
+    return { dbs, keys: (scan[1] as unknown[]).map(String), ...(cursor === '0' ? {} : { cursor }) }
+  }
+
+  /** The Stats view's snapshot: the server's own INFO counters, picked into the console's shape.
+   *  Same gate as the key reads: never wakes, 503 while asleep. */
+  async redisStats(projectId: string, serviceId: string, opts: { branch?: string } = {}): Promise<{
+    version: string; uptimeSec: number; connectedClients: number
+    usedMemoryBytes: number; maxMemoryBytes: number
+    totalCommands: number; opsPerSec: number; keyspaceHits: number; keyspaceMisses: number
+    expiredKeys: number; evictedKeys: number
+  }> {
+    const t = this.redisTarget(projectId, serviceId, opts.branch)
+    await this.assertPgAwake(t.branch, t.sid)
+    const info = parseRedisInfo(await this.redisCmd(t, ['INFO']))
+    const num = (k: string): number => { const n = Number(info[k]); return Number.isFinite(n) ? n : 0 }
+    this.emitLater(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'stats' })
+    return {
+      version: info.valkey_version ?? info.redis_version ?? 'unknown',
+      uptimeSec: num('uptime_in_seconds'), connectedClients: num('connected_clients'),
+      usedMemoryBytes: num('used_memory'), maxMemoryBytes: num('maxmemory'),
+      totalCommands: num('total_commands_processed'), opsPerSec: num('instantaneous_ops_per_sec'),
+      keyspaceHits: num('keyspace_hits'), keyspaceMisses: num('keyspace_misses'),
+      expiredKeys: num('expired_keys'), evictedKeys: num('evicted_keys'),
+    }
+  }
+
+  /** One key's type, TTL and value. Collection reads are bounded (first 200 entries), because a
+   *  key browser must never buffer an unbounded structure into the daemon's heap. */
+  async redisValue(projectId: string, serviceId: string, opts: { branch?: string; db?: number; key: string }): Promise<{ type: string; ttl: number; value: unknown }> {
+    const t = this.redisTarget(projectId, serviceId, opts.branch)
+    await this.assertPgAwake(t.branch, t.sid)
+    const db = String(opts.db ?? 0)
+    const read = (args: string[]) => this.redisJson(t, ['-n', db, ...args])
+    const type = String(await read(['TYPE', opts.key]))
+    if (type === 'none') throw new Error('key not found')
+    const ttl = Number(await read(['TTL', opts.key]))
+    // Every collection read is incremental AND hard-sliced: SCAN's COUNT is a hint the server may
+    // exceed, and HGETALL would return the whole hash, so neither is trusted with the bound.
+    const value = type === 'string' ? await read(['GET', opts.key])
+      : type === 'hash' ? scanPageToHash(await read(['HSCAN', opts.key, '0', 'COUNT', '200']))
+        : type === 'list' ? await read(['LRANGE', opts.key, '0', '199'])
+          : type === 'set' ? scanPageMembers(await read(['SSCAN', opts.key, '0', 'COUNT', '200']))
+            : type === 'zset' ? await read(['ZRANGE', opts.key, '0', '199', 'WITHSCORES'])
+              : type === 'stream' ? await read(['XRANGE', opts.key, '-', '+', 'COUNT', '200'])
+                : null
+    this.emitLater(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'value', db: Number(db) })
+    return { type, ttl, value }
   }
 
   /** Resolve a lifecycle target: a compute service id + branch (default branch unless given). */
@@ -3067,6 +3197,75 @@ export class Engine {
       if (observe.isExtensionUnavailable(m)) return { stats: [], extensionReady: false }
       throw e
     }
+  }
+
+  /** One ad-hoc SQL statement against a branch's Postgres, for the console's SQL editor and Data
+   *  tab. Never wakes (the tab sits behind the dashboard's wake gate, decision 48). A SELECT-ish
+   *  statement comes back as columns + rows through a json_agg wrap — psql's `-tAc` transport is
+   *  text, so JSON is the one shape that survives it losslessly — and anything else runs as
+   *  written, reporting psql's command tag. Bounded by DOCKER_MAX_OUTPUT_BYTES like every other
+   *  docker read; callers should still LIMIT what they select. */
+  async dbQuery(projectId: string, sql: string, branchName?: string, group?: string): Promise<
+    { columns: string[]; rows: unknown[][]; rowCount: number; ms: number } | { status: string; ms: number }
+  > {
+    const t = this.dbTarget(projectId, branchName, group)
+    await this.assertPgAwake(t.branch, t.serviceId)
+    const started = Date.now()
+    // EXACTLY-ONCE, whatever the classification says: the statement runs through ONE transport,
+    // chosen up front, and no error ever re-runs it (an error-text fallback re-executed volatile
+    // side effects). Classification reads the MASKED text (src/sqlsurface.ts), so a `;` or an
+    // `update` inside a string literal never changes the route; SHOW/EXPLAIN are utility
+    // statements a subquery cannot host and run as written; a WITH is row-shaped only when its
+    // last statement keyword is SELECT (a data-modifying CTE runs as a command).
+    const bare = stripLeadingSqlComments(sql)
+    const masked = maskSqlText(bare)
+    // The wrapper's inner text ends where the MASKED copy says the statement does: a terminal
+    // `;` followed by a comment survived an end-anchored strip of the raw text and broke the
+    // subquery (`from (select 1; -- done) t`).
+    const inner = bare.slice(0, trailingTrimIndex(masked))
+    // The contract is ONE statement per request (COMPATIBILITY): several used to run raw, which
+    // both broke the documented shape and let a request chain sub-timeout statements past the
+    // per-statement bound. Refused outright, with the `;` read from the MASKED text.
+    if (!isSingleStatement(masked)) throw new Error('one statement per request: split the input and run each statement on its own')
+    // A backslash outside literals is never SQL — it is a psql meta-command, and over the stdin
+    // transport those EXECUTE (`\watch` re-runs past the statement timeout, `\!` shells into the
+    // container). Refused before anything reaches psql.
+    if (masked.includes('\\')) throw new Error('psql meta-commands are not supported: send SQL only')
+    // Row-shaped: SELECT/VALUES/TABLE, a statement that IS a parenthesized query expression, and
+    // a WITH whose top level either ends in SELECT or holds no top-level keyword at all (its
+    // final query parenthesized — only a query expression can be; settled on live Postgres).
+    const withKeyword = lastStatementKeyword(masked)
+    const rowShaped = /^(select|values|table)\b/i.test(bare) || bare.startsWith('(')
+      || (/^with\b/i.test(bare) && (withKeyword === 'select' || withKeyword === null))
+    // `sqlOnly` re-checks at the transport (defence in depth): the meta-command guard above is the
+    // friendly first line, the adapter's is the one no future caller can forget.
+    const opts = { statementTimeoutMs: DB_QUERY_TIMEOUT_MS, sqlOnly: true }
+    if (rowShaped) {
+      // The values travel as TEXT (json_each_text), because row_to_json + JSON.parse silently
+      // rounds bigint/numeric past 2^53. Column order and names come from the same single
+      // execution (row_to_json's key order); zero rows answer empty columns. Bounded at
+      // DB_QUERY_MAX_ROWS on the server side — the editor is a browser, not an exporter.
+      // min() over the per-row column arrays, because array_agg builds text[][] whose single
+      // subscript is a SCALAR (a coalesce type error that failed every statement); min over
+      // arrays is btree-defined and every row carries the same array. Settled against a live
+      // Postgres 16 (bigint/numeric text fidelity, zero-rows -> [], column order, nulls) and
+      // pinned by test/db-query.int.test.ts.
+      const wrapped = `select json_build_object('columns', coalesce(min(cols), array[]::text[]), 'rows', coalesce(json_agg(vals), '[]'::json))
+from (select array(select json_object_keys(row_to_json(t))) as cols,
+             (select json_agg(v.value) from json_each_text(row_to_json(t)) v) as vals
+      from (${inner}) t limit ${DB_QUERY_MAX_ROWS}) s`
+      const out = await this.db.query(t.container, wrapped, opts)
+      const parsed = JSON.parse(out || '{}') as { columns?: string[]; rows?: Array<Array<string | null>> }
+      const columns = parsed.columns ?? []
+      const rows = parsed.rows ?? []
+      this.emitLater(projectId, t.branch.name, 'resource', 'db.query', { service: t.serviceId, mode: 'rows' })
+      return { columns, rows, rowCount: rows.length, ms: Date.now() - started }
+    }
+    const out = await this.db.query(t.container, sql, opts)
+    // The audit row carries what ran and where — never the SQL text (README: governed actions
+    // land in `insta events`; the statement itself may hold data or credentials).
+    this.emitLater(projectId, t.branch.name, 'resource', 'db.query', { service: t.serviceId, mode: 'command' })
+    return { status: out || 'OK', ms: Date.now() - started }
   }
 
   /** Manifest view: project + branches + per-branch resources (db / compute groups). */

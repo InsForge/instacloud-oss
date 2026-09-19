@@ -1,18 +1,20 @@
 // The console's Branches page (insta-frontend branches/branches-view.tsx, branch-actions-menu.tsx): a
 // title band with Add Branch, then a table of Branch, Status, Service (type icons), Created. The default
-// branch has no menu (it cannot be deleted). Self-host divergences: no Rename Branch (the daemon has no
-// branch rename), no GitHub deployments panel, and no Agent Governance column (the daemon's governance
-// policy is project-wide, so there is no per-branch protection to show).
+// branch has no menu (it cannot be renamed or deleted); other rows get Rename Branch / Delete Branch.
+// Self-host divergences: no GitHub deployments panel, and no Agent Governance column (the daemon's
+// governance policy is project-wide, so there is no per-branch protection to show).
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  Button, ConfirmDialog, cn, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  Button, ConfirmDialog, cn, Dialog, DialogBody, DialogClose, DialogContent, DialogFooter, DialogHeader,
+  DialogTitle, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input,
 } from '@insforge/ui'
 import { CircleAlert, EllipsisVertical, Plus } from 'lucide-react'
 import { api, type BranchInfo } from '../api'
 import { usePoll } from '../hooks'
 import { envBadge } from '../lib/envSwitch'
+import { BRANCH_NAME_RE, LOWER_KEBAB_BRANCH_ERROR } from '../lib/serviceNames'
 import { ApprovalPrompt, type PendingApproval } from '../components/ApprovalPrompt'
 import { CreateEnvironmentDialog } from '../components/console/CreateEnvironmentDialog'
 import { EnvStatusBadge } from '../components/console/EnvSwitcher'
@@ -43,10 +45,69 @@ function ServiceIcons({ types }: { types: string[] }) {
   )
 }
 
-function BranchActionsMenu({ projectId, env, onDeleted, onError, onApproval }: {
-  projectId: string; env: BranchInfo; onDeleted: () => void
+/** The console's Rename Branch dialog. Metadata only on the daemon too: the branch keeps its
+ *  frozen ref, hostnames and containers, so this is safe on a running branch. */
+function RenameBranchDialog({ projectId, env, open, onOpenChange, onRenamed, onApproval }: {
+  projectId: string; env: BranchInfo; open: boolean
+  onOpenChange: (open: boolean) => void; onRenamed: (name: string) => void
+  onApproval: (p: NonNullable<PendingApproval>) => void
+}) {
+  const [name, setName] = useState(env.name)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const rename = async (next: string) => {
+    setBusy(true)
+    const r = await api.renameBranch(projectId, env.id, next)
+    setBusy(false)
+    if (r.kind === 'error') return setError(r.status === 409 ? `A branch named ${next} already exists.` : r.error)
+    // Close only on success, like the service rename: rename is ungated today, but a governed
+    // daemon may still answer 202.
+    if (r.kind === 'approval') return onApproval({ ...r, retry: () => { void rename(next) } })
+    onOpenChange(false)
+    onRenamed(next)
+  }
+
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault()
+    setError(null)
+    const next = name.trim()
+    if (next === env.name) return onOpenChange(false)
+    if (!BRANCH_NAME_RE.test(next)) return setError(LOWER_KEBAB_BRANCH_ERROR)
+    void rename(next)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Rename Branch</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit}>
+          <DialogBody className="flex flex-col gap-2">
+            <div className="flex items-center gap-6">
+              <label htmlFor="branch-rename" className="w-32 shrink-0 text-sm">Branch Name</label>
+              <Input id="branch-rename" name="name" required autoFocus value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </DialogBody>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="secondary">Cancel</Button>
+            </DialogClose>
+            <Button type="submit" variant="primary" disabled={!name.trim() || busy}>Save</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function BranchActionsMenu({ projectId, env, onDeleted, onRenamed, onError, onApproval }: {
+  projectId: string; env: BranchInfo; onDeleted: () => void; onRenamed: (name: string) => void
   onError: (m: string) => void; onApproval: (p: NonNullable<PendingApproval>) => void
 }) {
+  const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const remove = async () => {
@@ -67,11 +128,17 @@ function BranchActionsMenu({ projectId, env, onDeleted, onError, onApproval }: {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => setRenameOpen(true)}>Rename Branch</DropdownMenuItem>
           <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setDeleteOpen(true)}>
             Delete Branch
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {/* Remount per open, so a cancelled edit does not survive into the next one. */}
+      {renameOpen && (
+        <RenameBranchDialog projectId={projectId} env={env} open onOpenChange={setRenameOpen} onRenamed={onRenamed}
+          onApproval={onApproval} />
+      )}
       <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete Branch"
         description={
           <span>
@@ -169,6 +236,13 @@ export function Environments() {
                             reload()
                             // The branch you were standing on is gone: land on the default one.
                             if (env.name === branch) nav(`/p/${projectId}/${defaultEnv}/branches`, { replace: true })
+                          }}
+                          onRenamed={(next) => {
+                            reload()
+                            // The URL carries the branch NAME; a rename of the branch you are
+                            // standing on would leave every link on the page pointing at a name
+                            // that no longer answers.
+                            if (env.name === branch) nav(`/p/${projectId}/${encodeURIComponent(next)}/branches`, { replace: true })
                           }} />
                       </td>
                     )}

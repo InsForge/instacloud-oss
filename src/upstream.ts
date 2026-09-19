@@ -30,6 +30,9 @@ export interface UpstreamLike {
  *  port, so the port is part of the identity. `forget` drops every port of the container. */
 const keyOf = (container: string, port: number): string => `${container}#${port}`
 
+/** How long a just-accepted local-mode connection must stay open before it counts as a listener. */
+const PROXY_HANGUP_MS = 100
+
 export class Upstream implements UpstreamLike {
   private cache = new Map<string, { addr: UpstreamAddr; expiresAt: number }>()
   constructor(private cfg: Config) {}
@@ -59,7 +62,7 @@ export class Upstream implements UpstreamLike {
     }
   }
 
-  /** True when the address accepts a TCP connection. The socket is always destroyed. */
+  /** True when the address accepts a TCP connection and holds it. The socket is always destroyed. */
   async dial(container: string, network: string, port: number, timeoutMs = 1000): Promise<boolean> {
     const addr = await this.resolve(container, network, port)
     if (!addr) return false
@@ -68,8 +71,14 @@ export class Upstream implements UpstreamLike {
       let settled = false
       const done = (ok: boolean): void => { if (settled) return; settled = true; s.destroy(); resolve(ok) }
       s.setTimeout(timeoutMs, () => done(false))
-      s.once('connect', () => done(true))
       s.once('error', () => done(false))
+      s.once('connect', () => {
+        if (this.cfg.mode === 'server') { done(true); return }
+        // local mode reaches docker-proxy, which accepts with nothing behind it and then hangs up
+        const held = setTimeout(() => done(true), PROXY_HANGUP_MS)
+        s.once('end', () => { clearTimeout(held); done(false) })
+        s.once('close', () => { clearTimeout(held); done(false) })
+      })
     })
   }
 

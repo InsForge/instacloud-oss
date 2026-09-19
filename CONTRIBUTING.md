@@ -92,6 +92,7 @@ test/                             no Docker unless the row says so
 ├── templates.test.ts             manifest parsing, variables, the bundled catalog
 ├── install.test.ts               install.sh: sh -n and every --print-* rendering
 ├── docs-lint.test.ts             docs copy rules, the docs.json nav, the e2e scripts
+├── docs-backup-script.test.ts    runs the backup page's shell blocks against stubs
 ├── restart-policy.test.ts        long-lived containers get --restart unless-stopped
 ├── clone-isolation.int.test.ts   DOCKER: a forked db is copied AND isolated
 ├── storage.int.test.ts           DOCKER: a forked bucket is copied AND isolated

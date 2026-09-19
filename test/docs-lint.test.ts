@@ -182,6 +182,10 @@ test('COMPATIBILITY names every new route by its real verb', () => {
   expect(INVENTED.filter((v) => text.includes(v))).toEqual([])
   // `insta backup` does not exist, so the only allowed mention is the one that says so.
   expect(text).toMatch(/no `insta backup` command/)
+  // Its backup summary names the same roots the upgrade page archives, so it cannot drift into a
+  // shorter list that restores without the managed databases or the certificates.
+  const backups = text.slice(text.indexOf('## Backups'), text.indexOf('\n## ', text.indexOf('## Backups') + 1))
+  for (const root_ of ['state.json', 'pg/', 'md/', 'vol/', 'garage/', 'edge/', 'caddy/']) expect(backups, root_).toContain(`\`${root_}\``)
 })
 
 // The backup page is the ONLY documented recovery path (the backups API answers 501), so what it
@@ -189,6 +193,13 @@ test('COMPATIBILITY names every new route by its real verb', () => {
 // from it, which loses every managed database from a backup that appears to succeed.
 test('the backup procedure covers every data root the code writes, and stops the writers first', () => {
   const page = readFileSync(join(root, 'docs/self-hosting/upgrade.mdx'), 'utf8')
+  // A wake fails on a missing container (scheduler NoContainerError) and nothing rebuilds one from
+  // state.json, on a new machine or for anything deleted since the backup, so the page may not
+  // carry an archive restore procedure until #139 lands one. The dumps are the recovery it offers.
+  expect(page).toMatch(/Restoring from the archive is not supported yet/)
+  expect(page).toContain('https://github.com/InsForge/instacloud-oss/issues/139')
+  expect(page).not.toMatch(/tar [^\n]*-x/)
+  expect(page).toMatch(/psql -v ON_ERROR_STOP=1 --single-transaction "\$u" < "\$f"/)
   const tarLine = page.split('\n').find((l) => l.startsWith('tar -C /var/lib/instacloud -czf'))
   expect(tarLine, 'the page must carry one tar line').toBeDefined()
 
@@ -212,9 +223,10 @@ test('the backup procedure covers every data root the code writes, and stops the
   expect(branches).toBeGreaterThan(compose)
   expect(tar).toBeGreaterThan(branches)
 
-  // And the restore side, which the page did not have at all.
-  expect(page).toContain('Restore, on a clean machine')
-  expect(page).toContain('tar -C /var/lib/instacloud -xzf')
+  // Privacy, fail-fast and the custom TLS pair are checked by running these blocks
+  // (test/docs-backup-script.test.ts); here only that the archive goes through the temp file.
+  expect(tarLine).toMatch(/-czf instacloud-data\.tgz\.tmp /)
+
   // It says what the archive is NOT consistent for, rather than overclaiming.
   expect(page).toMatch(/NOT for a service that was running/)
 })

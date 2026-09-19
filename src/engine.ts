@@ -3237,7 +3237,9 @@ export class Engine {
     const withKeyword = lastStatementKeyword(masked)
     const rowShaped = /^(select|values|table)\b/i.test(bare) || bare.startsWith('(')
       || (/^with\b/i.test(bare) && (withKeyword === 'select' || withKeyword === null))
-    const opts = { statementTimeoutMs: DB_QUERY_TIMEOUT_MS }
+    // `sqlOnly` re-checks at the transport (defence in depth): the meta-command guard above is the
+    // friendly first line, the adapter's is the one no future caller can forget.
+    const opts = { statementTimeoutMs: DB_QUERY_TIMEOUT_MS, sqlOnly: true }
     if (rowShaped) {
       // The values travel as TEXT (json_each_text), because row_to_json + JSON.parse silently
       // rounds bigint/numeric past 2^53. Column order and names come from the same single

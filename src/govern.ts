@@ -19,6 +19,10 @@ const DEFAULTS: Record<GatedAction, Decision> = {
   'storage.read': 'allow',
   'storage.write': 'allow',
   'storage.delete': 'allow',
+  // The data browsers: reads of user data (the redis key browser) and the SQL editor's arbitrary
+  // statements. Separate actions so a project can gate the editor while keeping reads open.
+  'db.read': 'allow',
+  'db.query': 'allow',
   deploy: 'allow',
   'project.delete': 'allow',
   'branch.delete': 'allow',

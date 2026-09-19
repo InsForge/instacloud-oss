@@ -171,6 +171,33 @@ test('list returns one envelope per attached name and detach takes it back out',
   expect((await app.inject({ method: 'DELETE', url: `/projects/${projectId}/compute/domain`, payload: { hostname: 'one.example.com' } })).statusCode).toBe(404)
 })
 
+// insta 0.1.0 `domain attach` reads the org's bought domains and orders first, and dies on any error there.
+test('the org-scoped domain reads answer empty lists, so `insta domain attach` reaches the bring-your-own path', async () => {
+  const domains = await app.inject({ method: 'GET', url: '/orgs/local/domains' })
+  expect(domains.statusCode).toBe(200)
+  expect(json(domains)).toEqual({ items: [] })
+  const orders = await app.inject({ method: 'GET', url: '/orgs/local/domains/orders' })
+  expect(orders.statusCode).toBe(200)
+  expect(json(orders)).toEqual({ items: [] })
+})
+
+test('the domain marketplace is cloud-only: search, buy, bought-domain attach and records answer 501, never 404', async () => {
+  const calls = [
+    { method: 'GET', url: '/orgs/local/domains/search?q=myapp' },
+    { method: 'POST', url: '/orgs/local/domains/orders', payload: { domainName: 'myapp.com', years: 1 } },
+    { method: 'POST', url: `/projects/${projectId}/domains/myapp.com/attach`, payload: { branch: 'main', group: 'default' } },
+    { method: 'GET', url: '/orgs/local/domains/myapp.com/records' },
+    { method: 'POST', url: '/orgs/local/domains/myapp.com/records', payload: { type: 'A', host: '@', answer: '203.0.113.7' } },
+    { method: 'PATCH', url: '/orgs/local/domains/myapp.com/records/1', payload: { ttl: 300 } },
+    { method: 'DELETE', url: '/orgs/local/domains/myapp.com/records/1' },
+  ] as const
+  for (const c of calls) {
+    const r = await app.inject({ method: c.method, url: c.url, payload: 'payload' in c ? c.payload : undefined })
+    expect(r.statusCode, `${c.method} ${c.url}`).toBe(501)
+    expect(String(json(r).error), c.url).toContain('cloud-only')
+  }
+})
+
 test('a domain listing resolves the target once and bounds how many rows it checks at once', async () => {
   // No project-level cap on domains: a `Promise.all` over the list turned one listing into as
   // many simultaneous resolver operations as there are rows, each with its own DNS timeout, on

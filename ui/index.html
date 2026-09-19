@@ -7,15 +7,16 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>InstaCloud OSS</title>
     <script>
-      // The stored theme before first paint (lib/theme.ts owns it after that); dark by default,
-      // like the console.
+      // The stored theme before first paint (lib/theme.ts owns it after that). System by default,
+      // like the console: measured live, a fresh console session on a light OS renders LIGHT, so
+      // the old dark default made the self-host feel like a different product to light-OS users.
       try {
-        var t = localStorage.getItem('insta_theme') || 'dark'
-        if (t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)) {
+        var t = localStorage.getItem('insta_theme') || 'system'
+        if (t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) {
           document.documentElement.classList.add('dark')
         }
       } catch (e) {
-        document.documentElement.classList.add('dark')
+        if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark')
       }
     </script>
   </head>

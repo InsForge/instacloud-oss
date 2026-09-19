@@ -127,9 +127,9 @@ insta services add postgres db >/dev/null || FAIL "services add postgres failed"
 insta services add storage store >/dev/null || FAIL "services add storage failed"
 insta services add compute web >/dev/null || FAIL "services add compute failed"
 insta services add postgres analytics >/dev/null || FAIL "a second postgres must be allowed"
-# With two postgres services the group is no longer optional, so name it on every call.
-DBURL=$(insta db url --group db)
-DBURL2=$(insta db url --group analytics)
+# With two postgres services the service is no longer optional, so name it on every call.
+DBURL=$(insta postgres url db)
+DBURL2=$(insta postgres url analytics)
 [ "$DBURL" != "$DBURL2" ] || FAIL "the two postgres services share a dsn"
 if insta services add postgres db >/dev/null 2>&1; then
   FAIL "a duplicate service name must be refused"
@@ -197,7 +197,7 @@ case $MAIN_IDS in
   *:*) FAIL "default-branch ids must be bare, got $MAIN_IDS" ;;
   *) OK "main service ids are bare" ;;
 esac
-FEATURL=$(insta db url --branch feat --group db)
+FEATURL=$(insta postgres url db --branch feat)
 [ "$FEATURL" != "$DBURL" ] || FAIL "feat and main share a dsn"
 FEATVAL=$(psql "$FEATURL" -v ON_ERROR_STOP=1 -qtAc 'select v from qa_branch_probe limit 1')
 [ "$FEATVAL" = "from-main" ] || FAIL "feat did not inherit the seeded row, got '$FEATVAL'"
@@ -240,7 +240,7 @@ docker cp "$VOLC2:/data/marker" "$DATA/volmarker.got" || FAIL "the forked volume
 MARKER=$(cat "$DATA/volmarker.got")
 [ "$MARKER" = "forked" ] || FAIL "the volume did not fork, marker is '$MARKER'"
 OK "compute volume forked with its files"
-EVENTS=$(insta events --json)
+EVENTS=$(insta agent events --json)
 printf '%s\n' "$EVENTS" | grep -q 'branch.created' || FAIL "no branch.created event"
 # Assert the method, do not merely print it. Local mode is the laptop path that must never
 # regress, and while it only reported the method it could not catch the class of regression that
@@ -294,8 +294,8 @@ sleep $(( INSTA_OSS_IDLE_COMPUTE_SEC * 2 + INSTA_OSS_SWEEP_SEC + 5 ))
 [ "$(cstate "$WEBC")" = "running" ] || FAIL "an always-on service slept"
 insta compute always-on off web >/dev/null || FAIL "always-on off failed"
 OK "always-on keeps a service up"
-insta events --json | grep -q 'service.sleep' || FAIL "no service.sleep event"
-insta events --json | grep -q 'service.wake' || FAIL "no service.wake event"
+insta agent events --json | grep -q 'service.sleep' || FAIL "no service.sleep event"
+insta agent events --json | grep -q 'service.wake' || FAIL "no service.wake event"
 OK "sleep and wake events recorded"
 
 STEP "8. limits"

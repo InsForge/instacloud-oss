@@ -61,5 +61,5 @@ template deployment, and anything that depends on a CLI or template release that
   records, not a real delegation.
 - Real memory pressure. Eviction is covered by `test/scheduler.test.ts` through
   `INSTA_OSS_MEM_BUDGET_MB`.
-- `insta db connect`, which is interactive.
+- `insta postgres connect`, which is interactive.
 - arm64. Both jobs run on amd64 runners.

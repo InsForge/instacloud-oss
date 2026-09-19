@@ -1,11 +1,27 @@
 @import "tailwindcss";
 @import "@insforge/ui/styles.css";
+/* The console's typefaces, self-hosted (next/font is Next-only; the fonts are not): Inter for
+ * text and Geist Mono for code. Without these, Inter only rendered for viewers who happen to
+ * have it installed, and code fell back to the OS mono stack — the largest single "looks
+ * different from the console" cause. */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/geist-mono";
 
 /*
  * The cloud console's globals.css (InsForge/insta-frontend src/app/globals.css), minus what needs
  * Next (next/font) or a cloud-only feature (identity-mark palette, Quick Start motion). Keep the
  * two in step: the self-hosted dashboard is meant to look like the console.
  */
+
+/* The loaded webfonts first; the kit's stack (plain Inter, then system) stays as the fallback. */
+:root {
+  --insforge-font: 'Inter Variable', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+/* `inline`, like the --font-sans override below: the value bakes into the generated `font-mono`
+ * utility, so an unlayered :root declaration elsewhere cannot win the cascade over it. */
+@theme inline {
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}
 
 /* Dark mode is class-based (`.dark` on <html>), so `dark:` utilities key off the class too. */
 @custom-variant dark (&:where(.dark, .dark *));

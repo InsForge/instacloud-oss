@@ -42,7 +42,7 @@ const MAX_STDERR_BYTES = 64 * 1024
 /** Run the `docker` CLI, capture stdout as a Buffer, feed optional stdin. Rejects on non-zero exit.
  *  `mergeStderr` folds stderr into the captured output — `docker logs` replays the container's own
  *  stderr stream there (Postgres logs entirely to stderr), which is data, not error noise. */
-export function docker(args: string[], opts: { input?: Buffer; mergeStderr?: boolean } = {}): Promise<Buffer> {
+export function docker(args: string[], opts: { input?: Buffer; mergeStderr?: boolean; env?: Record<string, string> } = {}): Promise<Buffer> {
   return dockerCall(args, opts).done
 }
 
@@ -54,10 +54,12 @@ export function docker(args: string[], opts: { input?: Buffer; mergeStderr?: boo
  *  wrapper needs more than a race against a promise -- it needs to end the command and to know
  *  that it ended. `kill()` is that, and `done` still settles only when the child has closed, so
  *  "this rejected" and "no command of ours is running" are the same moment. */
-export function dockerCall(args: string[], opts: { input?: Buffer; mergeStderr?: boolean } = {}): { done: Promise<Buffer>; kill: () => void } {
+export function dockerCall(args: string[], opts: { input?: Buffer; mergeStderr?: boolean; env?: Record<string, string> } = {}): { done: Promise<Buffer>; kill: () => void } {
   let child: ReturnType<typeof spawn> | undefined
   const done = new Promise<Buffer>((resolve, reject) => {
-    const p = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] })
+    // `env` rides the CHILD's environment (merged over ours), for values that must reach docker
+    // without appearing in its argv: `docker exec -e NAME` (no value) forwards it from there.
+    const p = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'], ...(opts.env ? { env: { ...process.env, ...opts.env } } : {}) })
     child = p
     const out: Buffer[] = []
     let outBytes = 0

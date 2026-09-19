@@ -63,7 +63,11 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
   const [connectOpen, setConnectOpen] = useState(false)
   const tabs = tabsFor(service?.type ?? 'storage')
   const [tab, setTab] = useState<TabId | null>(null)
-  const active: TabId = tab ?? (tabs.includes(requestedTab as TabId) ? (requestedTab as TabId) : tabs[0])
+  // The overlay stays mounted when another service opens, so a locally-selected tab must not
+  // follow you to a service whose rail does not carry it (Buckets on a postgres, say).
+  useEffect(() => { setTab(null) }, [serviceId])
+  const picked = tab ?? (requestedTab as TabId)
+  const active: TabId = tabs.includes(picked) ? picked : tabs[0]
   // The URL carries `?service=&tab=` so a tab can be linked and survives a refresh, but selecting
   // one only moved local state, so reload reopened the tab the link had named rather than the one
   // in front of you. Keep the URL in step, replacing rather than stacking history entries.
@@ -203,6 +207,7 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
                   opens, and the gate's wake state must not follow you to it. A service id alone repeats across projects. */}
               {active === 'database' && service.type === 'postgres' && (
                 <DatabasePanel key={dbPanelKey(projectId, branch, service.id)} projectId={projectId} branch={branch} group={service.name} serviceId={service.id}
+                  onApproval={setApproval}
                   footer={
                     <div className="flex justify-center">
                       <Button type="button" variant="secondary" onClick={() => selectTab('settings')}>Service settings</Button>
@@ -222,8 +227,9 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
                   group={service.name} lineName={service.name} />
               )}
               {/* Keyed by service, like Metrics: the overlay stays mounted when another storage
-                  service opens, and one bucket's listing must not wear the next's name. */}
-              {active === 'buckets' && (
+                  service opens, and one bucket's listing must not wear the next's name. Type-gated
+                  too, so a mid-switch render can never ask a non-storage service for objects. */}
+              {active === 'buckets' && service.type === 'storage' && (
                 <BucketsPanel key={service.id} projectId={projectId} branch={branch} service={service}
                   onDone={reload} onApproval={setApproval} />
               )}

@@ -911,6 +911,9 @@ export function buildServer(
     const code = /sleeping/.test(m) ? 503
       : m.includes('not supported by this managed database adapter') ? 501
       : m.includes('only supported for redis') ? 400
+      // A docker exec that failed, or a listing the server answered in an unexpected shape, is
+      // provider trouble — 502, never a 400 that blames the request for an outage.
+      : m.includes('docker ') || m.includes('unexpected shape') ? 502
       : errCode(m)
     return reply.code(code).send({ error: m })
   }

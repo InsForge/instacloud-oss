@@ -125,7 +125,7 @@ describe('customRange', () => {
   })
 
   it('never charts more points than the budget, for any range within retention', () => {
-    for (let span = 60; span <= 3 * 86_400; span += 97) {
+    for (let span = 60; span <= 7 * 86_400; span += 97) {
       for (const offset of [0, 13, 29]) {
         const to = now - 61 - offset
         const r = customRange(to - span, to, T0)

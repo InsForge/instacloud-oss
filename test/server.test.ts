@@ -127,8 +127,10 @@ test('branch create with excludeServices forks nothing: no services, secrets or 
   const r = await post(`/projects/${id}/branches`, { name: 'empty', from: 'main', excludeServices: true })
   expect(r.statusCode).toBe(201)
   expect(r.json().branch.name).toBe('empty')
-  // None of the parent's services materialise: no database fork, no bucket copy, no redeploy.
-  expect(calls.filter((c) => c.includes('empty'))).toEqual([])
+  // None of the parent's services materialise: no database fork, no bucket copy, no redeploy —
+  // anchored to the adapter verbs the fork would use, not to the branch name as a substring
+  // (bookkeeping calls legitimately carry the name in paths).
+  expect(calls.filter((c) => /^(db\.fork|db\.provision|st\.provision|st\.clone|deploy|md\.provision):/.test(c) && c.includes('empty'))).toEqual([])
   const row = Object.values(loadState().branches).find((b) => b.name === 'empty')!
   expect(Object.keys(row.databases ?? {})).toEqual([])
   expect(Object.keys(row.buckets ?? {})).toEqual([])
@@ -5021,8 +5023,20 @@ test('redis key browser: keys + value routes, typed refusals, and the sleeping 5
   const value = await get(`/projects/${id}/services/rd-cache/redis/value?key=user:1`)
   expect(value.statusCode).toBe(200)
   expect(value.json()).toEqual({ type: 'string', ttl: -1, value: '{"name":"ada"}' })
-  // The recorded exec carries container + args; the password rides the adapter's env, never argv.
+  // A hash reads through HSCAN's bounded page, never HGETALL.
+  const hash = await get(`/projects/${id}/services/rd-cache/redis/value?key=session:9`)
+  expect(hash.json()).toEqual({ type: 'hash', ttl: -1, value: { token: 'abc', ttl: '60' } })
+  expect(calls.some((c) => c.includes('HGETALL'))).toBe(false)
+  // The recorded exec is the RAW argv (container + args): the password must not appear in it —
+  // the adapter hands it to docker through the exec's environment instead.
   expect(calls.some((c) => c.startsWith('md.cmd:io-demo-main-rd-cache:'))).toBe(true)
+  const pw = loadState().branches[await branchId(id)].managed?.['rd-cache']?.password
+  expect(pw && pw.length > 10).toBe(true)
+  expect(calls.some((c) => c.includes(pw!))).toBe(false)
+  // Governed reads land on the audit timeline, op only — never key names or values.
+  const reads = loadState().events.filter((e) => e.kind === 'db.read')
+  expect(reads.length).toBeGreaterThanOrEqual(2)
+  expect(reads.every((e) => !JSON.stringify(e.payload).includes('user:1'))).toBe(true)
 
   // Stats: the INFO counters picked into the console's shape.
   const stats = await get(`/projects/${id}/services/rd-cache/redis/stats`)
@@ -5047,6 +5061,17 @@ test('redis key browser: keys + value routes, typed refusals, and the sleeping 5
   expect(calls.filter((c) => c.startsWith('md.cmd'))).toEqual([])
 })
 
+test('the *SCAN page parsers hold the 200-entry bound however large the page the server hands back', async () => {
+  const { scanPageToHash, scanPageMembers } = await import('../src/manageddb')
+  const big: string[] = []
+  for (let i = 0; i < 600; i++) big.push(`f${i}`, `v${i}`)
+  expect(Object.keys(scanPageToHash(['0', big])).length).toBe(200)
+  expect(scanPageMembers(['0', big]).length).toBe(200)
+  // Garbage shapes answer empty, never throw.
+  expect(scanPageToHash('nope')).toEqual({})
+  expect(scanPageMembers(null)).toEqual([])
+})
+
 test('POST /database/query: rows for a select, a command tag otherwise, 503 asleep, gated db.query', async () => {
   const { engine, id } = await wp3Project()
   const r = await post(`/projects/${id}/database/query`, { sql: 'select 1 as one' })
@@ -5057,6 +5082,26 @@ test('POST /database/query: rows for a select, a command tag otherwise, 503 asle
   const ddl = await post(`/projects/${id}/database/query`, { sql: 'create table t (a int)' })
   expect(ddl.statusCode).toBe(200)
   expect(ddl.json()).toMatchObject({ status: 'OK' })
+
+  // A leading comment does not demote a SELECT to a command…
+  const commented = await post(`/projects/${id}/database/query`, { sql: '-- note\nselect 1 as one' })
+  expect(commented.json()).toMatchObject({ columns: ['one', 'two'] })
+  // …SHOW runs as written (a utility statement the wrapper cannot host)…
+  expect(await post(`/projects/${id}/database/query`, { sql: 'show search_path' }).then((x) => 'status' in x.json())).toBe(true)
+  expect(calls.some((c) => c === 'db.query:show search_path')).toBe(true)
+  // …several statements skip the wrapper too (psql rejects `;` inside a subquery)…
+  expect(await post(`/projects/${id}/database/query`, { sql: 'select 1; select 2' }).then((x) => 'status' in x.json())).toBe(true)
+  // …and a WITH that ends in UPDATE fails the wrapper at PARSE time and falls through to the raw
+  // run — one execution, not two.
+  const withUpdate = await post(`/projects/${id}/database/query`, { sql: 'with d as (select 1) update t set a = 1' })
+  expect(withUpdate.statusCode).toBe(200)
+  expect(withUpdate.json()).toMatchObject({ status: 'OK' })
+
+  // Every successful statement lands on the audit timeline — action metadata only, never SQL text.
+  const audited = loadState().events.filter((e) => e.kind === 'db.query')
+  expect(audited.length).toBeGreaterThanOrEqual(4)
+  expect(audited.every((e) => (e.payload as { service?: string }).service === 'pg-db')).toBe(true)
+  expect(audited.every((e) => !JSON.stringify(e.payload).includes('select'))).toBe(true)
 
   expect((await post(`/projects/${id}/database/query`, {})).statusCode).toBe(400)
   expect((await post(`/projects/${id}/database/query`, { sql: '  ' })).statusCode).toBe(400)

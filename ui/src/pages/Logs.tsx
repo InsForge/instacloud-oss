@@ -5,8 +5,8 @@
 // range can only narrow that tail here. It starts at the widest preset, as the console starts any view over an
 // endpoint that takes no range, and the page says how many loaded lines the range hides, with Show all lines to
 // lift it: a sleeping service's last lines, or ones older than any preset, stay one click away. The picker offers
-// the metrics presets (up to 7 days, like the console); there is no histogram yet; and the tail refreshes
-// every 5s instead of on range change.
+// the metrics presets (widest: 7 day; the console's own widest is 30); there is no histogram yet; and the
+// tail refreshes every 5s instead of on range change.
 
 import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'

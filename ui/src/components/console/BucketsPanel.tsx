@@ -70,7 +70,11 @@ export function BucketsPanel({ projectId, branch, service, onDone, onApproval }:
       const form = new FormData()
       for (const [k, v] of Object.entries(presign.data.fields)) form.append(k, v)
       form.append('file', file) // the file must be the form's LAST field (S3 POST policy)
-      const res = await fetch(presign.data.url, { method: 'POST', body: form })
+      // fetch REJECTS when the endpoint is unreachable — that failure needs the same error row
+      // as a non-2xx answer, not an unhandled rejection behind a silent button.
+      let res: Response
+      try { res = await fetch(presign.data.url, { method: 'POST', body: form }) }
+      catch { return setActionError('Upload failed: the storage endpoint could not be reached.') }
       if (!res.ok) return setActionError(`Upload failed: the storage endpoint answered ${res.status}.`)
       await load()
     } finally {

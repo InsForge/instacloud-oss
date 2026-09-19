@@ -42,12 +42,14 @@ const MIME: Record<string, string> = {
   woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf',
 }
 
-/** MIME guessed from the key's extension; null when there is nothing to guess from. */
+/** MIME guessed from the key's extension; null when there is nothing to guess from. Own-property
+ *  lookup only: a file named `report.toString` must not answer with Object.prototype's method. */
 export function contentTypeFor(key: string): string | null {
   const base = key.slice(key.lastIndexOf('/') + 1)
   const dot = base.lastIndexOf('.')
   if (dot <= 0) return null
-  return MIME[base.slice(dot + 1).toLowerCase()] ?? null
+  const ext = base.slice(dot + 1).toLowerCase()
+  return Object.prototype.hasOwnProperty.call(MIME, ext) ? MIME[ext] : null
 }
 
 /** The upload's contentType: what the browser says, else the extension, else octet-stream —

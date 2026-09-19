@@ -46,7 +46,7 @@ export type DbQueryStats = { stats: DbQueryStatRow[]; extensionReady: boolean }
 export type DbQueryResult =
   | { columns: string[]; rows: unknown[][]; rowCount: number; ms: number }
   | { status: string; ms: number }
-export type DbExtensions = { available: Array<{ name: string }>; enabled: string[] }
+export type DbExtensions = { available: Array<{ name: string; required?: boolean }>; enabled: string[] }
 /** The redis key browser (`GET .../redis/keys` and `/redis/value`). */
 export type RedisKeys = { dbs: Array<{ db: number; keys: number }>; keys: string[]; cursor?: string }
 export type RedisValue = { type: string; ttl: number; value: unknown }

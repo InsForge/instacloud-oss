@@ -15,7 +15,9 @@ import { deployEventRows } from '../../lib/deployEvents'
 import { formatLocalDateTime } from '../../lib/activity'
 
 const WIDEST_RANGE = PRESET_KEYS[PRESET_KEYS.length - 1]
-/** The events route's ceiling; enough that a 3-day window is bounded by time, not by count. */
+/** The events route's ceiling. The default window is the widest preset (7 day), so on a branch
+ *  with more than 1000 audit events in that span the OLDEST rows fall off this one page — a
+ *  documented truncation, pending a time-windowed events query on the daemon. */
 const EVENTS_LIMIT = 1000
 
 function Th({ children, className }: { children?: string; className?: string }) {
@@ -26,11 +28,13 @@ export function DeploymentLogsPanel({ projectId, branch, service }: {
   projectId: string; branch: string; service: Service
 }) {
   const [range, setRange] = useState<ActiveRange>(() => activeRange(WIDEST_RANGE, Date.now()))
-  const { data: events, error } = usePoll(() => api.events(projectId, EVENTS_LIMIT, branch), [projectId, branch], 10000)
+  // The PROJECT stream, unfiltered: registration events carry branch null and a server-side
+  // `?branch=` filter would drop them (deployEvents.ts scopes per branch client-side).
+  const { data: events, error } = usePoll(() => api.events(projectId, EVENTS_LIMIT), [projectId], 10000)
   // A preset window rolls forward with the clock, like the charts'.
   const active = tickedRange(range, Date.now())
   const rows = deployEventRows(events ?? [], { type: service.type, name: service.name },
-    { fromMs: active.window.from * 1000, toMs: active.window.to * 1000 })
+    { fromMs: active.window.from * 1000, toMs: active.window.to * 1000 }, branch)
   const emptyMessage = error ? 'Deploy events are unavailable right now.' : 'No deploy events in the selected range.'
 
   return (

@@ -5,6 +5,7 @@ import { Database, Loader2 } from 'lucide-react'
 import { api } from '../api'
 import { usePoll } from '../hooks'
 import { dbGateView, dbPanelKey } from '../lib/dbWakeGate'
+import { ApprovalPrompt, type PendingApproval } from '../components/ApprovalPrompt'
 import { ConsolePage } from '../components/console/ConsolePage'
 import { TopTabs } from '../components/console/Tabs'
 import { ConfigurationsTab, DataTab, EditorTab, ExtensionsTab } from '../components/console/DatabaseTabs'
@@ -56,8 +57,9 @@ function isSleeping(e: Error | undefined): boolean {
  *  wakes by letting its queries through; the daemon's reads never wake a database, so the button asks for the wake
  *  explicitly (`POST …/services/:sid/wake`) and the reads resume once it is up. No billing sentence: nothing is
  *  billed here. */
-export function DatabasePanel({ projectId, branch, group, serviceId, footer }: {
+export function DatabasePanel({ projectId, branch, group, serviceId, footer, onApproval }: {
   projectId: string; branch: string; group?: string; serviceId?: string; footer?: React.ReactNode
+  onApproval: (p: NonNullable<PendingApproval>) => void
 }) {
   const metricsPoll = usePoll(() => api.dbMetrics(projectId, branch, group), [projectId, branch, group], { intervalMs: 10000 })
   const sleeping = isSleeping(metricsPoll.error)
@@ -110,13 +112,23 @@ export function DatabasePanel({ projectId, branch, group, serviceId, footer }: {
     )
   }
 
+  // Until the FIRST metrics answer arrives, sleeping is simply unknown — mounting the Data tab
+  // then would fire queries at an instance the gate is about to say is suspended.
+  if (!metrics && !error) {
+    return (
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 animate-pulse rounded-lg bg-alpha-8" />)}
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <TopTabs tabs={DB_TABS} value={sub} onChange={setSub} label="Database views" />
-      {sub === 'data' && <DataTab projectId={projectId} branch={branch} group={group} />}
-      {sub === 'editor' && <EditorTab projectId={projectId} branch={branch} group={group} />}
-      {sub === 'configurations' && <ConfigurationsTab projectId={projectId} branch={branch} group={group} />}
-      {sub === 'extension' && <ExtensionsTab projectId={projectId} branch={branch} group={group} />}
+      {sub === 'data' && <DataTab projectId={projectId} branch={branch} group={group} onApproval={onApproval} />}
+      {sub === 'editor' && <EditorTab projectId={projectId} branch={branch} group={group} onApproval={onApproval} />}
+      {sub === 'configurations' && <ConfigurationsTab projectId={projectId} branch={branch} group={group} onApproval={onApproval} />}
+      {sub === 'extension' && <ExtensionsTab projectId={projectId} branch={branch} group={group} onApproval={onApproval} />}
       {sub === 'stats' && <StatsContent metrics={metrics} error={error} activity={activity} stats={stats} />}
     </div>
   )
@@ -219,6 +231,7 @@ export function DatabaseInsight() {
   const { projectId, branch } = useParams() as { projectId: string; branch: string }
   const { data: services, error } = usePoll(() => api.services(projectId, branch), [projectId, branch], 15000)
   const pg = useMemo(() => (services ?? []).find((s) => s.type === 'postgres'), [services])
+  const [approval, setApproval] = useState<PendingApproval>(null)
 
   return (
     <ConsolePage title="Database">
@@ -236,6 +249,7 @@ export function DatabaseInsight() {
       ) : pg ? (
         // Keyed by the database's full identity: this page stays mounted when the project or branch switches.
         <DatabasePanel key={dbPanelKey(projectId, branch, pg.id)} projectId={projectId} branch={branch} group={pg.name} serviceId={pg.id}
+          onApproval={setApproval}
           footer={
             <div className="flex justify-center">
               <Link to={`/p/${projectId}/${branch}/services?service=${encodeURIComponent(pg.id)}&tab=settings`}>
@@ -244,6 +258,7 @@ export function DatabaseInsight() {
             </div>
           } />
       ) : null}
+      <ApprovalPrompt projectId={projectId} pending={approval} onClose={() => setApproval(null)} />
     </ConsolePage>
   )
 }

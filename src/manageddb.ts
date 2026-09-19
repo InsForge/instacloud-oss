@@ -111,6 +111,22 @@ export function parseKeyspaceInfo(text: string): Array<{ db: number; keys: numbe
   return out
 }
 
+/** A *SCAN page (`[cursor, [f1, v1, …]]`) → at most `maxPairs` field/value pairs as an object.
+ *  The daemon enforces the bound itself: SCAN's COUNT is a hint the server may exceed, so the
+ *  page is hard-sliced here rather than trusted. */
+export function scanPageToHash(page: unknown, maxPairs = 200): Record<string, string> {
+  const flat = Array.isArray(page) && Array.isArray(page[1]) ? (page[1] as unknown[]) : []
+  const out: Record<string, string> = {}
+  for (let i = 0; i + 1 < Math.min(flat.length, maxPairs * 2); i += 2) out[String(flat[i])] = String(flat[i + 1])
+  return out
+}
+
+/** A *SCAN page (`[cursor, [m1, m2, …]]`) → at most `max` members. Same hard slice as above. */
+export function scanPageMembers(page: unknown, max = 200): string[] {
+  const flat = Array.isArray(page) && Array.isArray(page[1]) ? (page[1] as unknown[]) : []
+  return flat.slice(0, max).map(String)
+}
+
 /** `INFO` → its key:value pairs (comment lines dropped), for the redis Stats view. */
 export function parseRedisInfo(text: string): Record<string, string> {
   const out: Record<string, string> = {}

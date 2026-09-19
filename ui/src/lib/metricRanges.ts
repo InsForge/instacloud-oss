@@ -2,8 +2,8 @@
 // poll asks for can be tested against a controlled clock.
 //
 // Self-host divergences:
-//   - the presets stop at 3 day: the daemon keeps three days of history, so the console's 7 day and 30 day
-//     would chart mostly nothing, and a custom range is held to the same three days;
+//   - the presets stop at 7 day: the daemon keeps seven days of history, so the console's 30 day
+//     would chart mostly nothing, and a custom range is held to the same seven days;
 //   - the finest step is 30 s, the daemon's sampling interval (the console's 15 s steps would chart gaps);
 //   - the console fetches once per preset and fixes its window at the click. The dashboard polls every 30 s,
 //     and a window fixed at the click would never take in a new sample, so a preset's window is recomputed
@@ -82,6 +82,9 @@ const STEP_LADDER = [
   { step: '15m', stepSeconds: 900 },
   { step: '30m', stepSeconds: 1_800 },
   { step: '1h', stepSeconds: 3_600 },
+  // 7 days at 2h is 84 points: without this rung a custom range past ~3.7 days found no step
+  // under the point budget and was refused inside the very lookback the picker promises.
+  { step: '2h', stepSeconds: 7_200 },
 ] as const
 
 /** Points a hand-entered range may chart: enough to read a spike, few enough to read at all. Presets carry

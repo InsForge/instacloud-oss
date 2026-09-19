@@ -12,8 +12,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button, ConfirmDialog, Skeleton, Switch, cn } from '@insforge/ui'
 import { Plus, Table2 } from 'lucide-react'
-import { api, type DbQueryResult } from '../../api'
+import { api, type DbExtensions, type DbQueryResult } from '../../api'
+import type { PendingApproval } from '../ApprovalPrompt'
 import { cellText, TABLES_SQL, tableRowsSql, DATA_TAB_LIMIT } from '../../lib/sqlBrowse'
+
+/** Every tab takes the shared approval hand-off: a governed action that answers 202 opens the
+ *  approval prompt and retries itself after the grant, like every other dashboard action. */
+type TabProps = { projectId: string; branch: string; group?: string; onApproval: (p: NonNullable<PendingApproval>) => void }
 
 function Th({ children, className }: { children?: string; className?: string }) {
   return <th className={cn('border-b border-border px-4 py-3 text-left text-[13px] font-normal text-muted-foreground', className)}>{children}</th>
@@ -51,18 +56,23 @@ function ResultGrid({ result, emptyMessage }: { result: DbQueryResult; emptyMess
 }
 
 /** Data: the table rail on the left, the first rows of the picked table on the right. */
-export function DataTab({ projectId, branch, group }: { projectId: string; branch: string; group?: string }) {
+export function DataTab({ projectId, branch, group, onApproval }: TabProps) {
   const [tables, setTables] = useState<Array<{ schema: string; name: string }> | null>(null)
   const [picked, setPicked] = useState<{ schema: string; name: string } | null>(null)
   const [rows, setRows] = useState<DbQueryResult | null>(null)
   const [error, setError] = useState<string>()
 
-  const run = useCallback(async (sql: string) => {
-    const r = await api.dbQuery(projectId, sql, branch, group)
-    if (r.kind === 'error') { setError(r.error); return null }
-    if (r.kind === 'approval') { setError('This read needs an approval first (db.query).'); return null }
-    return r.data
-  }, [projectId, branch, group])
+  // An approval retries the SAME attempt and resolves the ORIGINAL promise, so the caller's
+  // post-processing runs on the granted result rather than being lost with the 202.
+  const run = useCallback((sql: string) => new Promise<DbQueryResult | null>((resolve) => {
+    const attempt = async (): Promise<void> => {
+      const r = await api.dbQuery(projectId, sql, branch, group)
+      if (r.kind === 'approval') return onApproval({ ...r, retry: () => { void attempt() } })
+      if (r.kind === 'error') { setError(r.error); return resolve(null) }
+      resolve(r.data)
+    }
+    void attempt()
+  }), [projectId, branch, group, onApproval])
 
   useEffect(() => {
     void (async () => {
@@ -78,10 +88,14 @@ export function DataTab({ projectId, branch, group }: { projectId: string; branc
   useEffect(() => {
     if (!picked) return
     setRows(null)
+    // A slower earlier response must not wear a later selection's name: the cleanup marks this
+    // request stale the moment the picked table (or the panel) changes.
+    let stale = false
     void (async () => {
       const r = await run(tableRowsSql(picked.schema, picked.name))
-      if (r) setRows(r)
+      if (r && !stale) setRows(r)
     })()
+    return () => { stale = true }
   }, [picked, run])
 
   if (error) return <p className="px-1 py-4 text-sm text-destructive">{error}</p>
@@ -128,7 +142,7 @@ export function DataTab({ projectId, branch, group }: { projectId: string; branc
 type Query = { id: number; title: string; sql: string; result?: DbQueryResult; error?: string; running?: boolean }
 
 /** Editor: query tabs + Add Query over a statement box, Run, and the result pane. */
-export function EditorTab({ projectId, branch, group }: { projectId: string; branch: string; group?: string }) {
+export function EditorTab({ projectId, branch, group, onApproval }: TabProps) {
   const [queries, setQueries] = useState<Query[]>([{ id: 1, title: 'Query 1', sql: '' }])
   const [active, setActive] = useState(1)
   const q = queries.find((x) => x.id === active) ?? queries[0]
@@ -140,7 +154,10 @@ export function EditorTab({ projectId, branch, group }: { projectId: string; bra
     patch(query.id, { running: true, error: undefined })
     const r = await api.dbQuery(projectId, query.sql, branch, group)
     if (r.kind === 'error') return patch(query.id, { running: false, result: undefined, error: r.error })
-    if (r.kind === 'approval') return patch(query.id, { running: false, error: 'Running statements needs an approval first (db.query).' })
+    if (r.kind === 'approval') {
+      patch(query.id, { running: false })
+      return onApproval({ ...r, retry: () => { void run(query) } })
+    }
     patch(query.id, { running: false, result: r.data, error: undefined })
   }
 
@@ -193,7 +210,7 @@ export function EditorTab({ projectId, branch, group }: { projectId: string; bra
 
 /** Configurations: the console's Username / Password rows (D02). The regenerate re-mints
  *  DATABASE_URL on the daemon; running containers keep the old env until their next deploy. */
-export function ConfigurationsTab({ projectId, branch, group }: { projectId: string; branch: string; group?: string }) {
+export function ConfigurationsTab({ projectId, branch, group, onApproval }: TabProps) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
@@ -204,7 +221,7 @@ export function ConfigurationsTab({ projectId, branch, group }: { projectId: str
     const r = await api.dbRegeneratePassword(projectId, branch, group)
     setBusy(false); setConfirmOpen(false)
     if (r.kind === 'error') return setError(r.error)
-    if (r.kind === 'approval') return setError('Regenerating the password needs an approval first (secrets.read).')
+    if (r.kind === 'approval') return onApproval({ ...r, retry: () => { void regenerate() } })
     setDone(true)
   }
 
@@ -251,8 +268,8 @@ export function ConfigurationsTab({ projectId, branch, group }: { projectId: str
 }
 
 /** Extensions: what the instance offers, with an enable/disable switch per row. */
-export function ExtensionsTab({ projectId, branch, group }: { projectId: string; branch: string; group?: string }) {
-  const [list, setList] = useState<{ available: Array<{ name: string }>; enabled: string[] } | null>(null)
+export function ExtensionsTab({ projectId, branch, group, onApproval }: TabProps) {
+  const [list, setList] = useState<DbExtensions | null>(null)
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState<string>()
 
@@ -267,7 +284,7 @@ export function ExtensionsTab({ projectId, branch, group }: { projectId: string;
     const r = await api.dbPatchExtensions(projectId, enable ? { enable: [name] } : { disable: [name] }, branch, group)
     setBusy(undefined)
     if (r.kind === 'error') return setError(r.error)
-    if (r.kind === 'approval') return setError('Changing extensions needs an approval first.')
+    if (r.kind === 'approval') return onApproval({ ...r, retry: () => { void toggle(name, enable) } })
     setList(r.data)
   }
 
@@ -285,10 +302,15 @@ export function ExtensionsTab({ projectId, branch, group }: { projectId: string;
               const on = list.enabled.includes(ext.name)
               return (
                 <tr key={ext.name} className="border-b border-border last:border-b-0 hover:bg-alpha-4">
-                  <td className="truncate px-4 py-2 font-mono text-[13px]">{ext.name}</td>
+                  <td className="truncate px-4 py-2 font-mono text-[13px]">
+                    {ext.name}
+                    {/* The daemon marks what its own observability depends on; the switch is off-limits there. */}
+                    {ext.required && <span className="ml-2 rounded-md bg-alpha-8 px-1.5 py-0.5 font-sans text-xs text-muted-foreground">required</span>}
+                  </td>
                   <td className="px-4 py-2">
                     <div className="flex justify-end">
-                      <Switch checked={on} disabled={busy === ext.name} aria-label={`Enable ${ext.name}`}
+                      <Switch checked={on} disabled={busy === ext.name || ext.required === true}
+                        aria-label={`Enable ${ext.name}`}
                         onCheckedChange={(v) => { void toggle(ext.name, v === true) }} />
                     </div>
                   </td>

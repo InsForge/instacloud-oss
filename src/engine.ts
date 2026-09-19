@@ -10,7 +10,7 @@ import { dataLayout, ensureDirSync, lazyDataDirOps, probedCapabilities } from '.
 import { migrateLegacyData } from './datadir-migrate'
 import { docker } from './docker'
 import { BRANCH_NAME_RE, SERVICE_NAME_RE } from './names'
-import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseKeyspaceInfo, parseRedisInfo, parseServiceId, pgContainerName, pgServiceId, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
+import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseKeyspaceInfo, parseRedisInfo, parseServiceId, pgContainerName, pgServiceId, scanPageMembers, scanPageToHash, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
 import * as observe from './observe'
 import { DEFAULT_STEP_SEC, DEFAULT_WINDOW_SEC, liveSeries, MetricsHistory, statsToSamples, type MetricsTarget, type MetricsWindow } from './metrics-history'
 import { loadState, mutate } from './state'
@@ -50,6 +50,17 @@ function assertServiceName(name: string): void {
   if (!SERVICE_NAME_RE.test(name)) throw new Error('service name must be lower-kebab (a-z, 0-9, -)')
 }
 const slug = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 20)
+
+/** Leading `--` and `/* *​/` comments off a statement, so `dbQuery` classifies what actually
+ *  runs: a commented SELECT is still row-shaped. */
+function stripLeadingSqlComments(sql: string): string {
+  let t = sql
+  for (;;) {
+    const next = t.replace(/^\s+/, '').replace(/^--[^\n]*\n?/, '').replace(/^\/\*[\s\S]*?\*\//, '')
+    if (next === t) return t.trim()
+    t = next
+  }
+}
 
 // Volume-cap parity (platform #166–169): the cloud caps volumes per billing tier; oss has no
 // tiers, so one fixed generous cap serves every project. Grow-only validation is kept so the
@@ -1892,6 +1903,9 @@ export class Engine {
     }
     const dbs = parseKeyspaceInfo(await this.redisCmd(t, ['INFO', 'keyspace']))
     const cursor = String(scan[0])
+    // Governed reads land on the audit timeline (README: `insta events`) — the op and db only,
+    // never key names or values.
+    this.emit(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'keys', db: Number(db) })
     return { dbs, keys: (scan[1] as unknown[]).map(String), ...(cursor === '0' ? {} : { cursor }) }
   }
 
@@ -1907,6 +1921,7 @@ export class Engine {
     await this.assertPgAwake(t.branch, t.sid)
     const info = parseRedisInfo(await this.redisCmd(t, ['INFO']))
     const num = (k: string): number => { const n = Number(info[k]); return Number.isFinite(n) ? n : 0 }
+    this.emit(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'stats' })
     return {
       version: info.valkey_version ?? info.redis_version ?? 'unknown',
       uptimeSec: num('uptime_in_seconds'), connectedClients: num('connected_clients'),
@@ -1927,12 +1942,15 @@ export class Engine {
     const type = String(await read(['TYPE', opts.key]))
     if (type === 'none') throw new Error('key not found')
     const ttl = Number(await read(['TTL', opts.key]))
+    // Every collection read is incremental AND hard-sliced: SCAN's COUNT is a hint the server may
+    // exceed, and HGETALL would return the whole hash, so neither is trusted with the bound.
     const value = type === 'string' ? await read(['GET', opts.key])
-      : type === 'hash' ? await read(['HGETALL', opts.key])
+      : type === 'hash' ? scanPageToHash(await read(['HSCAN', opts.key, '0', 'COUNT', '200']))
         : type === 'list' ? await read(['LRANGE', opts.key, '0', '199'])
-          : type === 'set' ? await read(['SSCAN', opts.key, '0', 'COUNT', '200']).then((s) => (Array.isArray(s) ? s[1] : s))
+          : type === 'set' ? scanPageMembers(await read(['SSCAN', opts.key, '0', 'COUNT', '200']))
             : type === 'zset' ? await read(['ZRANGE', opts.key, '0', '199', 'WITHSCORES'])
               : null
+    this.emit(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'value', db: Number(db) })
     return { type, ttl, value }
   }
 
@@ -3187,18 +3205,38 @@ export class Engine {
     const t = this.dbTarget(projectId, branchName, group)
     await this.assertPgAwake(t.branch, t.serviceId)
     const started = Date.now()
-    const selectish = /^\s*(select|with|values|table|show|explain)\b/i.test(sql)
-    if (selectish) {
-      const inner = sql.trim().replace(/;+\s*$/, '')
-      const out = await this.db.query(t.container, `select coalesce(json_agg(row_to_json(t)), '[]'::json) from (${inner}) t`)
-      const parsed = JSON.parse(out || '[]') as Array<Record<string, unknown>>
-      // row_to_json preserves column order in its object keys, and JSON.parse keeps insertion
-      // order, so the first row's keys ARE the result's column order. Duplicate output names
-      // collapse (json objects key uniquely); alias them apart in the statement.
-      const columns = parsed.length ? Object.keys(parsed[0]) : []
-      return { columns, rows: parsed.map((r) => columns.map((c) => r[c])), rowCount: parsed.length, ms: Date.now() - started }
+    // Classify on the statement itself, not on a leading comment. SHOW/EXPLAIN are utility
+    // statements a subquery cannot host, so they run as written (their text output is the
+    // status). WITH is row-shaped when it ends in SELECT — and when it does not (WITH … UPDATE),
+    // the wrapper fails at PARSE time, before anything executes, so falling through to the raw
+    // run is a first execution, not a second.
+    const bare = stripLeadingSqlComments(sql)
+    const inner = bare.replace(/;+\s*$/, '')
+    // A statement that still holds `;` after the trailing strip (several statements, or a
+    // trailing comment after the semicolon) cannot live inside the wrapper — psql runs it as
+    // written instead, exactly as it would have without the wrap.
+    const rowShaped = /^(select|values|table|with)\b/i.test(bare) && !inner.includes(';')
+    if (rowShaped) {
+      try {
+        const out = await this.db.query(t.container, `select coalesce(json_agg(row_to_json(t)), '[]'::json) from (${inner}) t`)
+        const parsed = JSON.parse(out || '[]') as Array<Record<string, unknown>>
+        // row_to_json preserves column order in its object keys, and JSON.parse keeps insertion
+        // order, so the first row's keys ARE the result's column order. Duplicate output names
+        // collapse (json objects key uniquely); alias them apart in the statement.
+        const columns = parsed.length ? Object.keys(parsed[0]) : []
+        this.emit(projectId, t.branch.name, 'resource', 'db.query', { service: t.serviceId, mode: 'rows' })
+        return { columns, rows: parsed.map((r) => columns.map((c) => r[c])), rowCount: parsed.length, ms: Date.now() - started }
+      } catch (e) {
+        // ONLY a parse failure of the wrapper falls through: a runtime error re-run raw would
+        // execute the statement's side effects twice.
+        const m = e instanceof Error ? e.message : String(e)
+        if (!/syntax error/i.test(m)) throw e
+      }
     }
     const out = await this.db.query(t.container, sql)
+    // The audit row carries what ran and where — never the SQL text (README: governed actions
+    // land in `insta events`; the statement itself may hold data or credentials).
+    this.emit(projectId, t.branch.name, 'resource', 'db.query', { service: t.serviceId, mode: 'command' })
     return { status: out || 'OK', ms: Date.now() - started }
   }
 

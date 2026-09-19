@@ -42,11 +42,12 @@ export class LocalManagedDb implements ManagedDbAdapter {
   }
 
   /** One client command inside the container, for the dashboard's key browser (valkey-cli today;
-   *  the caller decides the args). Auth rides `REDISCLI_AUTH` in the exec's env, never argv, and
-   *  `-e` is on docker.ts's redaction list, so the password reaches neither `docker ps` output nor
-   *  a failed call's error message. */
+   *  the caller decides the args). Auth rides the DOCKER CLIENT's environment: `-e REDISCLI_AUTH`
+   *  with no value tells docker to forward it from there, so the password appears in no argv at
+   *  all — not the daemon's spawn, not `docker ps`, not a failed call's error message. */
   async command(container: string, password: string, args: string[]): Promise<string> {
-    const out = await docker(['exec', '-e', `REDISCLI_AUTH=${password}`, container, 'valkey-cli', '--no-auth-warning', ...args])
+    const out = await docker(['exec', '-e', 'REDISCLI_AUTH', container, 'valkey-cli', '--no-auth-warning', ...args],
+      { env: { REDISCLI_AUTH: password } })
     return out.toString().trim()
   }
 }

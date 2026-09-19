@@ -5,13 +5,18 @@
 // and the credentials live behind `insta secrets`), collection values are bounded at the first 200
 // entries, and the gate copy has no billing sentence — nothing is billed here.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Skeleton, cn } from '@insforge/ui'
 import { KeyRound, Loader2 } from 'lucide-react'
-import { api, type RedisKeys, type RedisStats, type RedisValue, type Service } from '../../api'
+import { api, type ApiResult, type RedisKeys, type RedisStats, type RedisValue, type Service } from '../../api'
 import type { PendingApproval } from '../ApprovalPrompt'
 import { dbGateView } from '../../lib/dbWakeGate'
 import { TopTabs } from './Tabs'
+
+/** A read that answered 503 sleeping: the instance suspended, so the panel returns to the gate. */
+function sleptAway<T>(r: ApiResult<T>): boolean {
+  return r.kind === 'error' && r.status === 503 && /sleeping/i.test(r.error)
+}
 
 const REDIS_TABS = [{ id: 'data', label: 'Data' }, { id: 'stats', label: 'Stats' }] as const
 type RedisTabId = (typeof REDIS_TABS)[number]['id']
@@ -40,17 +45,21 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
 }
 
 /** The Stats sub-tab: INFO counters as cards, like the postgres Stats blocks. */
-function RedisStatsView({ projectId, branch, service }: { projectId: string; branch: string; service: Service }) {
+function RedisStatsView({ projectId, branch, service, onApproval, onSleeping }: {
+  projectId: string; branch: string; service: Service
+  onApproval: (p: NonNullable<PendingApproval>) => void; onSleeping: () => void
+}) {
   const [stats, setStats] = useState<RedisStats | null>(null)
   const [error, setError] = useState<string>()
-  useEffect(() => {
-    void (async () => {
-      const r = await api.redisStats(projectId, service.id, branch)
-      if (r.kind === 'error') return setError(r.error)
-      if (r.kind === 'approval') return setError('Reading stats needs an approval first (db.read).')
-      setStats(r.data)
-    })()
-  }, [projectId, service.id, branch])
+  const load = useCallback(async () => {
+    setError(undefined)
+    const r = await api.redisStats(projectId, service.id, branch)
+    if (r.kind === 'approval') return onApproval({ ...r, retry: () => { void load() } })
+    if (sleptAway(r)) return onSleeping()
+    if (r.kind === 'error') return setError(r.error)
+    setStats(r.data)
+  }, [projectId, service.id, branch, onApproval, onSleeping])
+  useEffect(() => { void load() }, [load])
 
   if (error) return <p className="px-1 py-4 text-sm text-destructive">{error}</p>
   if (!stats) return <Skeleton className="h-32 rounded-lg" />
@@ -85,30 +94,43 @@ export function RedisPanel({ projectId, branch, service, onApproval }: {
   const [awaitingRead, setAwaitingRead] = useState(false)
   const [wakeError, setWakeError] = useState<string>()
 
+  // Out-of-order guards: each request takes a sequence number and only the LATEST one may write
+  // state, so a slow db0 listing can never wear db1's name, nor key A's value key B's pane.
+  const listSeq = useRef(0)
+  const valueSeq = useRef(0)
+
   const load = useCallback(async (nextDb: number, cursor?: string) => {
     setError(undefined)
+    const seq = ++listSeq.current
     const r = await api.redisKeys(projectId, service.id, branch, { db: nextDb, ...(cursor ? { cursor } : {}) })
+    if (seq !== listSeq.current) return
     setAwaitingRead(false)
     if (r.kind === 'approval') return onApproval({ ...r, retry: () => { void load(nextDb, cursor) } })
-    if (r.kind === 'error') {
-      if (r.status === 503 && /sleeping/i.test(r.error)) return setSleeping(true)
-      return setError(r.error)
-    }
+    if (sleptAway(r)) return setSleeping(true)
+    if (r.kind === 'error') return setError(r.error)
     setSleeping(false)
     setListing((prev) => cursor && prev ? { ...r.data, keys: [...prev.keys, ...r.data.keys] } : r.data)
   }, [projectId, service.id, branch, onApproval])
   useEffect(() => { void load(db) }, [load, db])
 
+  // A named loader, so an approval grant retries THIS read (retrying via setPicked(picked) was a
+  // React no-op) and a failed key's error clears when the next key is picked.
+  const loadValue = useCallback(async (key: string) => {
+    setError(undefined)
+    setValue(null)
+    const seq = ++valueSeq.current
+    const r = await api.redisValue(projectId, service.id, key, branch, db)
+    if (seq !== valueSeq.current) return
+    if (r.kind === 'approval') return onApproval({ ...r, retry: () => { void loadValue(key) } })
+    if (sleptAway(r)) return setSleeping(true)
+    if (r.kind === 'error') return setError(r.error)
+    setValue(r.data)
+  }, [projectId, service.id, branch, db, onApproval])
+
   useEffect(() => {
     if (picked === null) return setValue(null)
-    setValue(null)
-    void (async () => {
-      const r = await api.redisValue(projectId, service.id, picked, branch, db)
-      if (r.kind === 'approval') return onApproval({ ...r, retry: () => setPicked(picked) })
-      if (r.kind === 'error') return setError(r.error)
-      setValue(r.data)
-    })()
-  }, [picked, projectId, service.id, branch, db, onApproval])
+    void loadValue(picked)
+  }, [picked, loadValue])
 
   const wake = async () => {
     setWaking(true); setWakeError(undefined)
@@ -145,12 +167,16 @@ export function RedisPanel({ projectId, branch, service, onApproval }: {
 
   // The chips: every logical db that holds keys, plus the selected one (db0 shows even when empty).
   const chips = [...new Set([0, ...(listing?.dbs.map((d) => d.db) ?? []), db])].sort((a, b) => a - b)
-  const keyCount = listing?.dbs.find((d) => d.db === db)?.keys ?? listing?.keys.length ?? 0
+  // What is actually LOADED into the list (the daemon's per-db total can be larger than one page).
+  const keyCount = listing?.keys.length ?? 0
 
   return (
     <div className="flex flex-col gap-3">
       <TopTabs tabs={REDIS_TABS} value={sub} onChange={setSub} label="Redis views" />
-      {sub === 'stats' && <RedisStatsView projectId={projectId} branch={branch} service={service} />}
+      {sub === 'stats' && (
+        <RedisStatsView projectId={projectId} branch={branch} service={service} onApproval={onApproval}
+          onSleeping={() => setSleeping(true)} />
+      )}
       {sub === 'data' && <>
       <div className="flex items-center gap-2">
         {chips.map((d) => (

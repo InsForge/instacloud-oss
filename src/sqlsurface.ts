@@ -68,10 +68,20 @@ export function maskSqlText(sql: string): string {
   return out.join('')
 }
 
-/** True when the masked text holds one statement: no `;` outside literals and comments, a trailing
- *  one aside. */
+/** Where the statement's REAL text ends in the masked copy: trailing whitespace, trailing
+ *  semicolons and blanked trailing comments all sit past this index. Slicing the ORIGINAL text
+ *  here removes a terminal `;` even when a comment follows it (`select 1; -- done`), which a
+ *  plain end-anchored regex on the unmasked text cannot see. */
+export function trailingTrimIndex(masked: string): number {
+  let i = masked.length
+  while (i > 0 && (masked[i - 1] === ';' || /\s/.test(masked[i - 1]))) i--
+  return i
+}
+
+/** True when the masked text holds one statement: no `;` outside literals and comments, trailing
+ *  ones (comment-shadowed or not) aside. */
 export function isSingleStatement(masked: string): boolean {
-  return !masked.replace(/;+\s*$/, '').includes(';')
+  return !masked.slice(0, trailingTrimIndex(masked)).includes(';')
 }
 
 /** The last TOP-LEVEL DML/SELECT keyword in the masked text — how a WITH statement's shape is

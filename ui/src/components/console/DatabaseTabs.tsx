@@ -152,17 +152,23 @@ export function EditorTab({ projectId, branch, group, onApproval }: TabProps) {
   const q = queries.find((x) => x.id === active) ?? queries[0]
   const patch = (id: number, next: Partial<Query>) =>
     setQueries((prev) => prev.map((x) => (x.id === id ? { ...x, ...next } : x)))
+  // A result binds to the SQL that PRODUCED it: the textarea stays editable while a request
+  // runs, so a slow answer for statement A must not land under an edited statement B (nor may
+  // an approval retry, which captures the old statement). The tab only accepts a response
+  // while its text still equals the text that was sent.
+  const settle = (id: number, sentSql: string, next: Partial<Query>) =>
+    setQueries((prev) => prev.map((x) => x.id !== id ? x : x.sql === sentSql ? { ...x, ...next } : { ...x, running: false }))
 
   const run = async (query: Query) => {
     if (!query.sql.trim() || query.running) return
     patch(query.id, { running: true, error: undefined })
     const r = await api.dbQuery(projectId, query.sql, branch, group)
-    if (r.kind === 'error') return patch(query.id, { running: false, result: undefined, error: r.error })
+    if (r.kind === 'error') return settle(query.id, query.sql, { running: false, result: undefined, error: r.error })
     if (r.kind === 'approval') {
       patch(query.id, { running: false })
       return onApproval({ ...r, retry: () => { void run(query) } })
     }
-    patch(query.id, { running: false, result: r.data, error: undefined })
+    settle(query.id, query.sql, { running: false, result: r.data, error: undefined })
   }
 
   const addQuery = () => {

@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { isSingleStatement, lastStatementKeyword, maskSqlText, stripLeadingSqlComments } from '../src/sqlsurface'
+import { isSingleStatement, lastStatementKeyword, maskSqlText, stripLeadingSqlComments, trailingTrimIndex } from '../src/sqlsurface'
 
 test('stripLeadingSqlComments: line and block comments fall off, the statement stays', () => {
   expect(stripLeadingSqlComments('-- note\nselect 1')).toBe('select 1')
@@ -17,9 +17,20 @@ test('maskSqlText blanks literals, identifiers and comments but nothing else', (
   expect(maskSqlText('select /* x /* y */ z */ 1')).toBe('select                   1')
 })
 
-test('isSingleStatement: semicolons in literals and a trailing one do not split', () => {
+test('isSingleStatement: semicolons in literals and trailing ones do not split', () => {
   expect(isSingleStatement(maskSqlText("select 'a;b' as v;"))).toBe(true)
   expect(isSingleStatement(maskSqlText('select 1; select 2'))).toBe(false)
+  // A terminal `;` shadowed by a trailing comment is still terminal.
+  expect(isSingleStatement(maskSqlText('select 1; -- done'))).toBe(true)
+  expect(isSingleStatement(maskSqlText('select 1; /* done */'))).toBe(true)
+  expect(isSingleStatement(maskSqlText('select 1; ; -- done'))).toBe(true)
+})
+
+test('trailingTrimIndex slices the terminator off the ORIGINAL text, comments included', () => {
+  const cut = (sql) => sql.slice(0, trailingTrimIndex(maskSqlText(sql)))
+  expect(cut('select 1; -- done')).toBe('select 1')
+  expect(cut('select 1; /* done */')).toBe('select 1')
+  expect(cut("select 'a;' as v;")).toBe("select 'a;' as v")
 })
 
 test('lastStatementKeyword tells a WITH…SELECT from a WITH…UPDATE, ignoring quoted text', () => {

@@ -12,7 +12,7 @@ import { docker } from './docker'
 import { BRANCH_NAME_RE, SERVICE_NAME_RE } from './names'
 import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseKeyspaceInfo, parseRedisInfo, parseServiceId, pgContainerName, pgServiceId, scanPageMembers, scanPageToHash, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
 import * as observe from './observe'
-import { isSingleStatement, lastStatementKeyword, maskSqlText, stripLeadingSqlComments } from './sqlsurface'
+import { isSingleStatement, lastStatementKeyword, maskSqlText, stripLeadingSqlComments, trailingTrimIndex } from './sqlsurface'
 import { DEFAULT_STEP_SEC, DEFAULT_WINDOW_SEC, liveSeries, MetricsHistory, statsToSamples, type MetricsTarget, type MetricsWindow } from './metrics-history'
 import { loadState, mutate, touchLater } from './state'
 import type { Branch, Project, DatabaseAdapter, ComputeAdapter, StorageAdapter, ManagedDbAdapter, ManagedDbType, ObservedComponent, ObjectListing, AuditEvent, UserSecret, DataDirOps, PgTarget, ServiceKey, ServiceLimits, ServiceSettings } from './types'
@@ -3219,7 +3219,10 @@ export class Engine {
     // last statement keyword is SELECT (a data-modifying CTE runs as a command).
     const bare = stripLeadingSqlComments(sql)
     const masked = maskSqlText(bare)
-    const inner = bare.replace(/;+\s*$/, '')
+    // The wrapper's inner text ends where the MASKED copy says the statement does: a terminal
+    // `;` followed by a comment survived an end-anchored strip of the raw text and broke the
+    // subquery (`from (select 1; -- done) t`).
+    const inner = bare.slice(0, trailingTrimIndex(masked))
     // The contract is ONE statement per request (COMPATIBILITY): several used to run raw, which
     // both broke the documented shape and let a request chain sub-timeout statements past the
     // per-statement bound. Refused outright, with the `;` read from the MASKED text.

@@ -59,9 +59,14 @@ test('dbQuery against a real Postgres: text-exact values, order, zero rows, lite
   expect(await engine.dbQuery(projectId, 'with x as (select 7 as n) (select * from x)')).toMatchObject({ rows: [['7']] })
   // psql meta-commands are refused (over stdin they would execute); one in a literal is data.
   await expect(engine.dbQuery(projectId, 'select 1 \\watch 1')).rejects.toThrow(/meta-commands/)
-  // Two buffers separated by \g carry no semicolon; they must refuse, executing nothing.
-  await expect(engine.dbQuery(projectId, 'select 1 \\g select 2 \\g')).rejects.toThrow(/meta-commands/)
+  // Two buffers separated by \g carry no semicolon; the refusal must execute NOTHING — the
+  // first buffer is side-effecting, and its effect must be absent afterwards.
+  await expect(engine.dbQuery(projectId, 'insert into t values (99) \\g select 1 \\g')).rejects.toThrow(/meta-commands/)
+  expect(await engine.dbQuery(projectId, 'select count(*) as n from t where a = 99')).toMatchObject({ rows: [['0']] })
   await expect(engine.dbQuery(projectId, "select 1 \\! echo pwned")).rejects.toThrow(/meta-commands/)
+  // A terminal semicolon shadowed by a trailing comment still answers rows.
+  expect(await engine.dbQuery(projectId, 'select 41 as n; -- done')).toMatchObject({ columns: ['n'], rows: [['41']] })
+  expect(await engine.dbQuery(projectId, 'select 42 as n; /* done */')).toMatchObject({ rows: [['42']] })
   expect(await engine.dbQuery(projectId, "select 'not a \\watch' as v")).toMatchObject({ rows: [['not a \\watch']] })
   expect(await engine.dbQuery(projectId, 'table t')).toMatchObject({ rowCount: 2 })
 

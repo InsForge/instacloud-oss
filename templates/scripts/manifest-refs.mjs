@@ -37,6 +37,10 @@ export function checkFixedRef(raw, { at, envName, services = {}, generated = {} 
   if (services[service]?.type === "postgres") {
     return { error: `${at}: service '${service}' is a managed postgres: it has no url/host, reference its credentials via env.platform` };
   }
+  // A worker is portless (insta-platform#490): nothing is routed to it, so it has no address either.
+  if (services[service]?.type === "worker") {
+    return { error: `${at}: service '${service}' is a worker: it has no url/host (nothing is routed to it), so no service can reference it` };
+  }
   if (prop !== "url" && prop !== "host") {
     return { error: `${at}: '${prop}' is not a resolvable service property (url or host)` };
   }

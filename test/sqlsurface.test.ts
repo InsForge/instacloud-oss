@@ -29,4 +29,7 @@ test('lastStatementKeyword tells a WITH…SELECT from a WITH…UPDATE, ignoring 
   // Depth-aware: a nested SELECT after the top-level UPDATE must not flip the verdict.
   expect(lastStatementKeyword(maskSqlText('with c as (select 1) update t set v = (select 2)'))).toBe('update')
   expect(lastStatementKeyword(maskSqlText('select (select 1), (select 2)'))).toBe('select')
+  // A WITH whose final query is parenthesized has NO top-level keyword — the caller reads null
+  // as "a query expression", which is the only thing parentheses can hold there.
+  expect(lastStatementKeyword(maskSqlText('with x as (select 1) (select * from x)'))).toBe(null)
 })

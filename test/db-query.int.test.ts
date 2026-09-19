@@ -54,6 +54,15 @@ test('dbQuery against a real Postgres: text-exact values, order, zero rows, lite
   expect(await engine.dbQuery(projectId, 'with c as (select 1) update t set a = (select 2)')).toMatchObject({ status: expect.stringContaining('UPDATE') })
   // Several statements are refused before anything executes (one statement per request).
   await expect(engine.dbQuery(projectId, 'select 1; select 2')).rejects.toThrow(/one statement per request/)
+  // Parenthesized query expressions wrap, bare and after a WITH.
+  expect(await engine.dbQuery(projectId, '(select 1 as n)')).toMatchObject({ columns: ['n'], rows: [['1']] })
+  expect(await engine.dbQuery(projectId, 'with x as (select 7 as n) (select * from x)')).toMatchObject({ rows: [['7']] })
+  // psql meta-commands are refused (over stdin they would execute); one in a literal is data.
+  await expect(engine.dbQuery(projectId, 'select 1 \\watch 1')).rejects.toThrow(/meta-commands/)
+  // Two buffers separated by \g carry no semicolon; they must refuse, executing nothing.
+  await expect(engine.dbQuery(projectId, 'select 1 \\g select 2 \\g')).rejects.toThrow(/meta-commands/)
+  await expect(engine.dbQuery(projectId, "select 1 \\! echo pwned")).rejects.toThrow(/meta-commands/)
+  expect(await engine.dbQuery(projectId, "select 'not a \\watch' as v")).toMatchObject({ rows: [['not a \\watch']] })
   expect(await engine.dbQuery(projectId, 'table t')).toMatchObject({ rowCount: 2 })
 
   // The statement timeout is real: pg_sleep past the bound cancels instead of holding the exec.

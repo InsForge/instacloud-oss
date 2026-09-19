@@ -3224,8 +3224,16 @@ export class Engine {
     // both broke the documented shape and let a request chain sub-timeout statements past the
     // per-statement bound. Refused outright, with the `;` read from the MASKED text.
     if (!isSingleStatement(masked)) throw new Error('one statement per request: split the input and run each statement on its own')
-    const rowShaped = /^(select|values|table)\b/i.test(bare)
-      || (/^with\b/i.test(bare) && lastStatementKeyword(masked) === 'select')
+    // A backslash outside literals is never SQL — it is a psql meta-command, and over the stdin
+    // transport those EXECUTE (`\watch` re-runs past the statement timeout, `\!` shells into the
+    // container). Refused before anything reaches psql.
+    if (masked.includes('\\')) throw new Error('psql meta-commands are not supported: send SQL only')
+    // Row-shaped: SELECT/VALUES/TABLE, a statement that IS a parenthesized query expression, and
+    // a WITH whose top level either ends in SELECT or holds no top-level keyword at all (its
+    // final query parenthesized — only a query expression can be; settled on live Postgres).
+    const withKeyword = lastStatementKeyword(masked)
+    const rowShaped = /^(select|values|table)\b/i.test(bare) || bare.startsWith('(')
+      || (/^with\b/i.test(bare) && (withKeyword === 'select' || withKeyword === null))
     const opts = { statementTimeoutMs: DB_QUERY_TIMEOUT_MS }
     if (rowShaped) {
       // The values travel as TEXT (json_each_text), because row_to_json + JSON.parse silently

@@ -5110,9 +5110,22 @@ test('POST /database/query: rows for a select, a command tag otherwise, 503 asle
   expect(multi.statusCode).toBe(400)
   expect(multi.json().error).toContain('one statement per request')
   expect(queriesRun() - beforeMulti).toBe(0)
-  // …a WITH ending in SELECT is row-shaped, one ending in UPDATE runs as a command.
+  // …a WITH ending in SELECT is row-shaped, one ending in UPDATE runs as a command…
   expect('columns' in (await one('with a as (select 1) select * from a')).json()).toBe(true)
   expect((await one('with d as (select 1) update t set a = 1')).json()).toMatchObject({ status: 'OK' })
+  // …a parenthesized query expression is row-shaped, bare or after a WITH…
+  expect('columns' in (await one('(select 1 as n)')).json()).toBe(true)
+  expect('columns' in (await one('with x as (select 7 as n) (select * from x)')).json()).toBe(true)
+  // …and psql meta-commands are refused before anything executes (over stdin they would RUN:
+  // a backslash outside literals is never SQL).
+  const beforeMeta = queriesRun()
+  const metaG = await post(`/projects/${id}/database/query`, { sql: 'select 1 \\g select 2 \\g' })
+  expect(metaG.statusCode).toBe(400)
+  const meta = await post(`/projects/${id}/database/query`, { sql: 'select 1 \\watch 1' })
+  expect(meta.statusCode).toBe(400)
+  expect(meta.json().error).toContain('meta-commands')
+  expect(queriesRun() - beforeMeta).toBe(0)
+  expect('columns' in (await one("select 'literal \\watch is fine' as v")).json()).toBe(true)
   // The row transport is server-bounded: a statement timeout and a row cap ride every call.
   expect(calls.some((c) => c.startsWith('db.query:select json_build_object'))).toBe(true)
 

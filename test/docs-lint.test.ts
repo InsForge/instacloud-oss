@@ -147,16 +147,16 @@ test('the e2e template fixture is a valid draft manifest', async () => {
 // The verbs below are the ones the CLI actually ships. The invented ones are mistakes made
 // while writing these docs, so the table is guarded against them coming back.
 const CLI_VERBS = [
-  'compute set-domain',
-  'compute check-domain',
-  'compute remove-domain',
+  'domain attach',
+  'domain check',
+  'domain detach',
   'compute limits',
   'compute always-on',
   'template list',
   'template info',
   'template deploy',
-  'db url',
-  'db always-on',
+  'postgres url',
+  'postgres always-on',
   'services add postgres',
   'POST /tokens',
 ]

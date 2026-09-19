@@ -123,6 +123,16 @@ export function buildServer(
   app.get('/orgs/:id/invitations', async (_req, reply) => notCloud(reply, 'org invitations'))
   app.delete('/orgs/:id/invitations/:iid', async (_req, reply) => notCloud(reply, 'org invitations'))
   app.post('/invitations/accept', async (_req, reply) => notCloud(reply, 'org invitations'))
+  // insta 0.1.0 `domain attach|detach` read the org's bought domains first; OSS sells none, so both lists are empty.
+  app.get('/orgs/:id/domains', async () => ({ items: [] }))
+  app.get('/orgs/:id/domains/orders', async () => ({ items: [] }))
+  app.get('/orgs/:id/domains/search', async (_req, reply) => notCloud(reply, 'domain purchase'))
+  app.post('/orgs/:id/domains/orders', async (_req, reply) => notCloud(reply, 'domain purchase'))
+  app.post('/projects/:id/domains/:name/attach', async (_req, reply) => notCloud(reply, 'attaching a bought domain'))
+  app.get('/orgs/:id/domains/:name/records', async (_req, reply) => notCloud(reply, 'DNS records of a bought domain'))
+  app.post('/orgs/:id/domains/:name/records', async (_req, reply) => notCloud(reply, 'DNS records of a bought domain'))
+  app.patch('/orgs/:id/domains/:name/records/:rid', async (_req, reply) => notCloud(reply, 'DNS records of a bought domain'))
+  app.delete('/orgs/:id/domains/:name/records/:rid', async (_req, reply) => notCloud(reply, 'DNS records of a bought domain'))
   // Registry image inspection is the cloud console's helper (fans out to 3rd-party registries).
   app.get('/images/inspect', async (_req, reply) => notCloud(reply, 'registry image inspection'))
   // Everything is one region here: the machine the daemon runs on (CLI shape: {slug, label}).
@@ -1055,7 +1065,7 @@ export function buildServer(
 
   // ---- region B (WP2 router) ----
   // Custom domains: the cloud's four hidden routes (platform server.ts:2740-2766), rendered by
-  // `insta compute set-domain | check-domain | remove-domain`. The envelope carries NO `ssl`,
+  // `insta domain attach | check | detach` for bring-your-own names. The envelope carries NO `ssl`,
   // `origin` or `originStatus` key: the CLI reads an `ssl` field as a cloud-plane answer, then
   // demands an ownership TXT record and prints UNCONFIRMED (decision 25).
   const domainQuery = (req: { query: unknown; body: unknown }): { hostname?: unknown; branch?: string; group?: string } => {

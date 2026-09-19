@@ -213,9 +213,10 @@ export function buildServer(
     try { return await engine.dbQuery(id, sql, branch, group) }
     catch (e) {
       const m = e instanceof Error ? e.message : String(e)
-      // A statement psql refused is the caller's 400, quoted from psql's own ERROR line (the
-      // docker argv around it is redacted noise); everything else keeps the insight mapping.
-      const sqlError = /ERROR: {2}.*/s.exec(m)?.[0]
+      // A statement psql refused is the caller's 400, quoted from psql's own ERROR line — the
+      // FIRST line only: the LINE/caret context that follows points into the daemon's private
+      // wrapper SQL, text the user never wrote.
+      const sqlError = /ERROR: {2}[^\n]*/.exec(m)?.[0]
       if (sqlError) return reply.code(400).send({ error: sqlError.trim() })
       return reply.code(obsCode(m)).send({ error: m })
     }
@@ -1018,11 +1019,18 @@ export function buildServer(
 
   app.get('/projects/:id/events', async (req, reply) => {
     const { id } = req.params as { id: string }
-    const q = req.query as { branch?: string; limit?: string }
+    const q = req.query as { branch?: string; limit?: string; kinds?: string }
     const limit = eventsLimit(q.limit)
     if (limit === null) return reply.code(400).send({ error: `limit must be an integer from 1 to ${EVENTS_LIMIT_MAX}` })
     let events = engine.listEvents(id)
     if (q.branch) events = events.filter((e) => e.branch === q.branch)
+    // `kinds` (comma-separated) filters BEFORE the limit slice, so a page asked for deploy events
+    // spends its budget on deploy events — the audit stream also carries browse-rate reads
+    // (db.read, db.query, storage.objects.*) that would otherwise push them off the page.
+    if (q.kinds) {
+      const wanted = new Set(q.kinds.split(',').map((k) => k.trim()).filter(Boolean))
+      if (wanted.size) events = events.filter((e) => wanted.has(e.kind))
+    }
     return { events: events.slice(-limit).map(eventOut) }
   })
 

@@ -11,7 +11,7 @@ import { api, type Service } from '../../api'
 import { usePoll } from '../../hooks'
 import { activeRange, localZoneAbbr, PRESET_KEYS, tickedRange, type ActiveRange } from '../../lib/metricRanges'
 import { TimeRangePicker } from '../metrics/TimeRangePicker'
-import { deployEventRows } from '../../lib/deployEvents'
+import { DEPLOY_KINDS_PARAM, deployEventRows } from '../../lib/deployEvents'
 import { formatLocalDateTime } from '../../lib/activity'
 
 const WIDEST_RANGE = PRESET_KEYS[PRESET_KEYS.length - 1]
@@ -28,9 +28,10 @@ export function DeploymentLogsPanel({ projectId, branch, service }: {
   projectId: string; branch: string; service: Service
 }) {
   const [range, setRange] = useState<ActiveRange>(() => activeRange(WIDEST_RANGE, Date.now()))
-  // The PROJECT stream, unfiltered: registration events carry branch null and a server-side
-  // `?branch=` filter would drop them (deployEvents.ts scopes per branch client-side).
-  const { data: events, error } = usePoll(() => api.events(projectId, EVENTS_LIMIT), [projectId], 10000)
+  // The PROJECT stream (registration events carry branch null, so `?branch=` would drop them;
+  // deployEvents.ts scopes per branch client-side), kind-filtered ON THE SERVER so the page's
+  // budget is spent on deploy events, not on browse-rate audit rows.
+  const { data: events, error } = usePoll(() => api.events(projectId, EVENTS_LIMIT, undefined, DEPLOY_KINDS_PARAM), [projectId], 10000)
   // A preset window rolls forward with the clock, like the charts'.
   const active = tickedRange(range, Date.now())
   const rows = deployEventRows(events ?? [], { type: service.type, name: service.name },

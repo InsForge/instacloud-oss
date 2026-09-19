@@ -14,7 +14,7 @@ import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, s
 import * as observe from './observe'
 import { isSingleStatement, lastStatementKeyword, maskSqlText, stripLeadingSqlComments } from './sqlsurface'
 import { DEFAULT_STEP_SEC, DEFAULT_WINDOW_SEC, liveSeries, MetricsHistory, statsToSamples, type MetricsTarget, type MetricsWindow } from './metrics-history'
-import { loadState, mutate } from './state'
+import { loadState, mutate, touchLater } from './state'
 import type { Branch, Project, DatabaseAdapter, ComputeAdapter, StorageAdapter, ManagedDbAdapter, ManagedDbType, ObservedComponent, ObjectListing, AuditEvent, UserSecret, DataDirOps, PgTarget, ServiceKey, ServiceLimits, ServiceSettings } from './types'
 // ---- region WP2 (router): the router's pure modules feed the seams at the end of this class ----
 import { findCertFiles, suppliedFiles } from './router/certs'
@@ -341,6 +341,16 @@ export class Engine {
       if (dedupKey && s.events.some((e) => e.projectId === projectId && e.dedupKey === dedupKey)) return
       s.events.push({ id: randomUUID(), projectId, branch, source, kind, payload, dedupKey, createdAt: new Date().toISOString() })
     }, { audit: true })
+  }
+
+  /** `emit` for BROWSE-RATE reads (the redis key browser, the SQL editor): the row is minted now
+   *  but rides `touchLater`'s coalesced audit write, because a synchronous full-state save per
+   *  key click measurably blocks the event loop the router shares. The cost is bounded loss: a
+   *  crash forgets at most one flush window of read-audit rows, which is the same durability
+   *  `touchLater` already gives token lastUsedAt. */
+  private emitLater(projectId: string, branch: string | null, source: AuditEvent['source'], kind: string, payload: unknown = {}): void {
+    const row: AuditEvent = { id: randomUUID(), projectId, branch, source, kind, payload, dedupKey: null, createdAt: new Date().toISOString() }
+    touchLater((s) => { s.events.push(row) })
   }
 
   getProject(id: string): Project | undefined { return loadState().projects[id] }
@@ -1900,7 +1910,7 @@ export class Engine {
     const cursor = String(scan[0])
     // Governed reads land on the audit timeline (README: `insta events`) — the op and db only,
     // never key names or values.
-    this.emit(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'keys', db: Number(db) })
+    this.emitLater(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'keys', db: Number(db) })
     return { dbs, keys: (scan[1] as unknown[]).map(String), ...(cursor === '0' ? {} : { cursor }) }
   }
 
@@ -1916,7 +1926,7 @@ export class Engine {
     await this.assertPgAwake(t.branch, t.sid)
     const info = parseRedisInfo(await this.redisCmd(t, ['INFO']))
     const num = (k: string): number => { const n = Number(info[k]); return Number.isFinite(n) ? n : 0 }
-    this.emit(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'stats' })
+    this.emitLater(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'stats' })
     return {
       version: info.valkey_version ?? info.redis_version ?? 'unknown',
       uptimeSec: num('uptime_in_seconds'), connectedClients: num('connected_clients'),
@@ -1945,7 +1955,7 @@ export class Engine {
           : type === 'set' ? scanPageMembers(await read(['SSCAN', opts.key, '0', 'COUNT', '200']))
             : type === 'zset' ? await read(['ZRANGE', opts.key, '0', '199', 'WITHSCORES'])
               : null
-    this.emit(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'value', db: Number(db) })
+    this.emitLater(projectId, t.branch.name, 'resource', 'db.read', { service: t.sid, op: 'value', db: Number(db) })
     return { type, ttl, value }
   }
 
@@ -3217,7 +3227,12 @@ export class Engine {
       // rounds bigint/numeric past 2^53. Column order and names come from the same single
       // execution (row_to_json's key order); zero rows answer empty columns. Bounded at
       // DB_QUERY_MAX_ROWS on the server side — the editor is a browser, not an exporter.
-      const wrapped = `select json_build_object('columns', coalesce((array_agg(cols))[1], array[]::text[]), 'rows', coalesce(json_agg(vals), '[]'::json))
+      // min() over the per-row column arrays, because array_agg builds text[][] whose single
+      // subscript is a SCALAR (a coalesce type error that failed every statement); min over
+      // arrays is btree-defined and every row carries the same array. Settled against a live
+      // Postgres 16 (bigint/numeric text fidelity, zero-rows -> [], column order, nulls) and
+      // pinned by test/db-query.int.test.ts.
+      const wrapped = `select json_build_object('columns', coalesce(min(cols), array[]::text[]), 'rows', coalesce(json_agg(vals), '[]'::json))
 from (select array(select json_object_keys(row_to_json(t))) as cols,
              (select json_agg(v.value) from json_each_text(row_to_json(t)) v) as vals
       from (${inner}) t limit ${DB_QUERY_MAX_ROWS}) s`
@@ -3225,13 +3240,13 @@ from (select array(select json_object_keys(row_to_json(t))) as cols,
       const parsed = JSON.parse(out || '{}') as { columns?: string[]; rows?: Array<Array<string | null>> }
       const columns = parsed.columns ?? []
       const rows = parsed.rows ?? []
-      this.emit(projectId, t.branch.name, 'resource', 'db.query', { service: t.serviceId, mode: 'rows' })
+      this.emitLater(projectId, t.branch.name, 'resource', 'db.query', { service: t.serviceId, mode: 'rows' })
       return { columns, rows, rowCount: rows.length, ms: Date.now() - started }
     }
     const out = await this.db.query(t.container, sql, opts)
     // The audit row carries what ran and where — never the SQL text (README: governed actions
     // land in `insta events`; the statement itself may hold data or credentials).
-    this.emit(projectId, t.branch.name, 'resource', 'db.query', { service: t.serviceId, mode: 'command' })
+    this.emitLater(projectId, t.branch.name, 'resource', 'db.query', { service: t.serviceId, mode: 'command' })
     return { status: out || 'OK', ms: Date.now() - started }
   }
 

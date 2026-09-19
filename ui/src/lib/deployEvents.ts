@@ -33,6 +33,10 @@ const DEPLOY_KINDS: ReadonlySet<string> = new Set([
   'service.sleep', 'service.wake', 'service.added', 'service.removed', 'service.rename',
 ])
 
+/** The same allowlist as a `?kinds=` value, so the SERVER filters before its limit slice and the
+ *  fetched page holds deploy events rather than whatever browsing happened since. */
+export const DEPLOY_KINDS_PARAM = [...DEPLOY_KINDS].join(',')
+
 function matches(e: DeployEvent, type: string, name: string): boolean {
   if (!DEPLOY_KINDS.has(e.kind)) return false
   const p = (e.payload ?? {}) as Record<string, unknown>

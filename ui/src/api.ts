@@ -179,8 +179,10 @@ export const api = {
     (await get<{ services: Service[] }>(`/projects/${p}/services${qs({ branch })}`)).services,
   approvals: async (p: string) => (await get<{ approvals: Approval[] }>(`/projects/${p}/approvals`)).approvals,
   policy: async (p: string) => (await get<{ policy: Policy }>(`/projects/${p}/policy`)).policy,
-  events: async (p: string, limit = 30, branch?: string) =>
-    (await get<{ events: AuditEvent[] }>(`/projects/${p}/events${qs({ limit, branch })}`)).events,
+  /** `kinds` (comma-joined) filters server-side BEFORE the limit slice, so a deploy-events page
+   *  is not spent on browse-rate audit rows. */
+  events: async (p: string, limit = 30, branch?: string, kinds?: string) =>
+    (await get<{ events: AuditEvent[] }>(`/projects/${p}/events${qs({ limit, branch, kinds })}`)).events,
   /** `group` narrows to ONE service's container. It matters for more than bandwidth: the daemon
    *  merges every container in the component and truncates to `limit` LAST, so a noisy sibling can
    *  fill the whole window and a quiet service looks like it has no logs at all. */

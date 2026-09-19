@@ -30,7 +30,7 @@ import { docker as dockerFn } from '../src/docker'
 import { buildServer } from '../src/server'
 import { Engine } from '../src/engine'
 import type { Branch, ComputeAdapter, StorageAdapter } from '../src/types'
-import { loadState, mutate } from '../src/state'
+import { flushTouchLater, loadState, mutate } from '../src/state'
 import { calls, data, db, compute, storage, managed, makeEngine, resetFakes, runtime, serverConfig, testConfig } from './fakes'
 import { SuppliedCertWatch, suppliedCert, suppliedFiles } from '../src/router/certs'
 
@@ -5027,13 +5027,20 @@ test('redis key browser: keys + value routes, typed refusals, and the sleeping 5
   const hash = await get(`/projects/${id}/services/rd-cache/redis/value?key=session:9`)
   expect(hash.json()).toEqual({ type: 'hash', ttl: -1, value: { token: 'abc', ttl: '60' } })
   expect(calls.some((c) => c.includes('HGETALL'))).toBe(false)
-  // The recorded exec is the RAW argv (container + args): the password must not appear in it —
-  // the adapter hands it to docker through the exec's environment instead.
   expect(calls.some((c) => c.startsWith('md.cmd:io-demo-main-rd-cache:'))).toBe(true)
-  const pw = loadState().branches[await branchId(id)].managed?.['rd-cache']?.password
-  expect(pw && pw.length > 10).toBe(true)
-  expect(calls.some((c) => c.includes(pw!))).toBe(false)
-  // Governed reads land on the audit timeline, op only — never key names or values.
+  // The REAL adapter keeps the password out of argv (the fake replaces command() wholesale, so
+  // asserting on ITS recording proved nothing — review round 3's negative control): call
+  // LocalManagedDb.command against the mocked docker seam and read the argv it actually builds.
+  const { LocalManagedDb } = await import('../src/adapters/manageddb')
+  vi.mocked(dockerFn).mockClear()
+  await new LocalManagedDb().command('c1', 'hunter2xyz', ['GET', 'k'])
+  const [argv, execOpts] = vi.mocked(dockerFn).mock.calls.at(-1)! as unknown as [string[], { env?: Record<string, string> } | undefined]
+  expect(argv.join(' ')).not.toContain('hunter2xyz')
+  expect(argv).toContain('REDISCLI_AUTH')
+  expect(execOpts?.env?.REDISCLI_AUTH).toBe('hunter2xyz')
+  // Governed reads land on the audit timeline (coalesced through touchLater — a browse must not
+  // pay a synchronous full-state save), op only — never key names or values.
+  flushTouchLater()
   const reads = loadState().events.filter((e) => e.kind === 'db.read')
   expect(reads.length).toBeGreaterThanOrEqual(2)
   expect(reads.every((e) => !JSON.stringify(e.payload).includes('user:1'))).toBe(true)
@@ -5105,7 +5112,9 @@ test('POST /database/query: rows for a select, a command tag otherwise, 503 asle
   // The row transport is server-bounded: a statement timeout and a row cap ride every call.
   expect(calls.some((c) => c.startsWith('db.query:select json_build_object'))).toBe(true)
 
-  // Every successful statement lands on the audit timeline — action metadata only, never SQL text.
+  // Every successful statement lands on the audit timeline (coalesced through touchLater) —
+  // action metadata only, never SQL text.
+  flushTouchLater()
   const audited = loadState().events.filter((e) => e.kind === 'db.query')
   expect(audited.length).toBeGreaterThanOrEqual(8)
   expect(audited.every((e) => (e.payload as { service?: string }).service === 'pg-db')).toBe(true)

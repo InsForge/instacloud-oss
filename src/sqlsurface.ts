@@ -4,6 +4,10 @@
 // route's correctness never depends on it being right: a misclassified statement runs through the
 // other transport and answers with postgres's own result or error, never a second execution.
 
+/** A SQL identifier character (also matches `$`, which may sit inside an identifier). Used to
+ *  decide whether an `e`/`E` before a quote begins an escape-string or just ends an identifier. */
+const isIdentChar = (ch: string | undefined): boolean => ch !== undefined && /[A-Za-z0-9_$]/.test(ch)
+
 /** Leading `--` and block comments off a statement, so a commented SELECT is still row-shaped. */
 export function stripLeadingSqlComments(sql: string): string {
   let t = sql
@@ -36,7 +40,14 @@ export function maskSqlText(sql: string): string {
         if (sql.slice(j, j + 2) === '/*') { depth++; j += 2 } else if (sql.slice(j, j + 2) === '*/') { depth--; j += 2 } else j++
       }
       blank(i, j); i = j
-    } else if (c === "'" || ((c === 'e' || c === 'E') && sql[i + 1] === "'")) {
+    } else if (c === "'" || ((c === 'e' || c === 'E') && sql[i + 1] === "'" && !isIdentChar(sql[i - 1]))) {
+      // `e'`/`E'` is an escape-string prefix ONLY when the `e` starts a token — the char before it
+      // must not be an identifier char, or the trailing `e` of an identifier (`like'x'`) reads as
+      // an E-string and its backslash-escape rule over-consumes, hiding a real meta-command that
+      // follows. Without this guard the masker blanked more than psql's lexer does (a bypass);
+      // with it, and with the rest of the masker only ever CLOSING a construct where psql does,
+      // any residual disagreement leaves an extra backslash VISIBLE, which the guard rejects —
+      // the safe direction.
       const escapes = c !== "'"
       let j = i + (escapes ? 2 : 1)
       while (j < sql.length) {

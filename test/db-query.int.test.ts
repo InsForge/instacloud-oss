@@ -64,6 +64,8 @@ test('dbQuery against a real Postgres: text-exact values, order, zero rows, lite
   await expect(engine.dbQuery(projectId, 'insert into t values (99) \\g select 1 \\g')).rejects.toThrow(/meta-commands/)
   expect(await engine.dbQuery(projectId, 'select count(*) as n from t where a = 99')).toMatchObject({ rows: [['0']] })
   await expect(engine.dbQuery(projectId, "select 1 \\! echo pwned")).rejects.toThrow(/meta-commands/)
+  // The E-string mask bypass (round 7): a \! hidden after an identifier-e'...' must NOT execute.
+  await expect(engine.dbQuery(projectId, "select 1 where 'x' like'z\\' \\! id")).rejects.toThrow(/meta-commands/)
   // A terminal semicolon shadowed by a trailing comment still answers rows.
   expect(await engine.dbQuery(projectId, 'select 41 as n; -- done')).toMatchObject({ columns: ['n'], rows: [['41']] })
   expect(await engine.dbQuery(projectId, 'select 42 as n; /* done */')).toMatchObject({ rows: [['42']] })

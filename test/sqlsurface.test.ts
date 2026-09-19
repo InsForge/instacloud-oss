@@ -17,6 +17,15 @@ test('maskSqlText blanks literals, identifiers and comments but nothing else', (
   expect(maskSqlText('select /* x /* y */ z */ 1')).toBe('select                   1')
 })
 
+test('maskSqlText: the trailing e of an identifier is NOT an escape-string prefix (RCE bypass)', () => {
+  // like'z\\' reads the k-e as identifier + standard string; a \\! after it must stay VISIBLE so
+  // the meta-command guard rejects it (the round-7 root-RCE bypass).
+  expect(maskSqlText("select 1 where x like'z\\' \\! id")).toContain('\\! id')
+  // A genuine escape string (e starts a token) is still consumed, backslash-escaped quote and all.
+  expect(maskSqlText("select e'a\\' b'").includes('\\')).toBe(false)
+  expect(maskSqlText("select E'x', 1 \\! id")).toContain('\\! id')
+})
+
 test('isSingleStatement: semicolons in literals and trailing ones do not split', () => {
   expect(isSingleStatement(maskSqlText("select 'a;b' as v;"))).toBe(true)
   expect(isSingleStatement(maskSqlText('select 1; select 2'))).toBe(false)

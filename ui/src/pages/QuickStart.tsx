@@ -2,7 +2,9 @@
 // components/project/quick-start/quick-start-page-view.tsx and quick-start-copy-chip.tsx): the agent
 // connect pill with its CLI and Prompt copy chips, three cards deep-linking into the dialogs that do
 // the work, and the docs link. The commands, prompt and cards, and every self-host divergence in
-// them, live in lib/quickStart.ts.
+// them, live in lib/quickStart.ts. One divergence lives here: the pill gains a third "MCP" chip
+// (see AgentConnectPill) because this daemon serves its own MCP endpoint that the console has no
+// equivalent for; the config it copies is built in lib/mcpConnect.ts.
 
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -11,7 +13,7 @@ import { Check, Copy, ExternalLink } from 'lucide-react'
 import { useAuth } from '../components/AuthGate'
 import { copyText } from '../lib/clipboard'
 import { cliLine, DOCS_URL, quickStartCards, setupPrompt, type QuickStartCard } from '../lib/quickStart'
-import { McpConnect } from '../components/console/McpConnect'
+import { mcpJsonConfig } from '../lib/mcpConnect'
 
 const ASSET = '/quick-start/'
 
@@ -30,7 +32,7 @@ function CopyChip({ text, label, className }: { text: string; label: string; cla
       title={copied ? 'Copied' : `Copy ${label}`}
       className={cn(
         'h-full gap-1 px-2 text-base leading-6 font-normal text-foreground transition-colors hover:bg-alpha-8 focus-visible:bg-alpha-8 focus-visible:ring-inset motion-reduce:transition-none',
-        label === 'CLI' ? 'w-[65px]' : 'w-[95px]',
+        label === 'CLI' ? 'w-[65px]' : label === 'MCP' ? 'w-[75px]' : 'w-[95px]',
         className,
       )}
       onClick={async () => { if (await copyText(text)) setCopied(true) }}>
@@ -52,7 +54,12 @@ function MaskedArt({ src, className }: { src: string; className: string }) {
   )
 }
 
-function AgentConnectPill({ cli, prompt }: { cli: string; prompt: string }) {
+// Divergence from the console: the console's pill has only CLI and Prompt chips (its MCP is a cloud
+// server that `insta setup agent` registers, external to any one project). This daemon serves its own
+// MCP over Streamable HTTP at <apiUrl>/mcp, so the local-honest equivalent is a third chip, built from
+// the console's own CopyChip so it reads as native. It copies an mcp.json block that Claude Code,
+// Cursor and other clients accept; the token step (server mode) is the same line the CLI chip needs.
+function AgentConnectPill({ cli, prompt, mcp }: { cli: string; prompt: string; mcp: string }) {
   return (
     <div className="flex max-w-full flex-wrap items-center justify-center gap-3 rounded-full border border-semantic-6 bg-card px-3.5 py-3">
       <div className="flex flex-wrap items-center justify-center gap-2">
@@ -66,7 +73,8 @@ function AgentConnectPill({ cli, prompt }: { cli: string; prompt: string }) {
       </div>
       <div className="flex h-8 shrink-0 overflow-hidden rounded-full border border-border bg-alpha-4">
         <CopyChip text={cli} label="CLI" className="border-r border-border" />
-        <CopyChip text={prompt} label="Prompt" />
+        <CopyChip text={prompt} label="Prompt" className="border-r border-border" />
+        <CopyChip text={mcp} label="MCP" />
       </div>
     </div>
   )
@@ -140,15 +148,15 @@ export function QuickStart() {
         <header className="flex w-full flex-col items-center gap-6 text-center">
           <h1 className="font-heading text-[32px] leading-12 font-semibold text-foreground">Quick Start</h1>
           <AgentConnectPill cli={cliLine(projectId, boot.mode, boot.apiUrl)}
-            prompt={setupPrompt(projectId, boot.mode, boot.apiUrl, boot.consoleUrl)} />
+            prompt={setupPrompt(projectId, boot.mode, boot.apiUrl, boot.consoleUrl)}
+            mcp={mcpJsonConfig(boot.apiUrl, boot.mode)} />
           {boot.mode === 'server' && (
             <p className="text-sm leading-6 text-muted-foreground">
-              The CLI line signs in with the API token in <code className="font-mono">$INSTA_API_TOKEN</code>.{' '}
+              The CLI and MCP configs sign in with the API token in <code className="font-mono">$INSTA_API_TOKEN</code>.{' '}
               <Link to="/account/tokens" className="text-theme">Create one</Link>
             </p>
           )}
         </header>
-        <McpConnect mode={boot.mode} apiUrl={boot.apiUrl} consoleUrl={boot.consoleUrl} />
         <ul className="grid w-full max-w-[1080px] grid-cols-1 gap-6 @3xl:grid-cols-3">
           {quickStartCards(projectId, branch).map((card) => (
             <li key={card.title}><Card card={card} /></li>

@@ -1,22 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { claudeCodeAdd, mcpConnectPrompt, mcpEndpoint, mcpJsonConfig, MCP_TOOL_GROUPS } from './mcpConnect'
+import { mcpEndpoint, mcpJsonConfig } from './mcpConnect'
 
 describe('mcpEndpoint', () => {
   it('appends /mcp and strips a trailing slash', () => {
     expect(mcpEndpoint('https://api.example.io')).toBe('https://api.example.io/mcp')
     expect(mcpEndpoint('https://api.example.io/')).toBe('https://api.example.io/mcp')
     expect(mcpEndpoint('http://127.0.0.1:4611')).toBe('http://127.0.0.1:4611/mcp')
-  })
-})
-
-describe('claudeCodeAdd', () => {
-  it('server mode carries the Authorization header from the env var', () => {
-    expect(claudeCodeAdd('https://api.x.io', 'server'))
-      .toBe('claude mcp add --transport http insta https://api.x.io/mcp --header "Authorization: Bearer $INSTA_API_TOKEN"')
-  })
-  it('local mode omits the header', () => {
-    expect(claudeCodeAdd('http://127.0.0.1:4611', 'local'))
-      .toBe('claude mcp add --transport http insta http://127.0.0.1:4611/mcp')
   })
 })
 
@@ -29,23 +18,8 @@ describe('mcpJsonConfig', () => {
       mcpServers: { insta: { url: 'http://127.0.0.1:4611/mcp' } },
     })
   })
-})
 
-describe('mcpConnectPrompt', () => {
-  it('names the endpoint and the token step in server mode, and no-token in local', () => {
-    expect(mcpConnectPrompt('https://api.x.io', 'server', 'https://console.x.io/'))
-      .toContain('https://api.x.io/mcp')
-    expect(mcpConnectPrompt('https://api.x.io', 'server', 'https://console.x.io/'))
-      .toContain('https://console.x.io/account/tokens')
-    expect(mcpConnectPrompt('http://127.0.0.1:4611', 'local', 'http://127.0.0.1:4611'))
-      .toMatch(/No token is needed/)
-  })
-})
-
-describe('MCP_TOOL_GROUPS', () => {
-  it('never previews a cloud-only tool name', () => {
-    const all = MCP_TOOL_GROUPS.flatMap((g) => g.tools)
-    expect(all.length).toBeGreaterThan(0)
-    for (const t of all) expect(t).not.toMatch(/usage|billing|scale|upgrade|github/)
+  it('never inlines a literal token, only the env-var placeholder', () => {
+    expect(mcpJsonConfig('https://api.x.io', 'server')).toContain('$INSTA_API_TOKEN')
   })
 })

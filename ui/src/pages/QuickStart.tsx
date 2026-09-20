@@ -11,6 +11,7 @@ import { Check, Copy, ExternalLink } from 'lucide-react'
 import { useAuth } from '../components/AuthGate'
 import { copyText } from '../lib/clipboard'
 import { cliLine, DOCS_URL, quickStartCards, setupPrompt, type QuickStartCard } from '../lib/quickStart'
+import { McpConnect } from '../components/console/McpConnect'
 
 const ASSET = '/quick-start/'
 
@@ -147,6 +148,7 @@ export function QuickStart() {
             </p>
           )}
         </header>
+        <McpConnect mode={boot.mode} apiUrl={boot.apiUrl} consoleUrl={boot.consoleUrl} />
         <ul className="grid w-full max-w-[1080px] grid-cols-1 gap-6 @3xl:grid-cols-3">
           {quickStartCards(projectId, branch).map((card) => (
             <li key={card.title}><Card card={card} /></li>

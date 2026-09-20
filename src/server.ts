@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyServerFactory } from 'fastify'
 import fastifyStatic from '@fastify/static'
 import { registerAuth } from './auth'
+import { dispatch, type Execute } from './mcp/protocol'
 import { loadConfig, type Config } from './config'
 import { LifecycleFailedError } from './engine'
 import { SuppliedCertWatch, suppliedFiles } from './router/certs'
@@ -35,6 +36,7 @@ export const API_PREFIXES: string[] = [
   '/projects', '/orgs', '/me', '/tokens', '/healthz', '/regions', '/images', '/invitations', '/github',
   '/api', '/auth', '/tls',
   '/templates', '/template-deployments',
+  '/mcp',
 ]
 
 /** True when the API owns `url`: a GET outside these prefixes falls back to the dashboard shell
@@ -1240,6 +1242,51 @@ export function buildServer(
     } catch (e) { return reply.code(404).send({ error: e instanceof Error ? e.message : String(e) }) }
   })
   // ---- end region D ----
+
+  // ---- region E (MCP): a Model Context Protocol server over Streamable HTTP, so a coding agent
+  // connects to THIS daemon with the same `insta_` token it would give the CLI. Auth is the normal
+  // guard (server mode requires the token; local mode trusts loopback). Every tool re-enters the
+  // daemon's OWN API over loopback WITH THE CALLER'S TOKEN (mcpExecute), so per-action governance,
+  // validation and response shapes are the API's, never re-implemented in the tool layer. A tool
+  // that hits a governed action gets the 202 approval envelope back and the protocol reports it as
+  // an error the agent surfaces, rather than a silent success.
+  const mcpExecute: Execute = async (r) => {
+    // `app.inject` re-enters this same server's full pipeline (the auth guard, per-action
+    // governance, validation, the handler) in-process — no socket, no port dependency — so a tool
+    // behaves EXACTLY like the API route it names, credential and all.
+    const res = await app.inject({
+      method: r.method,
+      url: r.path,
+      headers: {
+        'content-type': 'application/json',
+        // Forward the caller's credential so the re-entered route authenticates and gates as they do.
+        ...(mcpAuthHeader ? { authorization: mcpAuthHeader } : {}),
+      },
+      ...(r.body !== undefined ? { payload: r.body as object } : {}),
+    })
+    let body: unknown = res.body
+    try { body = res.body ? JSON.parse(res.body) : null } catch { /* keep raw text */ }
+    return { status: res.statusCode, body }
+  }
+  // The Authorization header of the CURRENT /mcp request, read per request below (a closure the
+  // executor reads so tool builders stay pure). Set at the top of each POST /mcp.
+  let mcpAuthHeader: string | undefined
+  // A GET on /mcp has no server-initiated stream to open (every tool is request/response), so it
+  // is a clean 405 rather than a hanging SSE connection.
+  app.get('/mcp', async (_req, reply) => reply.code(405).send({ error: 'use POST for JSON-RPC; this server opens no SSE stream' }))
+  app.post('/mcp', async (req, reply) => {
+    mcpAuthHeader = typeof req.headers.authorization === 'string' ? req.headers.authorization : undefined
+    const payload = req.body as unknown
+    // JSON-RPC allows a single message or a batch. Notifications yield null and are dropped.
+    if (Array.isArray(payload)) {
+      const out = (await Promise.all(payload.map((m) => dispatch(m as Record<string, unknown>, mcpExecute)))).filter((r): r is NonNullable<typeof r> => r !== null)
+      return out.length ? reply.send(out) : reply.code(202).send()
+    }
+    const one = await dispatch((payload ?? {}) as Record<string, unknown>, mcpExecute)
+    if (one === null) return reply.code(202).send() // a lone notification
+    return reply.send(one)
+  })
+  // ---- end region E ----
 
   // ---- local dashboard: serve ui/dist when built (same origin as the API — localhost trust,
   // no CORS, no auth). API routes above always win; unknown non-API GETs fall back to the SPA.

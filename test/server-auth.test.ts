@@ -81,7 +81,7 @@ function publicRoute(method: string, path: string): boolean {
   if (path === '/healthz') return true
   if (path.startsWith('/api/auth/')) return true
   if (path.startsWith('/auth/')) return true
-  if (method === 'POST' && path.startsWith('/webhooks/git/')) return true // git push-to-deploy webhooks verify by HMAC, not the guard
+  if (method === 'POST' && /^\/webhooks\/git\/[^/]+$/.test(path)) return true // git push-to-deploy webhooks verify by HMAC, not the guard
   if (method === 'GET' && (path === '/templates' || path.startsWith('/templates/'))) return true
   return method === 'GET' && !apiOwned(path)
 }

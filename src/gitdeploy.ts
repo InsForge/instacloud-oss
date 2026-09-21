@@ -115,10 +115,17 @@ export function verifySignature(secret: string, rawBody: Buffer, header: unknown
   return got.length === expected.length && timingSafeEqual(got, expected)
 }
 
-/** The event + ref + head sha + commit time a GitHub push webhook carries, or null when the payload
- *  is not a push to a branch we can act on (a tag push, a delete, a ping, a malformed body). `ts` is
- *  the head commit's timestamp in ms (used to reject out-of-order / redelivered older pushes); it
- *  falls back to receipt time only when the payload omits a usable commit timestamp. */
+/** The event + ref + head sha + ordering key a GitHub push webhook carries, or null when the payload
+ *  is not a push to a branch we can act on (a tag push, a delete, a ping, a malformed body).
+ *
+ *  `ts` is a best-effort ordering key in ms: the head commit's timestamp, but CLAMPED to receipt time
+ *  (`now`) and defaulted to it when absent/invalid. `head_commit.timestamp` is client-supplied and
+ *  not monotonic with push order, so an un-clamped value is unsafe in both directions — a future date
+ *  (a skewed committer clock, `git commit --date`) would otherwise persist as the last-deployed time
+ *  and permanently wedge the binding, silently skipping every honest push after it. Clamping to `now`
+ *  makes the key never exceed arrival time, so no push can wedge a later one; paired with the caller's
+ *  `<=` staleness compare and the `lastDeployedSha` redelivery dedupe, an out-of-order or
+ *  equal-timestamp older commit is skipped. It is NOT a guarantee of git ancestry. */
 export function pushRef(event: unknown, body: unknown, now: number = Date.now()): { branch: string; sha: string; ts: number } | null {
   if (event !== 'push') return null
   const b = (body ?? {}) as { ref?: unknown; after?: unknown; deleted?: unknown; head_commit?: { timestamp?: unknown } }
@@ -127,5 +134,5 @@ export function pushRef(event: unknown, body: unknown, now: number = Date.now())
   if (typeof b.after !== 'string' || /^0+$/.test(b.after)) return null
   const raw = b.head_commit?.timestamp
   const parsed = typeof raw === 'string' ? Date.parse(raw) : NaN
-  return { branch: b.ref.slice('refs/heads/'.length), sha: b.after, ts: Number.isFinite(parsed) ? parsed : now }
+  return { branch: b.ref.slice('refs/heads/'.length), sha: b.after, ts: Math.min(Number.isFinite(parsed) ? parsed : now, now) }
 }

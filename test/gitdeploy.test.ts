@@ -79,6 +79,11 @@ describe('pushRef', () => {
     expect(pushRef('push', { ref: 'refs/heads/main', after: 'a'.repeat(40) }, 1234)).toEqual({ branch: 'main', sha: 'a'.repeat(40), ts: 1234 })
     expect(pushRef('push', { ref: 'refs/heads/main', after: 'a'.repeat(40), head_commit: { timestamp: 'not-a-date' } }, 1234).ts).toBe(1234)
   })
+  it('clamps a future-dated commit timestamp to receipt time (no key can exceed arrival)', () => {
+    // A skewed committer clock must never persist as the newest key and wedge later pushes.
+    const future = pushRef('push', { ref: 'refs/heads/main', after: 'a'.repeat(40), head_commit: { timestamp: '2099-01-01T00:00:00Z' } }, 1234)
+    expect(future!.ts).toBe(1234)
+  })
   it('ignores non-push events, tag pushes, deletes and zero shas', () => {
     expect(pushRef('ping', {})).toBeNull()
     expect(pushRef('push', { ref: 'refs/tags/v1', after: 'a'.repeat(40) })).toBeNull()

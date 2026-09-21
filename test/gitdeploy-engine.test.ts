@@ -3,8 +3,9 @@
 // configured port instead of resetting it to 8080, and (2) a build that finishes after its target
 // was removed does NOT re-materialise the group — deployFromGit returns null under the service lock.
 import { test, expect, beforeEach, vi } from 'vitest'
+import { createHmac } from 'node:crypto'
 import { calls, makeEngine, resetFakes, runtime, testConfig } from './fakes'
-import { mutate } from '../src/state'
+import { loadState, mutate } from '../src/state'
 import { newBinding } from '../src/gitdeploy'
 import { buildServer } from '../src/server'
 import type { Engine } from '../src/engine'
@@ -102,6 +103,71 @@ test('a redeploy for a binding that no longer exists is a no-op', async () => {
   const res = await engine.deployFromGit(projectId, branchId, 'web', 'no-such-binding', 'app:2')
   expect(res).toBeNull()
   expect(calls.some((c) => c.startsWith('deploy:'))).toBe(false)
+})
+
+// ---- ordering: driven through the signed webhook + the real Engine, reading the fake's deploy lines
+// and the persisted lastDeployedAt (r2d2's measured cases). ----
+const deploys = (): number => calls.filter((c) => c.startsWith('deploy:')).length
+const seedWebhookBinding = (): { id: string; secret: string } => {
+  const id = seedBinding()
+  return { id, secret: loadState().gitBindings![id].binding.webhookSecret }
+}
+const sendPush = (app: ReturnType<typeof buildServer>, id: string, secret: string, sha: string, tsMs?: number): ReturnType<typeof app.inject> => {
+  const body: Record<string, unknown> = { ref: 'refs/heads/main', after: sha }
+  if (tsMs !== undefined) body.head_commit = { timestamp: new Date(tsMs).toISOString() }
+  const payload = JSON.stringify(body)
+  return app.inject({ method: 'POST', url: `/webhooks/git/${id}`, headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': 'sha256=' + createHmac('sha256', secret).update(payload).digest('hex') }, payload })
+}
+const lastAt = (id: string): number | undefined => loadState().gitBindings![id].binding.lastDeployedAt
+
+test('webhook ordering: an out-of-order older commit does not overwrite a newer deployment', async () => {
+  const app = buildServer(engine, cfg)
+  const { id, secret } = seedWebhookBinding()
+  calls.length = 0
+  await sendPush(app, id, secret, 'a'.repeat(40), 2_000_000)
+  await vi.waitFor(() => expect(lastAt(id)).toBe(2_000_000)) // deployed + recorded
+  expect(deploys()).toBe(1)
+  await sendPush(app, id, secret, 'b'.repeat(40), 1_000_000) // older commit, arrives later
+  await new Promise((r) => setTimeout(r, 20))
+  expect(deploys()).toBe(1) // skipped, not rolled back
+})
+
+test('webhook ordering: an equal-timestamp later push is skipped (<=, not <)', async () => {
+  const app = buildServer(engine, cfg)
+  const { id, secret } = seedWebhookBinding()
+  calls.length = 0
+  await sendPush(app, id, secret, 'a'.repeat(40), 5_000_000)
+  await vi.waitFor(() => expect(lastAt(id)).toBe(5_000_000))
+  await sendPush(app, id, secret, 'b'.repeat(40), 5_000_000) // same one-second timestamp, different sha
+  await new Promise((r) => setTimeout(r, 20))
+  expect(deploys()).toBe(1)
+})
+
+test('webhook ordering: a redelivery of the deployed commit is skipped', async () => {
+  const app = buildServer(engine, cfg)
+  const { id, secret } = seedWebhookBinding()
+  calls.length = 0
+  await sendPush(app, id, secret, 'a'.repeat(40), 3_000_000)
+  await vi.waitFor(() => expect(lastAt(id)).toBe(3_000_000))
+  await sendPush(app, id, secret, 'a'.repeat(40), 9_000_000) // same sha redelivered with a newer stamp
+  await new Promise((r) => setTimeout(r, 20))
+  expect(deploys()).toBe(1)
+})
+
+test('webhook ordering: a future-dated commit is clamped and never permanently wedges the binding', async () => {
+  const app = buildServer(engine, cfg)
+  const { id, secret } = seedWebhookBinding()
+  calls.length = 0
+  const before = Date.now()
+  await sendPush(app, id, secret, 'a'.repeat(40), Date.parse('2099-01-01T00:00:00Z'))
+  await vi.waitFor(() => expect(lastAt(id)).not.toBeUndefined())
+  expect(deploys()).toBe(1)
+  // The recorded key is clamped to ~arrival time, NOT the year 2099.
+  expect(lastAt(id)!).toBeLessThanOrEqual(Date.now())
+  expect(lastAt(id)!).toBeGreaterThanOrEqual(before)
+  // …so an honest later push still deploys — the binding is not bricked.
+  await sendPush(app, id, secret, 'b'.repeat(40)) // no timestamp -> receipt time (now), which is newer
+  await vi.waitFor(() => expect(deploys()).toBe(2))
 })
 
 test('connect → GET → DELETE happy path over the HTTP routes', async () => {

@@ -1299,11 +1299,13 @@ export function buildServer(
         engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.blocked', { group: rec.group, sha: sha ?? null, reason: policy === 'deny' ? 'deploy denied by policy' : 'push-to-deploy needs an "allow" deploy policy; deploy this commit manually or change the policy' })
         return
       }
-      // Reject a redelivered or out-of-order push: the same commit already deployed, or a commit not
-      // strictly newer than the last one deployed.
+      // Reject a redelivered or out-of-order push: the same commit already deployed, or a commit whose
+      // (clamped) ordering key is not newer than the last one deployed. `<=`, not `<`: two commits that
+      // share a one-second timestamp must not both win, and `ts` is already clamped to arrival time so
+      // a future/missing timestamp can never appear "newest" and wedge the binding.
       const last = rec.binding
-      if ((sha && last.lastDeployedSha === sha) || (ts !== undefined && last.lastDeployedAt !== undefined && ts < last.lastDeployedAt)) {
-        engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.skipped', { group: rec.group, sha: sha ?? null, reason: 'stale push (already deployed or older than the current deployment)' })
+      if ((sha && last.lastDeployedSha === sha) || (ts !== undefined && last.lastDeployedAt !== undefined && ts <= last.lastDeployedAt)) {
+        engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.skipped', { group: rec.group, sha: sha ?? null, reason: 'stale push (already deployed or not newer than the current deployment)' })
         return
       }
     }
@@ -1311,9 +1313,11 @@ export function buildServer(
     engine.emit(rec.projectId, branchName, 'resource', 'git.build', { repo: `${rec.binding.owner}/${rec.binding.repo}`, group: rec.group, sha: sha ?? null })
     try {
       // Pin the checkout to the pushed commit SHA (webhook) or the ref (initial connect). The PAT is
-      // handed to BuildKit as the GIT_AUTH_TOKEN env-secret, never on the command line.
+      // handed to BuildKit as the GIT_AUTH_TOKEN env-secret, never on the command line. No mergeStderr:
+      // BuildKit logs the failure reason to stderr, and only when stderr is NOT merged does docker()
+      // fold it into the rejection — so a failed build's git.deploy.failed event carries a real reason.
       const spec = dockerBuildSpec(rec.binding, tag, sha ?? rec.binding.ref)
-      await docker(spec.args, { mergeStderr: true, env: spec.env })
+      await docker(spec.args, { env: spec.env })
       // deployFromGit re-validates the binding + existing group and preserves its configured port,
       // all under the service lock, so a target removed during the build is not re-materialised and a
       // non-8080 service is not reset to 8080. null => the target is gone; do not deploy.

@@ -173,6 +173,22 @@ test('webhook: a push is held (not built) when the deploy policy is not "allow"'
   expect(loadState().approvals?.length ?? 0).toBe(0)
 })
 
+test('webhook: an approval-required deploy policy also holds the push, and creates no approval', async () => {
+  // The N-1 that shipped broken twice: an approval_required project must NOT auto-deploy pushes, and
+  // (because effectivePolicy is a pure read) must not accrue a pending approval a webhook can't resume.
+  seedBranch()
+  const rec = seedBinding()
+  govern.setPolicy('p1', 'deploy', 'approval_required')
+  const { payload, sig } = signed(rec.binding.webhookSecret, { ref: 'refs/heads/main', after: 'f'.repeat(40) })
+  const r = await send('POST', `/webhooks/git/${rec.binding.id}`, {
+    headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': sig }, payload,
+  })
+  expect(r.statusCode).toBe(202)
+  await Promise.resolve()
+  expect(dockerMock.mock.calls.some((c) => (c[0] as string[])[0] === 'build')).toBe(false)
+  expect(loadState().approvals?.length ?? 0).toBe(0)
+})
+
 test('webhook: a redelivered or out-of-order older push is skipped, never rebuilt', async () => {
   seedBranch()
   const deployed = 'a'.repeat(40)

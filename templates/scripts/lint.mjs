@@ -18,6 +18,9 @@ const codes = new Set();
 if (existsSync(join(root, "index.json"))) { failures++; console.error("✗ index.json: never commit it: CI generates it"); }
 
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+// Types the platform provisions and owns entirely: no image, port, sizing or credentials to declare.
+const MANAGED_TYPES = ["postgres", "redis", "mysql", "mongodb"];
+const TYPES = ["web", "worker", ...MANAGED_TYPES];
 // Images this repo builds for itself; templates-build-images derives their tag from `version:`.
 const SELF_IMAGE_PREFIX = "ghcr.io/insforge/insta-oss/templates/";
 const dirs = readdirSync(root).filter((d) => !NON_TEMPLATE.has(d) && statSync(join(root, d)).isDirectory());
@@ -124,8 +127,8 @@ for (const dir of dirs) {
   for (const [name, svc] of Object.entries(m?.services ?? {})) {
     for (const group of ["required", "optional"]) for (const k of Object.keys(svc.env?.[group] ?? {})) declared.add(k);
     // The platform is the authority; this check exists so a typo fails on the pull request instead
-    // of asynchronously, mid-run, on every by-code deploy after merge. Runs before the postgres
-    // skip below, because the platform checks every service.
+    // of asynchronously, mid-run, on every by-code deploy after merge. Runs before the managed-type
+    // check below, because the platform checks every service.
     for (const [k, value] of Object.entries(svc.env?.fixed ?? {})) {
       for (const mt of String(value).matchAll(FIXED_REF_RE)) {
         const verdict = checkFixedRef(mt[1], {
@@ -134,15 +137,25 @@ for (const dir of dirs) {
         if (verdict.error) err(dir, verdict.error);
       }
     }
-    // Also before the postgres skip: the platform refuses these on EVERY service type, so a lint
-    // that ran them only for compute would green-light a manifest publish then rejects.
+    // Also before the managed-type check: the platform refuses these on EVERY service type, so a
+    // lint that ran them only for compute would green-light a manifest publish then rejects.
     if (svc.spec !== undefined) {
       err(dir, `${name}: compute size is the platform's to choose — remove spec`);
     }
     if (svc.volume !== undefined && svc.volume !== true) {
       err(dir, `${name}: the volume size is the platform's to choose — declare 'volume: true'`);
     }
-    if (svc.type === "postgres") continue; // managed service: platform injects credentials
+    if (!TYPES.includes(svc.type)) {
+      err(dir, `${name}: type must be one of ${TYPES.join(", ")} (got '${svc.type}')`);
+      continue;
+    }
+    // A managed service is the platform's: it owns the image, port, sizing and credentials.
+    if (MANAGED_TYPES.includes(svc.type)) {
+      for (const field of ["image", "build", "port", "healthcheck", "volume", "volumeGib", "spec", "alwaysOn", "env"]) {
+        if (svc[field] !== undefined) err(dir, `${name}: a ${svc.type} service is platform-managed and carries no ${field}, declare it bare`);
+      }
+      continue;
+    }
     // rule 1: image must be pinned (tag or digest), never latest/tagless
     if (!svc.image && !svc.build) err(dir, `${name}: needs image or build`);
     // the platform parser refuses both (image is what deploys; the Dockerfile is wired by convention)
@@ -184,6 +197,11 @@ for (const dir of dirs) {
       if (!(m.generated ?? {})[key]) err(dir, `env.generated.${k} references undeclared '${key}'`);
     }
   }
+  // Each managed datastore is born with its own volume at the deployer's plan cap, so a template
+  // declaring several of them costs several volumes. A warning, not a failure: legitimate but worth
+  // a second look on the pull request.
+  const managedCount = Object.values(m?.services ?? {}).filter((s) => MANAGED_TYPES.includes(s?.type)).length;
+  if (managedCount > 2) console.warn(`~ ${dir}: declares ${managedCount} managed datastores, each born with its own plan-cap volume`);
   // constraints may only name declared required/optional variables (platform parser rule)
   (m?.constraints ?? []).forEach((c, i) => {
     for (const kind of ["oneOf", "allOf"]) {

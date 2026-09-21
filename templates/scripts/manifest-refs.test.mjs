@@ -12,7 +12,10 @@ import { FIXED_REF_RE, checkFixedRef } from './manifest-refs.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-const SERVICES = { app: { type: 'web' }, db: { type: 'postgres' }, bg: { type: 'worker' } };
+const SERVICES = {
+  app: { type: 'web' }, db: { type: 'postgres' }, bg: { type: 'worker' },
+  cache: { type: 'redis' }, sql: { type: 'mysql' }, docs: { type: 'mongodb' },
+};
 const check = (ref, over = {}) =>
   checkFixedRef(ref, { at: 'app: env.fixed.X', envName: 'X', services: SERVICES, generated: { key: 'secret:32' }, ...over });
 
@@ -43,6 +46,14 @@ describe('checkFixedRef: what a fixed value may reference', () => {
     const { error } = check('services.db.url');
     expect(error).toContain('managed postgres');
     expect(error).toContain('env.platform');
+  });
+
+  it('rejects every managed database, naming its type', () => {
+    for (const [name, type] of [['db', 'postgres'], ['cache', 'redis'], ['sql', 'mysql'], ['docs', 'mongodb']]) {
+      const { error } = check(`services.${name}.url`);
+      expect(error).toContain(`service '${name}' is a managed ${type}`);
+      expect(error).toContain('env.platform');
+    }
   });
 
   it('rejects a worker, which has no address either', () => {

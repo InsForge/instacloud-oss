@@ -67,8 +67,10 @@ def _authorized(header: str) -> bool:
         return False
     # Both compares always run, and neither short-circuits on the first wrong byte: `and` would
     # leak whether the username alone was right through the response time.
-    ok_user = secrets.compare_digest(user, USERNAME)
-    ok_password = secrets.compare_digest(password, PASSWORD)
+    # bytes form: compare_digest on str raises TypeError for non-ASCII, turning any
+    # non-ASCII credential (sent or configured) into a 500 instead of a 401.
+    ok_user = secrets.compare_digest(user.encode("utf-8"), USERNAME.encode("utf-8"))
+    ok_password = secrets.compare_digest(password.encode("utf-8"), PASSWORD.encode("utf-8"))
     return ok_user & ok_password
 
 

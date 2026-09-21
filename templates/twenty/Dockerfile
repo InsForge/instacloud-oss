@@ -8,6 +8,9 @@
 #   2. The worker. Upstream runs it as a second container off this same image; the platform answers
 #      `type: worker` with "template deploys support web services only in v1", so it runs here as a
 #      child of the entrypoint.
+#   3. The first account. Twenty has no admin-credential variable and closes sign-up as soon as one
+#      workspace exists, so the deploy's own ADMIN_EMAIL / ADMIN_PASSWORD claim it through
+#      upstream's public sign-up mutation. See seed-admin.mjs.
 #
 # No part of Twenty is rebuilt or repackaged: the upstream release tag is the base and
 # entrypoint.sh calls upstream's own /app/entrypoint.sh for setup and migrations.
@@ -33,6 +36,7 @@ RUN printf '%s\n' "$TWENTY_TAG" > /insta-twenty-version
 
 COPY entrypoint.sh /insta-entrypoint.sh
 COPY boot-listener.mjs /insta-boot-listener.mjs
+COPY seed-admin.mjs /insta-seed-admin.mjs
 RUN chmod +x /insta-entrypoint.sh
 
 # Upstream runs as uid 1000 and the platform's volume ownership follows the image's USER, so /data

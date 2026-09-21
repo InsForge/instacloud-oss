@@ -86,6 +86,26 @@ wait "$holder_pid" 2>/dev/null || true
 node dist/main &
 server_pid=$!
 
+# Twenty's sign-up gate is `IS_MULTIWORKSPACE_ENABLED || workspaceCount === 0`, so exactly one
+# account can ever be created on a single-workspace instance and it belongs to whoever opens the
+# URL first. ADMIN_EMAIL and ADMIN_PASSWORD take that slot at deploy time instead. See
+# seed-admin.mjs, which posts upstream's own public sign-up mutation.
+#
+# Only on a database with no workspace yet, which is both the idempotence guard and the thing that
+# keeps a restart from touching an account whose password the operator has since changed. The
+# window between the server listening and this returning is a second or two on a URL nobody has
+# been given yet; it cannot be closed from here, because the mutation needs the server up and the
+# server being up is what opens the port.
+seed_admin() {
+  if [ "$(psql -tAc 'SELECT count(*) FROM core.workspace' "${PG_DATABASE_URL}")" != 0 ]; then
+    echo "entrypoint: a workspace already exists, leaving its admin account alone"
+    return
+  fi
+  if ! node /insta-seed-admin.mjs; then
+    echo "entrypoint: could not create the admin account; twenty is still up and its sign-up page is open to the first visitor" >&2
+  fi
+}
+
 # The worker and the cron registration boot the same Nest context the server is booting, and this
 # machine is small enough that three of them at once is measurable on the health gate's clock.
 # Neither is what the gate probes, so both wait for the server to answer. `exec` replaces this
@@ -93,6 +113,9 @@ server_pid=$!
 # below.
 start_worker() {
   until curl -fsS -o /dev/null "http://127.0.0.1:${NODE_PORT}/healthz"; do sleep 1; done
+  # First, because it is the one thing an operator is waiting on: the URL is useless until the
+  # account they typed at the deploy prompt exists.
+  seed_admin
   # Deferred from the setup block. The jobs are BullMQ repeatables in the redis above, which the
   # volume keeps across restarts, so this only has to run when setup did. Non-fatal: a failure
   # costs the periodic syncs, not the CRM, and upstream's own entrypoint treats it the same way.

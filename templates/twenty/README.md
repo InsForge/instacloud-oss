@@ -18,11 +18,17 @@ Upstream's `docker-compose.yml` is four containers. Two of them cannot be expres
 manifest, which declares only `web` and `postgres` services, so this template's image adds them
 beside the server: **Redis** (Twenty requires `REDIS_URL` for its cache and its BullMQ queues) and
 the **worker** (upstream runs it as a second container off this same image). Both are upstream's
-own components, started by a 60-line entrypoint; see [Scope](#scope) for what that costs you.
+own components, started by a short entrypoint; see [Scope](#scope) for what that costs you.
+
+The entrypoint also creates the first account from the email and password you type at the deploy
+prompt, because Twenty allows exactly one on a self-hosted instance and has no environment
+variable for it. It does that through Twenty's own sign-up mutation, not by writing rows.
 
 ## What you get by hosting it
 
 - An HTTPS URL for the CRM, with no port forwarding or tunnel to manage.
+- The admin account already created from the credentials you typed, so the URL is yours from the
+  first second rather than the first visitor's.
 - A managed PostgreSQL service holding every record, created and wired by the platform. You never
   type a database URL, and the database is backed up and resized by the platform rather than by
   this template.
@@ -38,8 +44,8 @@ own components, started by a 60-line entrypoint; see [Scope](#scope) for what th
 
 ## What you need before deploying
 
-- Nothing. The template declares no variables: Twenty runs its own sign-up screen on first visit,
-  where you create the first user and the workspace.
+- An email address and a password for the admin account. They are the deploy form's only two
+  fields, and they are what you sign in with; the deploy creates that account for you.
 - An SMTP server, if you want Twenty to send invitations and password resets. It is configured
   after deploy, not as a deploy variable.
 
@@ -47,6 +53,8 @@ own components, started by a 60-line entrypoint; see [Scope](#scope) for what th
 
 | Variable | Required | What it does |
 |---|---|---|
+| `ADMIN_EMAIL` | yes | The address you sign in with. Twenty authenticates by email and has no usernames. The deploy creates this account and it is the workspace admin. |
+| `ADMIN_PASSWORD` | yes | Password for that account. Twenty's own rule is 8 to 50 characters and it refuses anything shorter. Not stored anywhere you can read it back, so keep your copy; a lost password is reset from **Settings**, or by mail if you have configured SMTP. |
 | `APP_SECRET` | generated | 64-character key Twenty uses to sign its tokens. You do not set it, and it must stay stable across deploys or every session is invalidated. |
 | `ENCRYPTION_KEY` | generated | 64-character key for at-rest encryption of stored secrets, such as connected-account tokens. Must stay stable across deploys or those become unreadable. |
 | `PG_DATABASE_URL` | platform | Bound to the managed `db` service's `DATABASE_URL`. Not a value you supply or can edit. |
@@ -84,20 +92,22 @@ running against a dead worker), and the instance does not scale to more than one
 `/data/redis` is what survives a restart. It is not backed up by the platform the way the managed
 PostgreSQL is; a lost volume loses in-flight jobs and uploaded attachments, not your records.
 
-**Sign-up is open until you close it.** Twenty runs in single-workspace mode
-(`IS_MULTIWORKSPACE_ENABLED` is off), and the first person to reach the URL creates the workspace
-and becomes its admin. After that, whether anyone else can join is Twenty's own
-**Settings > Security** setting, which is on the admin to set.
+**There is one account, and the deploy creates it.** Twenty runs in single-workspace mode
+(`IS_MULTIWORKSPACE_ENABLED` is off), where its own gate is `isSignUpEnabled = multiworkspace ||
+no workspace exists yet`: the moment a workspace exists the sign-up page answers *"New workspace
+setup is disabled"*. Upstream leaves that first slot to whoever loads the URL first; this template
+fills it with `ADMIN_EMAIL` and `ADMIN_PASSWORD` a second or two after the server starts, so the
+URL is not a race. Everybody else joins by invitation from **Settings > Members**.
 
 **It bills continuously.** `alwaysOn: true` is what keeps the cron jobs and the worker running, but
 it means the service is never idle-stopped and is charged from deploy until you delete it.
 
 ## After deploy
 
-1. Open the service URL **immediately**. Twenty is unauthenticated until someone signs up: **the
-   first visitor becomes the workspace admin**. Do not share the URL before you have claimed it.
-2. Create the account. This is the admin login: there is no default password to change.
-3. In **Settings > Security**, decide whether anyone else may sign up or join by invite link.
+1. Open the service URL and sign in with the email and password you gave at the deploy prompt.
+2. Finish Twenty's onboarding: name the workspace, then your own name. Two screens, once.
+3. Invite your colleagues from **Settings > Members**. The sign-up page is closed to everyone
+   else now that the workspace exists, so an invitation is the way in.
 4. Add a company and a person, or import a CSV from the record list, and the CRM is in use.
 5. A token from **Settings > Playground** gets you the REST API at `/rest/core/...` and the
    GraphQL API at `/graphql` on the same URL.

@@ -58,6 +58,20 @@ services:
       generated:
         APP_SECRET: ${app_secret}
         ENCRYPTION_KEY: ${encryption_key}
+      # The account the entrypoint creates before anyone else can reach the URL. Twenty allows
+      # exactly one on a single-workspace instance (`isSignUpEnabled` is
+      # `IS_MULTIWORKSPACE_ENABLED || workspaceCount === 0`), and it has no environment variable of
+      # its own for it, so without these two the instance belongs to its first visitor and a
+      # deployment anyone else verified is one the operator can never enter.
+      #
+      # Neither carries a `default:` or a `generate:`, for the reason the credentialed templates
+      # here all share: a default would be one password on every deploy in the world, and a
+      # generated one would be written to a store nothing can read back.
+      required:
+        ADMIN_EMAIL:
+          description: Email you sign in with — Twenty authenticates by email, not by username
+        ADMIN_PASSWORD:
+          description: Password for that account, 8 to 50 characters (Twenty's own rule)
 
 meta:
   name: Twenty

@@ -1,0 +1,71 @@
+code: whisper-turbo
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+upstream:
+  repo: baryhuang/whisper-turbo.c
+  # No releases and no git tags upstream, so the commit IS the pin. ./Dockerfile fetches this
+  # exact sha; the two must move together.
+  pinned: 54ad979a08e654929186b374d266a4ced291f1be
+  license: MIT
+
+services:
+  whisper:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/whisper-turbo:1.0.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 8080
+    # The only two routes the server has are GET /health and POST /v1/audio/transcriptions.
+    # /health is answered BEFORE the bearer-token check (src/server/http.c), which is what makes
+    # it usable as the gate: every other path returns 401 until a client authenticates.
+    healthcheck: /health
+    # No volume, and not by omission. The converted INT8 model is baked into the image (see
+    # ./Dockerfile), the server mmaps it read-only, and it writes nothing: uploads are held in
+    # memory for one request and transcripts are returned, never stored. There is no state for
+    # a volume to carry.
+    env:
+      fixed:
+        # The platform's compute machines are configured with 8 shared vCPUs; the server clamps
+        # this to 1-8 regardless. Also set in the image, repeated here so it is visible and
+        # editable from the console rather than buried in a layer.
+        OMP_NUM_THREADS: "8"
+      required:
+        # Neither a `default:` nor a `generate:`, and this is the case the rule exists for: the
+        # operator has to send this exact string back as `Authorization: Bearer <key>` on every
+        # request. A template variable is stored write-only (minted = false, and no endpoint
+        # reads it back), so a generated key would be one NOBODY could ever retrieve, leaving a
+        # running server that refuses its owner. Upstream also refuses to start at all on a
+        # non-loopback bind with this unset, which is exactly the deploy the platform makes.
+        WHISPER_API_KEY:
+          description: "Bearer token clients send as `Authorization: Bearer <key>` on every transcription request. Pick your own strong random string and keep a copy: it cannot be read back after deploy, and the server will not start without it"
+      # Everything below is a performance or timeout knob with a working default. Left optional
+      # so an empty deploy form produces the configuration upstream documents as the safe one.
+      optional:
+        WHISPER_ACTIVATIONS:
+          description: "Set to `int8` for experimental INT8 encoder activations. Roughly halves latency and changes transcripts; upstream's own benchmarks use it but document accuracy limitations. Leave blank for the FP32-activation default"
+        WHISPER_DECODER_ACTIVATIONS:
+          description: "Set to `int8` for experimental INT8 decoder projections and vocabulary head. A separate opt-in from WHISPER_ACTIVATIONS, with the same accuracy caveat"
+        WHISPER_SIMD:
+          description: "Force a CPU kernel path: `scalar`, `avx2` or `avx512`. Detected automatically when blank; set it only to work around a placement whose CPU features differ from what you benchmarked"
+        WHISPER_REQUEST_TIMEOUT:
+          description: "Seconds the server will spend on one transcription before giving up (default 3600). A 5 minute recording on 8 shared vCPUs takes minutes, so lower this only once you have measured your own audio"
+
+meta:
+  name: whisper-turbo.c
+  tagline: CPU-only Whisper large-v3-turbo speech-to-text behind an OpenAI-compatible API
+  category: llm
+  tags: [llm, ai]
+  # Draft: the image and the manifest are verified, but the category above is a poor fit (this
+  # is speech recognition, not an LLM) and the WAV-only input limit is a product call. See the
+  # pull request that added this template.
+  draft: true
+  # amd64 only, and honestly so. `make server` compiles -DWHISPER_X86 against the AVX2/AVX-512
+  # kernels in src/x86; the generic C fallback in the tree is not wired into the server target,
+  # so there is no arm64 build to publish and a box on arm64 is told before it deploys.
+  architectures: [amd64]
+  # Upstream ships no mark: no logo, no icon, no favicon, no product site. `none` rather than a
+  # redrawn one, so consumers fall back to a monogram.
+  logo: none
+  links:
+    upstream: https://github.com/baryhuang/whisper-turbo.c
+    documentation: https://github.com/baryhuang/whisper-turbo.c/blob/main/docs/http-api.md

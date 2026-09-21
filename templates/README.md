@@ -61,10 +61,13 @@ Where the record stands, and what each row rests on:
 | `n8n` | yes | yes | The official `n8nio/n8n:2.36.5` index carries both. Nothing is rebuilt here |
 | `openclaw` | yes | yes | Upstream's index carries both; this image only adds an entrypoint |
 | `pi` | yes | yes | Same base and ttyd asset as the other terminal templates |
+| `whisper-turbo` | yes | **no** | `debian:bookworm-slim` carries both, but upstream's `make server` target compiles `-DWHISPER_X86` against the AVX2/AVX-512/VNNI kernels in `src/x86`. The generic C fallback in the tree is not wired into that target, so there is nothing to build for arm64 and the row says so rather than shipping a broken index |
 
 Every row above was checked by building the template for `linux/arm64` on an arm64 machine and
 starting the resulting image until it answered its own manifest healthcheck. Re-check a row the
-same way rather than trusting it after a base image or upstream version moves.
+same way rather than trusting it after a base image or upstream version moves. The one `no` row is
+the other half of the same rule: an upstream that genuinely builds for one architecture declares
+one, and a user on the other is refused before the deploy creates anything.
 
 ## Logo attribution
 
@@ -83,6 +86,7 @@ because an RGBA file can still be fully opaque.
 | `laya` | `logo.svg` 1.3 KB | yes (vector) | fixed `#2a78d6` | Laya's own mark, `assets/logo-mark.svg` in the original repository, NandhaKishorM/laya. Paths and circles, no `<text>`. The repo also ships `logo-mark-mono.svg` and a dark lockup, but no single file that adapts on its own |
 | `openclaw` | `logo.svg` 4.6 KB | yes (vector) | fixed; includes a near-black `#050810` element | OpenClaw's mark |
 | `9router` | `logo.png` 500x500 | yes (corner alpha 0) | fixed orange `#F34E21` | 9router's own mark, taken from the copy at `i.imgur.com/yjb5HvR.png`. Upstream's repo PNG (`images/9router.png`) is a 2940x2594 screenshot of the app, not this mark, so that copy is the only place the asset is available. Please do not "correct" this row to the repo URL |
+| `whisper-turbo` | `meta.logo: none` | n/a | n/a | Upstream has no mark at all: no logo or icon in the repository, no favicon, and no product site outside GitHub. Declared `none` so consumers fall back to a monogram, rather than drawing one, which the rules below forbid. Revisit if upstream ever publishes one |
 
 Logos are served to the gallery from jsDelivr, pinned to the commit that published the template:
 `https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@<sha>/templates/<code>/logo.svg`. That URL is

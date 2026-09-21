@@ -80,9 +80,14 @@ nothing is written between requests.
 
 3. `GET /healthz` is open (no credential) and reports `model_loaded` and `load_seconds`. **After a
    cold start the checkpoint loads in a background thread and `/decide` answers 503 with
-   `model still loading` until it finishes.** The service is not always-on, so an idle machine
-   stops and the next request pays that wait again. Poll `/healthz` if you are scripting against
-   it.
+   `model still loading` until it finishes.** Measured on this platform: 22.8 s on a first boot and
+   43.2 s after a restart, when the page cache is cold. The service is not always-on, so an idle
+   machine stops and the next request pays that wait again. Poll `/healthz` if you are scripting
+   against it.
+
+   Once warm, and on a state of roughly 125 tokens: 71.5 ms for one question and about 320 ms for
+   three. The first request after a restart cost 1030.7 ms. Latency grows with the length of the
+   state, at roughly 1.1 ms per input token per upstream's own measurements.
 
 Two properties worth knowing before you build on the answers, both of them upstream's own findings
 recorded in `deploy/DEPLOY-CLOUD.md` and `BENCHMARKS.md`: input past roughly 1K tokens is silently

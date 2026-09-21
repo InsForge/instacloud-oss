@@ -2,8 +2,8 @@
 // boundary), the connect route's auth guard + validation, SHA pinning, governance, and stale-push
 // ordering. Docker is mocked here so a build "succeeds" instantly. The connect happy path + GET/DELETE
 // and the deploy-side guarantees (port preservation, removal race) need a REAL compute group, so they
-// live in gitdeploy-engine.test.ts (real Engine over the fake adapters); the on-box e2e covers the
-// real docker build.
+// live in gitdeploy-engine.test.ts (real Engine over the fake adapters); the real BuildKit git-context
+// build + SHA pinning + GIT_AUTH_TOKEN secret are covered by gitdeploy-build.int.test.ts (real Docker).
 import { test, expect, beforeEach, vi } from 'vitest'
 import { createHmac } from 'node:crypto'
 

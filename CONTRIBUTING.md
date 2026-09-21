@@ -122,7 +122,7 @@ container. The engine never talks to Docker for resources except through the ada
   the engine, server, tests, and CLI are provider-agnostic.
 - **New endpoint**: don't, with one sanctioned exception. The surface mirrors the standard `insta`
   CLI (see [COMPATIBILITY.md](COMPATIBILITY.md)); additions belong in the shared CLI/platform
-  contract first. The exception is a capability the CLOUD architecturally cannot offer but a single
+  contract first. The exception is a capability the cloud architecturally cannot offer but a single
   self-hosted node genuinely can: such a self-hosted-only endpoint is allowed when it is recorded as a
   divergence in COMPATIBILITY.md and carries a maintainer sign-off on the PR. The native git
   push-to-deploy (`/projects/:id/services/:sid/git`, `/webhooks/git/:id`) is the first case: the

@@ -72,7 +72,9 @@ describe('verifySignature', () => {
 
 describe('pushRef', () => {
   it('extracts branch + sha + commit time from a push to a branch', () => {
-    expect(pushRef('push', { ref: 'refs/heads/main', after: 'a'.repeat(40), head_commit: { timestamp: '2026-01-02T03:04:05Z' } }))
+    // Explicit receipt time well after the fixture, so the clamp is a no-op regardless of the wall clock.
+    const now = Date.parse('2030-01-01T00:00:00Z')
+    expect(pushRef('push', { ref: 'refs/heads/main', after: 'a'.repeat(40), head_commit: { timestamp: '2026-01-02T03:04:05Z' } }, now))
       .toEqual({ branch: 'main', sha: 'a'.repeat(40), ts: Date.parse('2026-01-02T03:04:05Z') })
   })
   it('falls back to receipt time when the payload has no usable commit timestamp', () => {

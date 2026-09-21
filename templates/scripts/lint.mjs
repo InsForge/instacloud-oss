@@ -163,6 +163,13 @@ for (const dir of dirs) {
     }
     if (svc.build && !existsSync(join(root, dir, svc.build.replace(/^\.\//, "")))) err(dir, `${name}: build file ${svc.build} not found`);
     if (svc.type === "web" && !svc.healthcheck) err(dir, `${name}: web service needs healthcheck`);
+    // A worker is portless (insta-platform#490): the platform runs it as its own port-0 service, so
+    // nothing is routed to it and nothing probes it. The server refuses these three shapes; say so here.
+    if (svc.type === "worker") {
+      if (svc.port !== undefined) err(dir, `${name}: a worker has no routed port, remove port (or declare type: web to serve HTTP)`);
+      if (svc.healthcheck !== undefined) err(dir, `${name}: a worker has no HTTP endpoint to probe, remove healthcheck (its health is the machine's state)`);
+      if (svc.alwaysOn === false) err(dir, `${name}: a worker cannot scale to zero, nothing is routed to it so nothing would wake it: remove alwaysOn or set it true`);
+    }
     // Same message the platform uses. Catches the shape only: a misspelled key is silent on both sides.
     if (svc.alwaysOn !== undefined && typeof svc.alwaysOn !== "boolean") {
       err(dir, `${name}: alwaysOn must be a boolean`);

@@ -12,8 +12,9 @@ it returns an answer per question in a single forward pass: `choice` picks one o
 `score` returns an expected value over an ordered scale, `noul` returns a yes/no probability. There
 is no text generation, so there is nothing to parse and no format to repair.
 
-Jev is TypeSafe AI's proprietary decision model; Laya reproduces the same typed-decision
-interface with an open Apache-2.0 model and is not affiliated with or endorsed by TypeSafe.
+Jev is TypeSafe AI's proprietary decision model; Laya offers the same three typed-decision
+primitives (yes/no, choice, score) with an open Apache-2.0 model. It is not API-compatible
+with Jev's wire format, and is not affiliated with or endorsed by TypeSafe.
 
 This template is the repository's own `deploy/app.py` behind an HTTPS face, not an API written
 here. The `/decide` contract, the question types and the background checkpoint load are all

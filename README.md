@@ -1,19 +1,48 @@
-# InstaCloud OSS
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/dark.svg">
+    <img alt="InstaCloud OSS" src="docs/logo/light.svg" width="340">
+  </picture>
+</p>
 
-The open-source InstaCloud runtime: one daemon over your Docker that answers the same API the
-hosted platform answers. Serverless on a single machine, branches that fork the disk, and the same
-`insta` CLI, MCP server and agent skills on both sides.
+<p align="center">
+  The open-source InstaCloud runtime: one daemon over your Docker that answers the same API
+  the hosted platform answers. Serverless on a single machine, branches that fork the disk, and
+  the same <code>insta</code> CLI, MCP server and agent skills on both sides.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache 2.0"></a>
+  <a href="https://github.com/InsForge/instacloud-oss/releases"><img src="https://img.shields.io/github/v/release/InsForge/instacloud-oss?color=blue&label=release" alt="Latest release"></a>
+  <a href="https://github.com/InsForge/instacloud-oss/actions/workflows/ci.yml"><img src="https://github.com/InsForge/instacloud-oss/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://discord.com/invite/MPxwj5xVvW"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+</p>
+
+<p align="center">
+  <a href="#install-on-a-vps">Install on a VPS</a> &middot;
+  <a href="#run-on-your-laptop">Run on your laptop</a> &middot;
+  <a href="https://github.com/InsForge/instacloud-cli">insta CLI</a> &middot;
+  <a href="https://instacloud.com">Hosted InstaCloud</a> &middot;
+  <a href="https://discord.com/invite/MPxwj5xVvW">Discord</a>
+</p>
+
+<p align="center">
+  <img alt="The InstaCloud OSS dashboard, showing a live project" src="docs/img/dashboard-services.png" width="820">
+</p>
 
 ```
 project = a Postgres database + an S3 bucket + your app containers
 branch  = a disposable, fully isolated clone of all three
 ```
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+## Features
 
-[Install on a VPS](#install-on-a-vps) · [Run on your laptop](#run-on-your-laptop) ·
-[insta CLI](https://github.com/InsForge/instacloud-cli) · [Hosted InstaCloud](https://instacloud.com) ·
-[Discord](https://discord.com/invite/MPxwj5xVvW)
+- **Branches are forks of the disk.** `insta branch create` reflink-copies the Postgres data directory and every compute volume, copies the bucket, and redeploys the apps on their own URLs, so each branch is a fully isolated clone in about a second.
+- **Serverless on a single machine.** Services scale to zero and wake on the first request in about two seconds; `main` stays always-on by default, other branches opt in.
+- **The same API, CLI and skills as the cloud.** One daemon answers the hosted platform's API, so the `insta` CLI, agent skills and dashboard behave identically self-hosted and hosted.
+- **A project is Postgres + S3 + your containers.** The daemon provisions the database, an object-storage bucket and your app containers, and wires their credentials into your environment.
+- **Built for coding agents.** Per-branch sandboxes, opt-in approval gates on any action, and a full audit trail (`insta events`), so an agent can deploy and verify on its own branch and you keep the veto.
+- **One-command templates.** Deploy an app from the bundled catalog with `insta template deploy <code>`, served from this box with no internet access.
 
 ## Install on a VPS
 
@@ -67,7 +96,7 @@ Then, from your own machine:
    password.
 
 The installer installs the newest release. Re-run the same command to upgrade, or pin a release
-with `curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh -s -- --version v0.1.0`.
+with `curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh -s -- --version v0.2.0`.
 
 With no `--domain` the installer uses the public IP of the box as an sslip.io name, so URLs work
 immediately. Apps land on `https://<group>-<project>-<branch>.<domain>` and databases on
@@ -202,8 +231,6 @@ values: read those with `insta secrets --print`, or a database's through Connect
 shows the connect-agent panel with this box's CLI setup. Gated actions from the UI go through the
 same 202 and approve flow as the CLI.
 
-![The Service page, showing a live project](docs/img/dashboard-services.png)
-
 Locally: `npm run build:ui` once, then open http://127.0.0.1:8080. UI development:
 `cd ui && npm run dev` (Vite on :5173, proxying API calls to the daemon).
 
@@ -280,6 +307,12 @@ To remove only the project containers there, filter by project so the stack itse
 ```bash
 docker ps -aq --filter name=io-<project>- | xargs docker rm -f
 ```
+
+## Security
+
+Please do not open a public issue for a security vulnerability. Report it privately by email to
+[info@insforge.dev](mailto:info@insforge.dev) and we will respond as quickly as we can.
+[SECURITY.md](SECURITY.md) has the details and what to include.
 
 ## Contributing
 

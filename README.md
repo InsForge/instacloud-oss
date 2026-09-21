@@ -5,6 +5,8 @@
   </picture>
 </p>
 
+<h1 align="center">InstaCloud OSS</h1>
+
 <p align="center">
   The open-source InstaCloud runtime: one daemon over your Docker that answers the same API
   the hosted platform answers. Serverless on a single machine, branches that fork the disk, and
@@ -37,11 +39,11 @@ branch  = a disposable, fully isolated clone of all three
 
 ## Features
 
-- **Branches are forks of the disk.** `insta branch create` reflink-copies the Postgres data directory and every compute volume, copies the bucket, and redeploys the apps on their own URLs, so each branch is a fully isolated clone in about a second.
+- **Branches are forks of the disk.** `insta branch create` reflink-copies the Postgres data directory and every compute volume, copies the bucket, and redeploys the apps on their own URLs. A sleeping database on a reflink-capable filesystem forks in about a second; an awake or non-reflink source is streamed with `pg_basebackup` and scales with its size.
 - **Serverless on a single machine.** Services scale to zero and wake on the first request in about two seconds; `main` stays always-on by default, other branches opt in.
-- **The same API, CLI and skills as the cloud.** One daemon answers the hosted platform's API, so the `insta` CLI, agent skills and dashboard behave identically self-hosted and hosted.
+- **The same command and API surface as the cloud.** One daemon answers the hosted platform's API, so the `insta` CLI, agent skills and dashboard work the same way self-hosted, with documented differences for the cloud-only operations (billing, scaling, domain purchase, GitHub deploys) that answer `501` with guidance.
 - **A project is Postgres + S3 + your containers.** The daemon provisions the database, an object-storage bucket and your app containers, and wires their credentials into your environment.
-- **Built for coding agents.** Per-branch sandboxes, opt-in approval gates on any action, and a full audit trail (`insta events`), so an agent can deploy and verify on its own branch and you keep the veto.
+- **Built for coding agents.** Per-branch sandboxes, opt-in approval gates on sensitive actions, and a full audit trail (`insta events`), so an agent can deploy and verify on its own branch and you keep the veto.
 - **One-command templates.** Deploy an app from the bundled catalog with `insta template deploy <code>`, served from this box with no internet access.
 
 ## Install on a VPS

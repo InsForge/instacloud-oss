@@ -2,10 +2,7 @@
 
 Self-hosted typed-decision API over a 421M encoder.
 
-> **Draft.** It stays out of the catalog while two calls are pending: whether an inference API
-> belongs in the `llm` category at all (Laya generates no text, it is an encoder that returns
-> probabilities), and whether the image should also carry the `multilingual` checkpoint. See the
-> pull request that added it.
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/laya)
 
 ## Overview
 

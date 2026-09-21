@@ -100,7 +100,7 @@ test('GET /templates lists the bundled non-draft codes with every list field typ
   expect(r.headers['cache-control']).toBe('public, max-age=300')
   const { templates, hostArchitecture } = r.json()
   // openclaw declares meta.draft, so it is not in the listing.
-  expect(templates.map((t: { code: string }) => t.code)).toEqual(['9router', 'claude-code', 'codex', 'dsh', 'hermes', 'n8n', 'pi'])
+  expect(templates.map((t: { code: string }) => t.code)).toEqual(['9router', 'claude-code', 'codex', 'dsh', 'hermes', 'laya', 'n8n', 'pi'])
   const n8n = templates.find((t: { code: string }) => t.code === 'n8n')
   expect(n8n).toMatchObject({
     version: '1.3.2', name: 'n8n', category: 'automation', tags: ['automation', 'ai'],

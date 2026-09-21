@@ -261,6 +261,85 @@ export function revokeToken(s: State, id: string): boolean {
   return true
 }
 
+// ---- device authorization (RFC 8628, `insta login --device`) ----
+
+/** The human-typed user code alphabet: no 0/O/1/I/L, so a code read off one screen and typed on
+ *  another is unambiguous. */
+const USER_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+export const DEVICE_CODE_TTL_SEC = 15 * 60
+export const DEVICE_POLL_INTERVAL_SEC = 5
+
+type DeviceRecord = { userCode: string; status: 'pending' | 'approved' | 'denied'; token: string | null; expiresAt: number }
+export type DeviceStart = { deviceCode: string; userCode: string; expiresIn: number; interval: number }
+export type DevicePoll = { status: 'approved'; token: string } | { status: 'pending' | 'denied' | 'expired' | 'unknown' }
+export type DeviceApprove = 'ok' | 'not_found' | 'expired' | 'already'
+
+/** In-memory pending codes for the device-authorization flow. Single-node and short-lived (15 min),
+ *  so it lives in memory like SignInLimiter: a daemon restart just means the user runs `insta login`
+ *  again. Codes are one-time, a successful poll consumes the record, and the plaintext credential the
+ *  console mints on approval sits here only until the CLI's next poll collects it. */
+export class DeviceCodeStore {
+  private byDevice = new Map<string, DeviceRecord>()
+  private byUser = new Map<string, string>()
+
+  /** Fold the console's grouped, lower/upper input (e.g. "abcd-efgh") to the stored key form. */
+  private normalize(userCode: string): string { return userCode.toUpperCase().replace(/[^A-Z0-9]/g, '') }
+
+  private gc(): void {
+    const now = clock.now()
+    for (const [dc, r] of this.byDevice) if (r.expiresAt <= now) { this.byDevice.delete(dc); this.byUser.delete(r.userCode) }
+  }
+
+  private consume(deviceCode: string, rec: DeviceRecord): void { this.byDevice.delete(deviceCode); this.byUser.delete(rec.userCode) }
+
+  /** Issue a fresh pending pair. The device code is opaque (the CLI holds it); the user code is the
+   *  short one the human reads out and approves in the console. */
+  start(): DeviceStart {
+    this.gc()
+    const deviceCode = randomAlpha(40, SESSION_ALPHABET)
+    let userCode = randomAlpha(8, USER_CODE_ALPHABET)
+    while (this.byUser.has(userCode)) userCode = randomAlpha(8, USER_CODE_ALPHABET)
+    this.byDevice.set(deviceCode, { userCode, status: 'pending', token: null, expiresAt: clock.now() + DEVICE_CODE_TTL_SEC * 1000 })
+    this.byUser.set(userCode, deviceCode)
+    return { deviceCode, userCode: `${userCode.slice(0, 4)}-${userCode.slice(4)}`, expiresIn: DEVICE_CODE_TTL_SEC, interval: DEVICE_POLL_INTERVAL_SEC }
+  }
+
+  /** The console (an authenticated admin) approves a user code. `issueToken` is called only for a
+   *  live, pending code, so a bad or spent code never mints a credential. */
+  approve(userCode: string, issueToken: () => string): DeviceApprove {
+    this.gc()
+    const dc = this.byUser.get(this.normalize(userCode))
+    const rec = dc ? this.byDevice.get(dc) : undefined
+    if (!rec) return 'not_found'
+    if (rec.expiresAt <= clock.now()) return 'expired'
+    if (rec.status !== 'pending') return 'already'
+    rec.status = 'approved'
+    rec.token = issueToken()
+    return 'ok'
+  }
+
+  /** The console denies a code; the CLI's next poll then stops with access_denied. */
+  deny(userCode: string): boolean {
+    this.gc()
+    const dc = this.byUser.get(this.normalize(userCode))
+    const rec = dc ? this.byDevice.get(dc) : undefined
+    if (!rec || rec.status !== 'pending') return false
+    rec.status = 'denied'
+    return true
+  }
+
+  /** The CLI polls with its device code. An approved or terminal poll consumes the record. */
+  poll(deviceCode: string): DevicePoll {
+    this.gc()
+    const rec = this.byDevice.get(deviceCode)
+    if (!rec) return { status: 'unknown' }
+    if (rec.expiresAt <= clock.now()) { this.consume(deviceCode, rec); return { status: 'expired' } }
+    if (rec.status === 'approved' && rec.token) { const token = rec.token; this.consume(deviceCode, rec); return { status: 'approved', token } }
+    if (rec.status === 'denied') { this.consume(deviceCode, rec); return { status: 'denied' } }
+    return { status: 'pending' }
+  }
+}
+
 // ---- signed cookie (Better Auth's format: `<token>.<base64 hmac-sha256>`, URL-encoded) ----
 
 const hmacB64 = (secret: string, token: string): string => createHmac('sha256', secret).update(token).digest('base64')

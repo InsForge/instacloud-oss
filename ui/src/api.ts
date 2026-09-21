@@ -308,6 +308,10 @@ export const api = {
   createToken: (b: { name: string; expiresInDays?: number }) =>
     call<{ token: string; record: ApiToken }>('POST', '/tokens', b),
   revokeToken: (id: string) => call<{ ok: boolean }>('DELETE', `/tokens/${encodeURIComponent(id)}`),
+  /** The device-login approval the /device page posts: the signed-in admin turns a CLI's user code
+   *  into an `insta_` key. Gated (not under /api/auth/), so it carries the session like any write. */
+  approveDevice: (userCode: string) => call<{ ok: boolean }>('POST', '/device/approve', { user_code: userCode }),
+  denyDevice: (userCode: string) => call<{ ok: boolean }>('POST', '/device/deny', { user_code: userCode }),
 
   // Health, wake, always-on, limits (WP3).
   runtimeHealth: async (p: string, branch: string) =>

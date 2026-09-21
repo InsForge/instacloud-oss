@@ -22,7 +22,9 @@ own components, started by a short entrypoint; see [Scope](#scope) for what that
 
 The entrypoint also creates the first account from the email and password you type at the deploy
 prompt, because Twenty allows exactly one on a self-hosted instance and has no environment
-variable for it. It does that through Twenty's own sign-up mutation, not by writing rows.
+variable for it. It does that through Twenty's own sign-up mutations, not by writing rows: the
+same three calls upstream's welcome page makes, ending with `activateWorkspace`, so the workspace
+is built and ready before the URL is handed to you rather than half-made until someone signs in.
 
 ## What you get by hosting it
 

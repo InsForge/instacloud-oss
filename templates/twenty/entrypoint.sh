@@ -91,14 +91,19 @@ server_pid=$!
 # URL first. ADMIN_EMAIL and ADMIN_PASSWORD take that slot at deploy time instead. See
 # seed-admin.mjs, which posts upstream's own public sign-up mutation.
 #
-# Only on a database with no workspace yet, which is both the idempotence guard and the thing that
-# keeps a restart from touching an account whose password the operator has since changed. The
-# window between the server listening and this returning is a second or two on a URL nobody has
-# been given yet; it cannot be closed from here, because the mutation needs the server up and the
-# server being up is what opens the port.
+# Only until there is an ACTIVE workspace, which is both the idempotence guard and the thing that
+# keeps a restart from touching an account whose password the operator has since changed. ACTIVE
+# rather than "exists" because a workspace row is written before it is usable: a boot that created
+# one and then died leaves an instance that would otherwise finish building itself, and write its
+# example records, whenever a stranger first opened the URL. seed-admin.mjs picks that up instead
+# of making a second workspace. The window between the server listening and this returning is a
+# few seconds on a URL nobody has been given yet; it cannot be closed from here, because the
+# mutations need the server up and the server being up is what opens the port.
 seed_admin() {
-  if [ "$(psql -tAc 'SELECT count(*) FROM core.workspace' "${PG_DATABASE_URL}")" != 0 ]; then
-    echo "entrypoint: a workspace already exists, leaving its admin account alone"
+  if [ "$(psql -tAc \
+        "SELECT count(*) FROM core.workspace WHERE \"activationStatus\" = 'ACTIVE'" \
+        "${PG_DATABASE_URL}")" != 0 ]; then
+    echo "entrypoint: an active workspace already exists, leaving its admin account alone"
     return
   fi
   if ! node /insta-seed-admin.mjs; then

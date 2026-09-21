@@ -54,7 +54,7 @@ services:
 
 meta:
   name: Laya
-  tagline: Typed yes/no, choice and score decisions with probabilities, sub-second on plain CPU
+  tagline: Open-source Jev alternative — typed yes/no, choice and score decisions with probabilities on plain CPU
   category: llm
   tags: [llm, ai]
   # amd64 only, declared rather than hoped for. The image installs CPU torch and bakes the

@@ -3,9 +3,11 @@
 CPU-only Whisper large-v3-turbo speech-to-text behind an OpenAI-compatible API.
 
 > **Draft.** The image builds, the deploy is green and the API has been verified end to end. It
-> stays out of the catalog while two product calls are open: `meta.category` is `llm`, which is
-> wrong for a speech recognition model and there is no better category yet, and the server accepts
-> only 16 kHz mono 16-bit WAV, so most people's audio needs converting before it will be accepted.
+> stays out of the catalog while three calls are open: this ships upstream's *experimental* INT8
+> activations on by default because the FP32 default cannot answer inside the edge's 60 second
+> limit (see [Why INT8 is on by default](#why-int8-is-on-by-default)), `meta.category` is `llm`,
+> which is wrong for a speech recognition model and there is no better category yet, and the
+> server accepts only 16 kHz mono 16-bit WAV, so most people's audio needs converting first.
 
 ## Overview
 
@@ -50,8 +52,8 @@ own `Dockerfile.cloud`. See [Why the model is in the image](#why-the-model-is-in
 |---|---|---|
 | `WHISPER_API_KEY` | yes | The bearer token every request must carry. You choose the value; there is no default and nothing is generated for you, because you need to be able to send it back. Upstream refuses to start on a non-loopback bind without it |
 | `OMP_NUM_THREADS` | fixed, `8` | Inference threads. Matches the 8 shared vCPUs a compute machine is configured with; the server clamps it to 1 to 8 |
-| `WHISPER_ACTIVATIONS` | no | `int8` enables experimental INT8 encoder activations. Substantially faster, and upstream documents accuracy limitations. Blank means the FP32-activation default |
-| `WHISPER_DECODER_ACTIVATIONS` | no | `int8` enables experimental INT8 decoder projections and vocabulary head. A separate opt-in, same caveat |
+| `WHISPER_ACTIVATIONS` | fixed, `int8` | INT8 encoder activations. See [Why INT8 is on by default](#why-int8-is-on-by-default); clearing it makes transcription time out |
+| `WHISPER_DECODER_ACTIVATIONS` | fixed, `int8` | INT8 decoder projections and vocabulary head. Same reason, same section |
 | `WHISPER_SIMD` | no | Pin the kernel path to `scalar`, `avx2` or `avx512`. Detected automatically when blank |
 | `WHISPER_REQUEST_TIMEOUT` | no | Seconds allowed for one transcription before the server gives up. Default 3600 |
 
@@ -84,7 +86,30 @@ concurrent request with `429`; queue on the client side if you need throughput.
 
 Expect the first request after a start to be slower than later ones. The model is mmapped, so
 the server is listening immediately but the 808 MiB of weights page in from disk during that
-first transcription.
+first transcription. Measured with the 11 second JFK sample: 15 seconds on the first request
+after a restart, 9.5 seconds warm.
+
+There are **no CORS headers**. A cross-origin preflight is answered `401` with no
+`Access-Control-Allow-Origin`, so browser JavaScript cannot call this API directly. Call it from
+your own backend, or put a proxy in front of it.
+
+## Why INT8 is on by default
+
+`WHISPER_ACTIVATIONS` and `WHISPER_DECODER_ACTIVATIONS` are `int8` in the manifest, and that is
+not a tuning preference. The edge in front of a compute service cuts a request off at 60 seconds,
+and upstream's documented-safe FP32-activation default does not finish an 11 second clip inside
+that. Measured on this platform, same machine, same audio:
+
+| Activations | Result |
+|---|---|
+| FP32 (upstream default) | more than 118 seconds, never returned, edge `502` at 60 seconds |
+| INT8 (what this ships) | 15.2 seconds cold, 9.5 seconds warm, `200` with the correct transcript |
+
+Upstream marks INT8 activations experimental and documents accuracy limitations, and its own
+published benchmarks are measured with both of them enabled. The machines this lands on carry
+AVX-512 VNNI, which is the kernel path that produces the difference. If you would rather have
+FP32 and drive the API from a client that tolerates a long request, clear both variables on the
+service after deploy; be aware that the public URL will then time out.
 
 ## Why the model is in the image
 

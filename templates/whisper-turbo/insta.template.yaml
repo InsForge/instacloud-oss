@@ -29,6 +29,24 @@ services:
         # this to 1-8 regardless. Also set in the image, repeated here so it is visible and
         # editable from the console rather than buried in a layer.
         OMP_NUM_THREADS: "8"
+        # INT8 activations, on by default, and this is NOT a performance preference: it is what
+        # makes the template work at all through its own URL. The edge in front of a compute
+        # service cuts a request off at 60 seconds. Measured on this platform with the canonical
+        # 11-second JFK sample, which pads to one full 30-second encoder window:
+        #
+        #   upstream default (FP32 activations)  >118 s, never returned, edge 502 at 60 s
+        #   these two set to int8                 15.2 s cold, 9.5 s warm, HTTP 200
+        #
+        # So the documented-safe default produces a service that 502s on every transcription it
+        # is asked to do, and no client-side change reaches that. Upstream marks these
+        # experimental and documents accuracy limitations, and its own published benchmarks are
+        # measured with both of them on. The machines this lands on carry AVX-512 VNNI, which is
+        # the path that makes the difference.
+        #
+        # Both are ordinary variables on the service: an operator who would rather have FP32 and
+        # drive the API from something that tolerates a long request can clear them after deploy.
+        WHISPER_ACTIVATIONS: int8
+        WHISPER_DECODER_ACTIVATIONS: int8
       required:
         # Neither a `default:` nor a `generate:`, and this is the case the rule exists for: the
         # operator has to send this exact string back as `Authorization: Bearer <key>` on every
@@ -41,10 +59,6 @@ services:
       # Everything below is a performance or timeout knob with a working default. Left optional
       # so an empty deploy form produces the configuration upstream documents as the safe one.
       optional:
-        WHISPER_ACTIVATIONS:
-          description: "Set to `int8` for experimental INT8 encoder activations. Roughly halves latency and changes transcripts; upstream's own benchmarks use it but document accuracy limitations. Leave blank for the FP32-activation default"
-        WHISPER_DECODER_ACTIVATIONS:
-          description: "Set to `int8` for experimental INT8 decoder projections and vocabulary head. A separate opt-in from WHISPER_ACTIVATIONS, with the same accuracy caveat"
         WHISPER_SIMD:
           description: "Force a CPU kernel path: `scalar`, `avx2` or `avx512`. Detected automatically when blank; set it only to work around a placement whose CPU features differ from what you benchmarked"
         WHISPER_REQUEST_TIMEOUT:

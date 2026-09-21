@@ -72,6 +72,11 @@ services:
           description: Email you sign in with — Twenty authenticates by email, not by username
         ADMIN_PASSWORD:
           description: Password for that account, 8 to 50 characters (Twenty's own rule)
+      optional:
+        # Twenty refuses to create a workspace without one ("Workspace name is required"), and its
+        # own welcome page asks for it on the screen after the password. Renamed later in
+        # Settings > General, so it is a convenience rather than a decision.
+        WORKSPACE_NAME: Name for the workspace the deploy creates. Defaults to Twenty
 
 meta:
   name: Twenty

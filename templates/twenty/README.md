@@ -55,6 +55,7 @@ variable for it. It does that through Twenty's own sign-up mutation, not by writ
 |---|---|---|
 | `ADMIN_EMAIL` | yes | The address you sign in with. Twenty authenticates by email and has no usernames. The deploy creates this account and it is the workspace admin. |
 | `ADMIN_PASSWORD` | yes | Password for that account. Twenty's own rule is 8 to 50 characters and it refuses anything shorter. Not stored anywhere you can read it back, so keep your copy; a lost password is reset from **Settings**, or by mail if you have configured SMTP. |
+| `WORKSPACE_NAME` | no | Name of the workspace, `Twenty` if you leave it. Twenty will not create one without a name, which is why it is here rather than in the app's onboarding; rename it any time in **Settings > General**. |
 | `APP_SECRET` | generated | 64-character key Twenty uses to sign its tokens. You do not set it, and it must stay stable across deploys or every session is invalidated. |
 | `ENCRYPTION_KEY` | generated | 64-character key for at-rest encryption of stored secrets, such as connected-account tokens. Must stay stable across deploys or those become unreadable. |
 | `PG_DATABASE_URL` | platform | Bound to the managed `db` service's `DATABASE_URL`. Not a value you supply or can edit. |
@@ -105,7 +106,7 @@ it means the service is never idle-stopped and is charged from deploy until you 
 ## After deploy
 
 1. Open the service URL and sign in with the email and password you gave at the deploy prompt.
-2. Finish Twenty's onboarding: name the workspace, then your own name. Two screens, once.
+2. Fill in your own name when Twenty asks. The workspace itself already exists.
 3. Invite your colleagues from **Settings > Members**. The sign-up page is closed to everyone
    else now that the workspace exists, so an invitation is the way in.
 4. Add a company and a person, or import a CSV from the record list, and the CRM is in use.

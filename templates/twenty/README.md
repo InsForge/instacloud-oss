@@ -59,12 +59,18 @@ TLS lane.
 The service is always-on. Twenty registers cron jobs that fire from inside the process, so an idle
 machine would never wake to run them.
 
-**Boot times, measured on this template.** The first deploy takes about 75 seconds from container
-start to a healthy `/healthz`, because upstream's entrypoint creates the schema and runs every
-migration before the server listens. A restart takes about 17 seconds: the image records the
-version setup last ran for on the volume and goes straight to the server when nothing has changed.
-While either is happening, a small listener holds port 3000 and answers 503, which is what stops
-the deploy's port probe from timing out on the first boot.
+**Boot times, measured on this template.** The first deploy takes about 40 seconds from container
+start to a healthy `/healthz`, most of it Twenty creating its schema and running every migration
+before the server can listen. A restart is about the same, minus the migrations: the image records
+the version setup last ran for on the volume and goes straight to the server when nothing has
+changed. While either is happening, a small listener holds port 3000 and answers 503, which is what
+stops the deploy's port probe from timing out.
+
+These numbers move with the machine. The same image measured 105 seconds on a slower run, which
+overran the platform's 90-second health gate and reported one of two services unhealthy on a
+deploy that was in fact fine fifteen seconds later. The entrypoint's job is to keep that distance:
+on an empty database it runs the migrations and nothing else, and it starts the worker and the
+cron registration only after the server answers, so neither competes with it for the machine.
 
 ## Scope
 

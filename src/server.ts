@@ -4,7 +4,7 @@
 // account system. Cloud-only surfaces (billing, usage, tokens, members) return 501.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyServerFactory } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerFactory } from 'fastify'
 import fastifyStatic from '@fastify/static'
 import { registerAuth } from './auth'
 import { loadConfig, type Config } from './config'
@@ -17,8 +17,10 @@ import { isManagedDbType, parseServiceId } from './manageddb'
 import { metricsWindow } from './metrics-history'
 import { GateRefused, TemplateError } from './templates/executor'
 import { ManifestError, MissingTemplateVariablesError } from './templates/manifest'
-import { loadState } from './state'
-import { isGatedAction, type Approval, type AuditEvent, type GatedAction } from './types'
+import { loadState, mutate } from './state'
+import { docker } from './docker'
+import { bindingOut, buildContextUrl, imageTag, newBinding, normalizeRef, parseRepo, pushRef, verifySignature, type GitBindingRecord } from './gitdeploy'
+import { isGatedAction, type Approval, type AuditEvent, type Branch, type GatedAction } from './types'
 
 const LOCAL_ORG = { id: 'local', name: 'local', is_personal: true, role: 'owner' }
 
@@ -64,7 +66,10 @@ export function buildServer(
   const app = Fastify({ logger: false, trustProxy: cfg.trustProxy ? 'loopback' : false, forceCloseConnections: 'idle', ...(opts.serverFactory ? { serverFactory: opts.serverFactory } : {}) })
 
   // Tolerate bodyless POSTs sent as application/json (the CLI does this on approve/deny).
-  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    // Keep the raw JSON string on the request: the git webhook verifies GitHub's HMAC over these
+    // exact bytes, which the parsed object cannot reproduce.
+    ;(req as FastifyRequest & { rawBody?: string }).rawBody = body as string
     const s = (body as string).trim()
     if (s === '') return done(null, undefined)
     try { done(null, JSON.parse(s)) } catch (e) { done(e as Error) }
@@ -1240,6 +1245,102 @@ export function buildServer(
     } catch (e) { return reply.code(404).send({ error: e instanceof Error ? e.message : String(e) }) }
   })
   // ---- end region D ----
+
+  // ---- region G (git push-to-deploy): bind a compute group to a GitHub repo; a push to the tracked
+  // branch hits POST /webhooks/git/<id> (HMAC-verified, OUTSIDE the auth guard) and the daemon builds
+  // the repo with `docker build <git-context>` (BuildKit fetches it, no local clone) and redeploys.
+  // Self-hosted equivalent of the cloud's GitHub App flow (which stays 501): the auth model here is a
+  // per-service Personal Access Token, or a public repo (no token).
+  const findBranch = (projectId: string, name: string): Branch | undefined =>
+    Object.values(loadState().branches).find((br) => br.projectId === projectId && br.name === name)
+  const findBinding = (projectId: string, branchName: string, group: string): GitBindingRecord | undefined =>
+    Object.values(loadState().gitBindings ?? {}).find((r) => r.projectId === projectId && r.branchName === branchName && r.group === group)
+  const gitTarget = (req: FastifyRequest): { id: string; group: string; branch: string } => {
+    const { id, sid } = req.params as { id: string; sid: string }
+    const q = (req.query ?? {}) as { branch?: string }
+    return { id, group: sid.startsWith('cp-') ? sid.slice(3) : sid, branch: typeof q.branch === 'string' && q.branch ? q.branch : 'main' }
+  }
+
+  /** Build the bound repo into an image and redeploy the group. Emits events (visible in `insta
+   *  events`) and NEVER throws: the webhook runs it detached so GitHub's 10 s budget is met. */
+  const runGitDeploy = async (rec: GitBindingRecord, sha?: string): Promise<void> => {
+    const tag = imageTag(rec.binding.id, sha)
+    engine.emit(rec.projectId, rec.branchName, 'resource', 'git.build', { repo: `${rec.binding.owner}/${rec.binding.repo}`, ref: rec.binding.ref, group: rec.group, sha: sha ?? null })
+    try {
+      await docker(['build', '--pull', '-t', tag, buildContextUrl(rec.binding)], { mergeStderr: true })
+      await engine.deploy(rec.projectId, rec.branchName, { image: tag, group: rec.group })
+      if (sha) mutate((s) => { const r = s.gitBindings?.[rec.binding.id]; if (r) r.binding.lastDeployedSha = sha })
+      engine.emit(rec.projectId, rec.branchName, 'resource', 'git.deploy', { group: rec.group, image: tag, sha: sha ?? null })
+    } catch (e) {
+      engine.emit(rec.projectId, rec.branchName, 'resource', 'git.deploy.failed', { group: rec.group, error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
+  app.post('/projects/:id/services/:sid/git', async (req, reply) => {
+    const { id, group, branch: branchName } = gitTarget(req)
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    if (!gated(id, 'deploy', reply)) return reply
+    const branch = findBranch(id, branchName)
+    if (!branch) return reply.code(404).send({ error: `branch ${branchName} not found` })
+    // Attach to an existing compute group so the redeploy reuses its port (deploy the service once
+    // first: insta deploy --image ... --port ... --group ...).
+    if (!branch.apps?.[group]) return reply.code(400).send({ error: `no compute service "${group}" on ${branchName}; deploy it once first, then connect the repo` })
+    const body = (req.body ?? {}) as { repo?: unknown; ref?: unknown; token?: unknown }
+    let owner: string, repoName: string, ref: string
+    try { const p = parseRepo(body.repo); owner = p.owner; repoName = p.repo; ref = normalizeRef(body.ref) }
+    catch (e) { return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) }) }
+    const token = typeof body.token === 'string' ? body.token.trim() : ''
+    const rec: GitBindingRecord = { binding: newBinding(owner, repoName, ref, token, Date.now()), projectId: id, branchId: branch.id, branchName, group }
+    mutate((s) => {
+      s.gitBindings ??= {}
+      for (const [k, v] of Object.entries(s.gitBindings)) if (v.projectId === id && v.branchName === branchName && v.group === group) delete s.gitBindings[k]
+      s.gitBindings[rec.binding.id] = rec
+    })
+    void runGitDeploy(rec)
+    const webhookUrl = `${cfg.apiUrl.replace(/\/+$/, '')}/webhooks/git/${rec.binding.id}`
+    return reply.code(202).send({
+      ok: true, binding: bindingOut(rec),
+      webhook: { url: webhookUrl, secret: rec.binding.webhookSecret, contentType: 'application/json', events: ['push'] },
+      note: `add this webhook to the repo (Settings > Webhooks, content type application/json); a push to ${ref} rebuilds and redeploys. The first build is running now.`,
+    })
+  })
+
+  app.get('/projects/:id/services/:sid/git', async (req, reply) => {
+    const { id, group, branch } = gitTarget(req)
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    const rec = findBinding(id, branch, group)
+    return rec ? { binding: bindingOut(rec) } : reply.code(404).send({ error: 'no repo connected to this service' })
+  })
+
+  app.delete('/projects/:id/services/:sid/git', async (req, reply) => {
+    const { id, group, branch } = gitTarget(req)
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    if (!gated(id, 'deploy', reply)) return reply
+    const rec = findBinding(id, branch, group)
+    if (!rec) return reply.code(404).send({ error: 'no repo connected to this service' })
+    mutate((s) => { if (s.gitBindings) delete s.gitBindings[rec.binding.id] })
+    return { ok: true }
+  })
+
+  // The push webhook: OUTSIDE the auth guard (GitHub cannot present a token), verified by the
+  // per-binding HMAC over the raw body. Answers 202 at once and builds detached (GitHub's 10 s budget).
+  app.post('/webhooks/git/:bindingId', async (req, reply) => {
+    const { bindingId } = req.params as { bindingId: string }
+    const rec = loadState().gitBindings?.[bindingId]
+    if (!rec) return reply.code(404).send({ error: 'unknown webhook' })
+    const raw = (req as FastifyRequest & { rawBody?: string }).rawBody ?? ''
+    if (!verifySignature(rec.binding.webhookSecret, Buffer.from(raw, 'utf8'), req.headers['x-hub-signature-256'])) {
+      return reply.code(401).send({ error: 'signature mismatch' })
+    }
+    const event = req.headers['x-github-event']
+    if (event === 'ping') return { ok: true, pong: true }
+    const push = pushRef(event, req.body)
+    if (!push) return { ok: true, ignored: 'not a push to a branch' }
+    if (push.branch !== rec.binding.ref) return { ok: true, ignored: `push to ${push.branch}, tracking ${rec.binding.ref}` }
+    void runGitDeploy(rec, push.sha)
+    return reply.code(202).send({ ok: true, building: push.sha })
+  })
+  // ---- end region G ----
 
   // ---- local dashboard: serve ui/dist when built (same origin as the API — localhost trust,
   // no CORS, no auth). API routes above always win; unknown non-API GETs fall back to the SPA.

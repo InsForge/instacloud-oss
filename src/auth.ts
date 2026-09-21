@@ -29,6 +29,8 @@ export function isPublicPath(method: string, path: string): boolean {
   if (path === '/healthz') return true
   if (path.startsWith('/api/auth/')) return true
   if (path.startsWith('/auth/')) return true
+  // Git push-to-deploy webhooks authenticate with a per-binding HMAC over the body, not the guard.
+  if (path.startsWith('/webhooks/')) return true
   if (method === 'GET' && (path === '/templates' || path.startsWith('/templates/'))) return true
   if (method === 'GET' && !isApiPath(path)) return true
   return false

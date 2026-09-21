@@ -14,6 +14,7 @@ vi.mock('../src/docker', () => ({
 import { buildServer } from '../src/server'
 import { loadState, mutate } from '../src/state'
 import type { Config } from '../src/config'
+import { docker } from '../src/docker'
 import { newBinding, type GitBindingRecord } from '../src/gitdeploy'
 import { makeEngine, serverConfig } from './fakes'
 
@@ -21,11 +22,24 @@ const EMAIL = 'admin@example.test'
 const PASSWORD = 'hunter2hunter2'
 let cfg: Config
 let app: ReturnType<typeof buildServer>
+const dockerMock = vi.mocked(docker)
 
 beforeEach(() => {
   cfg = serverConfig()
   app = buildServer(makeEngine(cfg), cfg)
+  dockerMock.mockClear()
 })
+
+/** Seed a compute branch straight into state so `doGitDeploy`'s revalidation resolves a live target
+ *  (branch id b1, group web) and the webhook actually reaches the build step. */
+function seedBranch(): void {
+  mutate((s) => {
+    s.branches = {
+      ...(s.branches ?? {}),
+      b1: { id: 'b1', projectId: 'p1', name: 'main', isDefault: true, status: 'ready', network: 'io-p1-main', cloneOf: null, createdAt: Date.now(), apps: { web: { image: 'seed:1', port: 8080, url: 'http://web' } } },
+    }
+  })
+}
 
 type Res = Awaited<ReturnType<typeof app.inject>>
 const send = (method: string, url: string, opts: Record<string, unknown> = {}): Promise<Res> =>
@@ -100,6 +114,37 @@ test('webhook: ping pongs, and a push to another branch is ignored', async () =>
   expect(r.statusCode).toBe(200)
   expect(r.json()).toMatchObject({ ok: true })
   expect((r.json() as { ignored?: string }).ignored).toContain('feature')
+})
+
+test('webhook: the build is pinned to the pushed commit sha, not the branch ref', async () => {
+  seedBranch()
+  const rec = seedBinding() // branchId b1, group web, ref main
+  const sha = 'c'.repeat(40)
+  const { payload, sig } = signed(rec.binding.webhookSecret, { ref: 'refs/heads/main', after: sha })
+  const r = await send('POST', `/webhooks/git/${rec.binding.id}`, {
+    headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': sig }, payload,
+  })
+  expect(r.statusCode).toBe(202)
+  // The build runs detached; wait for it, then assert the git context URL checks out the SHA (so an
+  // image tagged for this commit can never contain a later one), never the mutable "main" ref.
+  await vi.waitFor(() => expect(dockerMock).toHaveBeenCalled())
+  const buildArgs = dockerMock.mock.calls.map((c) => (c[0] as string[])).find((a) => a[0] === 'build')
+  expect(buildArgs).toBeDefined()
+  expect(buildArgs!.some((a) => a.endsWith(`.git#${sha}`))).toBe(true)
+  expect(buildArgs!.some((a) => a.endsWith('.git#main'))).toBe(false)
+})
+
+test('webhook: a push to an untracked branch never triggers a build', async () => {
+  seedBranch()
+  const rec = seedBinding({ ref: 'main' })
+  const other = signed(rec.binding.webhookSecret, { ref: 'refs/heads/feature', after: 'd'.repeat(40) })
+  const r = await send('POST', `/webhooks/git/${rec.binding.id}`, {
+    headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': other.sig }, payload: other.payload,
+  })
+  expect(r.statusCode).toBe(200)
+  // Give any (erroneously) dispatched build a chance to land before asserting it did not.
+  await new Promise((res) => setTimeout(res, 20))
+  expect(dockerMock.mock.calls.some((c) => (c[0] as string[])[0] === 'build')).toBe(false)
 })
 
 test('the binding never leaks its token or webhook secret through what a route echoes', async () => {

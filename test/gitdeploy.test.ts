@@ -25,11 +25,16 @@ describe('normalizeRef', () => {
 })
 
 describe('buildContextUrl + redaction', () => {
-  it('public repo carries no token', () => {
-    expect(buildContextUrl({ owner: 'o', repo: 'r', ref: 'main', token: '' })).toBe('https://github.com/o/r.git#main')
+  it('public repo carries no token, and checks out the fragment it is given', () => {
+    expect(buildContextUrl({ owner: 'o', repo: 'r', token: '' }, 'main')).toBe('https://github.com/o/r.git#main')
+  })
+  it('pins to the pushed commit sha when that is the fragment', () => {
+    // A webhook passes the immutable head sha, not the branch ref, so the built image can never
+    // contain a commit other than the one it is tagged for.
+    expect(buildContextUrl({ owner: 'o', repo: 'r', token: '' }, 'deadbeef0123')).toBe('https://github.com/o/r.git#deadbeef0123')
   })
   it('private repo embeds the token in the DSN-redactable form', () => {
-    const url = buildContextUrl({ owner: 'o', repo: 'r', ref: 'dev', token: 'ghp_SECRET123' })
+    const url = buildContextUrl({ owner: 'o', repo: 'r', token: 'ghp_SECRET123' }, 'dev')
     expect(url).toBe('https://x-access-token:ghp_SECRET123@github.com/o/r.git#dev')
     // the existing docker-arg redactor must strip the token from any logged command
     const redacted = redactDockerArgs(['build', url, '-t', 'img'])

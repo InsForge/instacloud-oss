@@ -1251,52 +1251,91 @@ export function buildServer(
   // the repo with `docker build <git-context>` (BuildKit fetches it, no local clone) and redeploys.
   // Self-hosted equivalent of the cloud's GitHub App flow (which stays 501): the auth model here is a
   // per-service Personal Access Token, or a public repo (no token).
-  const findBranch = (projectId: string, name: string): Branch | undefined =>
-    Object.values(loadState().branches).find((br) => br.projectId === projectId && br.name === name)
-  const findBinding = (projectId: string, branchName: string, group: string): GitBindingRecord | undefined =>
-    Object.values(loadState().gitBindings ?? {}).find((r) => r.projectId === projectId && r.branchName === branchName && r.group === group)
-  const gitTarget = (req: FastifyRequest): { id: string; group: string; branch: string } => {
+  const findBinding = (projectId: string, branchId: string, group: string): GitBindingRecord | undefined =>
+    Object.values(loadState().gitBindings ?? {}).find((r) => r.projectId === projectId && r.branchId === branchId && r.group === group)
+  /** Resolve a service id (bare `cp-web` or branch-qualified `<branchId>:cp-web`) to its branch and
+   *  compute group, using the same convention as every other service route. Null for a bad id, a
+   *  missing branch/service, or a non-compute type. */
+  const gitTarget = (req: FastifyRequest): { id: string; branch: Branch; group: string } | null => {
     const { id, sid } = req.params as { id: string; sid: string }
     const q = (req.query ?? {}) as { branch?: string }
-    return { id, group: sid.startsWith('cp-') ? sid.slice(3) : sid, branch: typeof q.branch === 'string' && q.branch ? q.branch : 'main' }
+    let resolved: { branch: Branch; serviceId: string }
+    try { resolved = engine.resolveSid(id, sid, typeof q.branch === 'string' ? q.branch : undefined) }
+    catch { return null }
+    const parsed = parseServiceId(resolved.serviceId)
+    if (!parsed || parsed.type !== 'compute') return null
+    return { id, branch: resolved.branch, group: parsed.name }
   }
 
-  /** Build the bound repo into an image and redeploy the group. Emits events (visible in `insta
-   *  events`) and NEVER throws: the webhook runs it detached so GitHub's 10 s budget is met. */
-  const runGitDeploy = async (rec: GitBindingRecord, sha?: string): Promise<void> => {
-    const tag = imageTag(rec.binding.id, sha)
-    engine.emit(rec.projectId, rec.branchName, 'resource', 'git.build', { repo: `${rec.binding.owner}/${rec.binding.repo}`, ref: rec.binding.ref, group: rec.group, sha: sha ?? null })
+  // Per-binding build serialization + latest-wins coalescing: an older push must never overwrite a
+  // newer deploy, and concurrent builds for one binding are wasteful. `next` keeps only the most
+  // recent pending push, and `doGitDeploy` runs one build at a time per binding.
+  const gitBuilds = new Map<string, { running: boolean; next: { sha?: string } | null }>()
+
+  /** Build the pushed commit (immutable) and redeploy the group. Re-reads state before AND after the
+   *  build (by stable branch id), so a binding deleted or a branch/service gone mid-build never
+   *  deploys, and a recreated resource with a new id never inherits an old webhook's authority.
+   *  Emits git.* events (visible in `insta events`) and never throws. */
+  const doGitDeploy = async (bindingId: string, sha?: string): Promise<void> => {
+    const resolve = (): { rec: GitBindingRecord; branchName: string } | null => {
+      const st = loadState()
+      const rec = st.gitBindings?.[bindingId]
+      if (!rec) return null
+      const branch = Object.values(st.branches).find((b) => b.id === rec.branchId)
+      if (!branch || !branch.apps?.[rec.group]) return null
+      return { rec, branchName: branch.name }
+    }
+    const before = resolve()
+    if (!before) return
+    const { rec } = before
+    const tag = imageTag(bindingId, sha)
+    engine.emit(rec.projectId, before.branchName, 'resource', 'git.build', { repo: `${rec.binding.owner}/${rec.binding.repo}`, group: rec.group, sha: sha ?? null })
     try {
-      await docker(['build', '--pull', '-t', tag, buildContextUrl(rec.binding)], { mergeStderr: true })
-      await engine.deploy(rec.projectId, rec.branchName, { image: tag, group: rec.group })
-      if (sha) mutate((s) => { const r = s.gitBindings?.[rec.binding.id]; if (r) r.binding.lastDeployedSha = sha })
-      engine.emit(rec.projectId, rec.branchName, 'resource', 'git.deploy', { group: rec.group, image: tag, sha: sha ?? null })
+      // Pin the checkout to the pushed commit SHA (webhook) or the ref (initial connect); redactDockerArgs strips the token.
+      await docker(['build', '--pull', '-t', tag, buildContextUrl(rec.binding, sha ?? rec.binding.ref)], { mergeStderr: true })
+      const after = resolve()
+      if (!after) { engine.emit(rec.projectId, before.branchName, 'resource', 'git.deploy.failed', { group: rec.group, error: 'binding or service removed during build; not deploying' }); return }
+      await engine.deploy(after.rec.projectId, after.branchName, { image: tag, group: after.rec.group })
+      if (sha) mutate((st) => { const r = st.gitBindings?.[bindingId]; if (r) r.binding.lastDeployedSha = sha })
+      engine.emit(after.rec.projectId, after.branchName, 'resource', 'git.deploy', { group: after.rec.group, image: tag, sha: sha ?? null })
     } catch (e) {
-      engine.emit(rec.projectId, rec.branchName, 'resource', 'git.deploy.failed', { group: rec.group, error: e instanceof Error ? e.message : String(e) })
+      engine.emit(rec.projectId, before.branchName, 'resource', 'git.deploy.failed', { group: rec.group, error: e instanceof Error ? e.message : String(e) })
     }
   }
 
+  /** Kick off (or coalesce into) a build for a binding. Detached, so the webhook answers fast. */
+  const runGitDeploy = (bindingId: string, sha?: string): void => {
+    const q = gitBuilds.get(bindingId) ?? { running: false, next: null }
+    gitBuilds.set(bindingId, q)
+    if (q.running) { q.next = { sha }; return } // an in-flight build already covers earlier pushes; keep only the newest
+    q.running = true
+    void (async () => {
+      let cur: { sha?: string } | null = { sha }
+      while (cur) { await doGitDeploy(bindingId, cur.sha); cur = q.next; q.next = null }
+      q.running = false
+    })()
+  }
+
   app.post('/projects/:id/services/:sid/git', async (req, reply) => {
-    const { id, group, branch: branchName } = gitTarget(req)
+    const { id } = req.params as { id: string }
     if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
     if (!gated(id, 'deploy', reply)) return reply
-    const branch = findBranch(id, branchName)
-    if (!branch) return reply.code(404).send({ error: `branch ${branchName} not found` })
-    // Attach to an existing compute group so the redeploy reuses its port (deploy the service once
-    // first: insta deploy --image ... --port ... --group ...).
-    if (!branch.apps?.[group]) return reply.code(400).send({ error: `no compute service "${group}" on ${branchName}; deploy it once first, then connect the repo` })
+    const t = gitTarget(req)
+    if (!t) return reply.code(404).send({ error: 'no such compute service on that branch' })
+    // Attach to an existing compute group so the redeploy reuses its port (deploy it once first).
+    if (!t.branch.apps?.[t.group]) return reply.code(400).send({ error: `no compute service "${t.group}" on ${t.branch.name}; deploy it once first, then connect the repo` })
     const body = (req.body ?? {}) as { repo?: unknown; ref?: unknown; token?: unknown }
     let owner: string, repoName: string, ref: string
     try { const p = parseRepo(body.repo); owner = p.owner; repoName = p.repo; ref = normalizeRef(body.ref) }
     catch (e) { return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) }) }
     const token = typeof body.token === 'string' ? body.token.trim() : ''
-    const rec: GitBindingRecord = { binding: newBinding(owner, repoName, ref, token, Date.now()), projectId: id, branchId: branch.id, branchName, group }
+    const rec: GitBindingRecord = { binding: newBinding(owner, repoName, ref, token, Date.now()), projectId: id, branchId: t.branch.id, branchName: t.branch.name, group: t.group }
     mutate((s) => {
       s.gitBindings ??= {}
-      for (const [k, v] of Object.entries(s.gitBindings)) if (v.projectId === id && v.branchName === branchName && v.group === group) delete s.gitBindings[k]
+      for (const [k, v] of Object.entries(s.gitBindings)) if (v.projectId === id && v.branchId === t.branch.id && v.group === t.group) delete s.gitBindings[k]
       s.gitBindings[rec.binding.id] = rec
     })
-    void runGitDeploy(rec)
+    runGitDeploy(rec.binding.id)
     const webhookUrl = `${cfg.apiUrl.replace(/\/+$/, '')}/webhooks/git/${rec.binding.id}`
     return reply.code(202).send({
       ok: true, binding: bindingOut(rec),
@@ -1306,17 +1345,19 @@ export function buildServer(
   })
 
   app.get('/projects/:id/services/:sid/git', async (req, reply) => {
-    const { id, group, branch } = gitTarget(req)
+    const { id } = req.params as { id: string }
     if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
-    const rec = findBinding(id, branch, group)
+    const t = gitTarget(req)
+    const rec = t ? findBinding(id, t.branch.id, t.group) : undefined
     return rec ? { binding: bindingOut(rec) } : reply.code(404).send({ error: 'no repo connected to this service' })
   })
 
   app.delete('/projects/:id/services/:sid/git', async (req, reply) => {
-    const { id, group, branch } = gitTarget(req)
+    const { id } = req.params as { id: string }
     if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
     if (!gated(id, 'deploy', reply)) return reply
-    const rec = findBinding(id, branch, group)
+    const t = gitTarget(req)
+    const rec = t ? findBinding(id, t.branch.id, t.group) : undefined
     if (!rec) return reply.code(404).send({ error: 'no repo connected to this service' })
     mutate((s) => { if (s.gitBindings) delete s.gitBindings[rec.binding.id] })
     return { ok: true }
@@ -1337,7 +1378,7 @@ export function buildServer(
     const push = pushRef(event, req.body)
     if (!push) return { ok: true, ignored: 'not a push to a branch' }
     if (push.branch !== rec.binding.ref) return { ok: true, ignored: `push to ${push.branch}, tracking ${rec.binding.ref}` }
-    void runGitDeploy(rec, push.sha)
+    runGitDeploy(bindingId, push.sha)
     return reply.code(202).send({ ok: true, building: push.sha })
   })
   // ---- end region G ----

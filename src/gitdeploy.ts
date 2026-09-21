@@ -72,11 +72,12 @@ export function newBinding(owner: string, repo: string, ref: string, token: stri
 }
 
 /** The BuildKit git-context URL. A token is sent as `x-access-token:<token>@` (HTTPS basic auth),
- *  the shape redactDockerArgs strips from logs; a public repo omits it. The `#<ref>` selects the
- *  branch/commit BuildKit checks out. */
-export function buildContextUrl(b: Pick<GitBinding, 'owner' | 'repo' | 'ref' | 'token'>): string {
+ *  the shape redactDockerArgs strips from logs; a public repo omits it. `fragment` is what BuildKit
+ *  checks out: the pushed COMMIT SHA for a webhook (immutable, so an image labelled SHA A can never
+ *  contain SHA B), or the branch ref for the initial connect build. */
+export function buildContextUrl(b: Pick<GitBinding, 'owner' | 'repo' | 'token'>, fragment: string): string {
   const auth = b.token ? `x-access-token:${b.token}@` : ''
-  return `https://${auth}github.com/${b.owner}/${b.repo}.git#${b.ref}`
+  return `https://${auth}github.com/${b.owner}/${b.repo}.git#${fragment}`
 }
 
 /** The image tag a build produces: `io-git-<8 of binding id>-<8 of sha>` (or `-manual` with no sha). */

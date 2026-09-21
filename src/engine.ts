@@ -2239,6 +2239,9 @@ export class Engine {
         mutate((st) => {
           delete st.branches[branch.id].apps[name]
           st.branches[branch.id].bindings = (st.branches[branch.id].bindings ?? []).filter((x) => x.target !== `compute/${name}`)
+          // Drop any git push-to-deploy binding for this compute group: its target is gone, so a
+          // later webhook must not resolve to a same-named service redeployed after this removal.
+          if (st.gitBindings) for (const [k, r] of Object.entries(st.gitBindings)) if (r.projectId === projectId && r.branchId === branch.id && r.group === name) delete st.gitBindings[k]
         })
         this.scheduler.forget([this.serviceKey(branch, sid)])                                        // WP3
       } else {
@@ -2989,7 +2992,12 @@ export class Engine {
       // since round nine; a deliberate `branch delete` owes the same, and `insta branch delete`
       // run again retries exactly this demolition.
       if (t.failed === 0) {
-        mutate((s) => { delete s.branches[branchId] })
+        mutate((s) => {
+          delete s.branches[branchId]
+          // Prune any git push-to-deploy bindings on this branch: their compute target is gone, so
+          // a lingering webhook must not resolve to a recreated branch/service with the same name.
+          if (s.gitBindings) for (const [k, r] of Object.entries(s.gitBindings)) if (r.projectId === projectId && r.branchId === branchId) delete s.gitBindings[k]
+        })
         this.emit(projectId, row.name, 'resource', 'branch.deleted', { teardown: t })
       } else {
         mutate((s) => { if (s.branches[branchId]) s.branches[branchId].status = CLEANUP_FAILED })
@@ -3052,7 +3060,10 @@ export class Engine {
         }
         // ...and the project row outlives a branch row that outlived its teardown, or the branch
         // would point at a project that is gone, which is the orphan this all exists to prevent.
-        if (!kept) mutate((s) => { delete s.projects[projectId] })
+        if (!kept) mutate((s) => {
+          delete s.projects[projectId]
+          if (s.gitBindings) for (const [k, r] of Object.entries(s.gitBindings)) if (r.projectId === projectId) delete s.gitBindings[k]
+        })
         else mutate((s) => { if (s.projects[projectId]) s.projects[projectId].status = CLEANUP_FAILED })
         this.router.invalidate()
         return { teardown: t }

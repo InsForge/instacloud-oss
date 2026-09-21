@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createHmac } from 'node:crypto'
-import { redactDockerArgs } from '../src/docker'
-import { buildContextUrl, imageTag, newBinding, normalizeRef, parseRepo, pushRef, verifySignature } from '../src/gitdeploy'
+import { buildContextUrl, dockerBuildSpec, imageTag, newBinding, normalizeRef, parseRepo, pushRef, verifySignature } from '../src/gitdeploy'
 
 describe('parseRepo', () => {
   it('accepts owner/repo and github URLs, strips .git', () => {
@@ -24,22 +23,29 @@ describe('normalizeRef', () => {
   })
 })
 
-describe('buildContextUrl + redaction', () => {
-  it('public repo carries no token, and checks out the fragment it is given', () => {
-    expect(buildContextUrl({ owner: 'o', repo: 'r', token: '' }, 'main')).toBe('https://github.com/o/r.git#main')
+describe('buildContextUrl', () => {
+  it('carries no credentials and checks out the fragment it is given', () => {
+    expect(buildContextUrl({ owner: 'o', repo: 'r' }, 'main')).toBe('https://github.com/o/r.git#main')
   })
   it('pins to the pushed commit sha when that is the fragment', () => {
     // A webhook passes the immutable head sha, not the branch ref, so the built image can never
     // contain a commit other than the one it is tagged for.
-    expect(buildContextUrl({ owner: 'o', repo: 'r', token: '' }, 'deadbeef0123')).toBe('https://github.com/o/r.git#deadbeef0123')
+    expect(buildContextUrl({ owner: 'o', repo: 'r' }, 'deadbeef0123')).toBe('https://github.com/o/r.git#deadbeef0123')
   })
-  it('private repo embeds the token in the DSN-redactable form', () => {
-    const url = buildContextUrl({ owner: 'o', repo: 'r', token: 'ghp_SECRET123' }, 'dev')
-    expect(url).toBe('https://x-access-token:ghp_SECRET123@github.com/o/r.git#dev')
-    // the existing docker-arg redactor must strip the token from any logged command
-    const redacted = redactDockerArgs(['build', url, '-t', 'img'])
-    expect(redacted).not.toContain('ghp_SECRET123')
-    expect(redacted).toContain('x-access-token:[redacted]@github.com/o/r.git#dev')
+})
+
+describe('dockerBuildSpec', () => {
+  it('a public repo needs no secret and puts nothing sensitive in argv', () => {
+    const spec = dockerBuildSpec({ owner: 'o', repo: 'r', token: '' }, 'img:1', 'main')
+    expect(spec.args).toEqual(['build', '--pull', '-t', 'img:1', 'https://github.com/o/r.git#main'])
+    expect(spec.env).toEqual({ DOCKER_BUILDKIT: '1' })
+  })
+  it('a private repo hands the PAT to BuildKit via the env-secret — never on the command line', () => {
+    const spec = dockerBuildSpec({ owner: 'o', repo: 'r', token: 'ghp_SECRET123' }, 'img:1', 'deadbeef')
+    // The token is in the child ENV, consumed as the GIT_AUTH_TOKEN secret; argv only names the secret.
+    expect(spec.env).toEqual({ DOCKER_BUILDKIT: '1', GIT_AUTH_TOKEN: 'ghp_SECRET123' })
+    expect(spec.args).toEqual(['build', '--pull', '--secret', 'id=GIT_AUTH_TOKEN,env=GIT_AUTH_TOKEN', '-t', 'img:1', 'https://github.com/o/r.git#deadbeef'])
+    expect(spec.args.join(' ')).not.toContain('ghp_SECRET123')
   })
 })
 
@@ -65,8 +71,13 @@ describe('verifySignature', () => {
 })
 
 describe('pushRef', () => {
-  it('extracts branch + sha from a push to a branch', () => {
-    expect(pushRef('push', { ref: 'refs/heads/main', after: 'a'.repeat(40) })).toEqual({ branch: 'main', sha: 'a'.repeat(40) })
+  it('extracts branch + sha + commit time from a push to a branch', () => {
+    expect(pushRef('push', { ref: 'refs/heads/main', after: 'a'.repeat(40), head_commit: { timestamp: '2026-01-02T03:04:05Z' } }))
+      .toEqual({ branch: 'main', sha: 'a'.repeat(40), ts: Date.parse('2026-01-02T03:04:05Z') })
+  })
+  it('falls back to receipt time when the payload has no usable commit timestamp', () => {
+    expect(pushRef('push', { ref: 'refs/heads/main', after: 'a'.repeat(40) }, 1234)).toEqual({ branch: 'main', sha: 'a'.repeat(40), ts: 1234 })
+    expect(pushRef('push', { ref: 'refs/heads/main', after: 'a'.repeat(40), head_commit: { timestamp: 'not-a-date' } }, 1234).ts).toBe(1234)
   })
   it('ignores non-push events, tag pushes, deletes and zero shas', () => {
     expect(pushRef('ping', {})).toBeNull()

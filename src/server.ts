@@ -19,7 +19,7 @@ import { GateRefused, TemplateError } from './templates/executor'
 import { ManifestError, MissingTemplateVariablesError } from './templates/manifest'
 import { loadState, mutate } from './state'
 import { docker } from './docker'
-import { bindingOut, buildContextUrl, imageTag, newBinding, normalizeRef, parseRepo, pushRef, verifySignature, type GitBindingRecord } from './gitdeploy'
+import { bindingOut, dockerBuildSpec, imageTag, newBinding, normalizeRef, parseRepo, pushRef, verifySignature, type GitBindingRecord } from './gitdeploy'
 import { isGatedAction, type Approval, type AuditEvent, type Branch, type GatedAction } from './types'
 
 const LOCAL_ORG = { id: 'local', name: 'local', is_personal: true, role: 'owner' }
@@ -1267,55 +1267,77 @@ export function buildServer(
     return { id, branch: resolved.branch, group: parsed.name }
   }
 
-  // Per-binding build serialization + latest-wins coalescing: an older push must never overwrite a
-  // newer deploy, and concurrent builds for one binding are wasteful. `next` keeps only the most
-  // recent pending push, and `doGitDeploy` runs one build at a time per binding.
-  const gitBuilds = new Map<string, { running: boolean; next: { sha?: string } | null }>()
+  // Per-binding build serialization + NEWEST-COMMIT-wins coalescing: while one build runs, only the
+  // pending job with the newest commit timestamp is kept, and `doGitDeploy` additionally refuses to
+  // deploy a commit that is not strictly newer than the binding's last-deployed one. Together these
+  // mean an out-of-order or redelivered older push can never overwrite a newer deployment, whatever
+  // order GitHub delivers pushes in. A job carries its commit `sha`/`ts`; `webhook` distinguishes a
+  // push (governed, staleness-checked) from the already-authorized initial connect build.
+  type GitJob = { sha?: string; ts?: number; webhook: boolean }
+  const gitBuilds = new Map<string, { running: boolean; next: GitJob | null }>()
 
-  /** Build the pushed commit (immutable) and redeploy the group. Re-reads state before AND after the
-   *  build (by stable branch id), so a binding deleted or a branch/service gone mid-build never
-   *  deploys, and a recreated resource with a new id never inherits an old webhook's authority.
-   *  Emits git.* events (visible in `insta events`) and never throws. */
-  const doGitDeploy = async (bindingId: string, sha?: string): Promise<void> => {
+  /** Build the commit and redeploy the group. Governance and staleness are checked for a webhook
+   *  push (the connect build is already authorized by its route); the build is re-validated under the
+   *  service lock by deployFromGit, so a target removed/renamed mid-build never deploys. Emits git.*
+   *  events (visible in `insta events`) and never throws. */
+  const doGitDeploy = async (bindingId: string, job: GitJob): Promise<void> => {
+    const { sha, ts, webhook } = job
     const st0 = loadState()
     const rec = st0.gitBindings?.[bindingId]
     if (!rec) return
     const branch0 = Object.values(st0.branches).find((b) => b.id === rec.branchId)
     if (!branch0 || !branch0.apps?.[rec.group]) return
     const branchName = branch0.name
-    // A push-triggered deploy is subject to the project's deploy governance policy, exactly like an
-    // interactive `insta deploy`: a denied policy blocks the build, an approval-required policy
-    // records a pending approval and does not deploy. Never bypass the gate because the caller is a
-    // webhook rather than a person.
-    const g = govern.gate(rec.projectId, 'deploy')
-    if (g.decision === 'deny') { engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.blocked', { group: rec.group, reason: 'deploy denied by policy' }); return }
-    if (g.decision === 'approval_required') { engine.emit(rec.projectId, null, 'govern', 'govern.pending', { action: 'deploy', approvalId: g.approvalId, source: 'git', group: rec.group }); return }
+    if (webhook) {
+      // A push auto-deploys only when the project's deploy policy is `allow`. A webhook cannot take
+      // part in an interactive approval, so `approval_required` (and `deny`) hold the push instead of
+      // deploying — recorded as an event; the operator deploys the commit manually or sets the policy
+      // to `allow`. effectivePolicy is a pure read: it never creates a pending approval (which a
+      // webhook could never resume), so there is no lost-work or double-approval hazard.
+      const policy = govern.effectivePolicy(rec.projectId).deploy
+      if (policy !== 'allow') {
+        engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.blocked', { group: rec.group, sha: sha ?? null, reason: policy === 'deny' ? 'deploy denied by policy' : 'push-to-deploy needs an "allow" deploy policy; deploy this commit manually or change the policy' })
+        return
+      }
+      // Reject a redelivered or out-of-order push: the same commit already deployed, or a commit not
+      // strictly newer than the last one deployed.
+      const last = rec.binding
+      if ((sha && last.lastDeployedSha === sha) || (ts !== undefined && last.lastDeployedAt !== undefined && ts < last.lastDeployedAt)) {
+        engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.skipped', { group: rec.group, sha: sha ?? null, reason: 'stale push (already deployed or older than the current deployment)' })
+        return
+      }
+    }
     const tag = imageTag(bindingId, sha)
     engine.emit(rec.projectId, branchName, 'resource', 'git.build', { repo: `${rec.binding.owner}/${rec.binding.repo}`, group: rec.group, sha: sha ?? null })
     try {
-      // Pin the checkout to the pushed commit SHA (webhook) or the ref (initial connect); redactDockerArgs strips the token.
-      await docker(['build', '--pull', '-t', tag, buildContextUrl(rec.binding, sha ?? rec.binding.ref)], { mergeStderr: true })
+      // Pin the checkout to the pushed commit SHA (webhook) or the ref (initial connect). The PAT is
+      // handed to BuildKit as the GIT_AUTH_TOKEN env-secret, never on the command line.
+      const spec = dockerBuildSpec(rec.binding, tag, sha ?? rec.binding.ref)
+      await docker(spec.args, { mergeStderr: true, env: spec.env })
       // deployFromGit re-validates the binding + existing group and preserves its configured port,
       // all under the service lock, so a target removed during the build is not re-materialised and a
       // non-8080 service is not reset to 8080. null => the target is gone; do not deploy.
       const res = await engine.deployFromGit(rec.projectId, rec.branchId, rec.group, bindingId, tag)
-      if (!res) { engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.skipped', { group: rec.group, reason: 'binding or service removed during build' }); return }
-      if (sha) mutate((st) => { const r = st.gitBindings?.[bindingId]; if (r) r.binding.lastDeployedSha = sha })
-      engine.emit(rec.projectId, branchName, 'resource', 'git.deploy', { group: rec.group, image: tag, sha: sha ?? null, port: res.port })
+      if (!res) { engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.skipped', { group: rec.group, sha: sha ?? null, reason: 'binding or service removed during build' }); return }
+      // Record what we deployed AND when: the ordering guard above reads these back.
+      if (webhook && sha) mutate((st) => { const r = st.gitBindings?.[bindingId]; if (r) { r.binding.lastDeployedSha = sha; if (ts !== undefined) r.binding.lastDeployedAt = ts } })
+      engine.emit(rec.projectId, res.branch, 'resource', 'git.deploy', { group: rec.group, image: tag, sha: sha ?? null, port: res.port })
     } catch (e) {
-      engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.failed', { group: rec.group, error: e instanceof Error ? e.message : String(e) })
+      engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.failed', { group: rec.group, sha: sha ?? null, error: e instanceof Error ? e.message : String(e) })
     }
   }
 
   /** Kick off (or coalesce into) a build for a binding. Detached, so the webhook answers fast. */
-  const runGitDeploy = (bindingId: string, sha?: string): void => {
+  const runGitDeploy = (bindingId: string, job: GitJob): void => {
     const q = gitBuilds.get(bindingId) ?? { running: false, next: null }
     gitBuilds.set(bindingId, q)
-    if (q.running) { q.next = { sha }; return } // an in-flight build already covers earlier pushes; keep only the newest
+    // Coalesce by commit time, not arrival order: keep the pending job with the newest ts, so a
+    // delayed older push does not become the one that runs after the current build finishes.
+    if (q.running) { if (!q.next || (job.ts ?? 0) >= (q.next.ts ?? 0)) q.next = job; return }
     q.running = true
     void (async () => {
-      let cur: { sha?: string } | null = { sha }
-      while (cur) { await doGitDeploy(bindingId, cur.sha); cur = q.next; q.next = null }
+      let cur: GitJob | null = job
+      while (cur) { await doGitDeploy(bindingId, cur); cur = q.next; q.next = null }
       q.running = false
       // Drop the idle queue so repeated bind/delete/rebind cannot leak Map entries; the get, the
       // !next check and the delete all run synchronously here, so nothing can re-arm q in between.
@@ -1342,7 +1364,7 @@ export function buildServer(
       for (const [k, v] of Object.entries(s.gitBindings)) if (v.projectId === id && v.branchId === t.branch.id && v.group === t.group) delete s.gitBindings[k]
       s.gitBindings[rec.binding.id] = rec
     })
-    runGitDeploy(rec.binding.id)
+    runGitDeploy(rec.binding.id, { webhook: false }) // the initial build; already authorized by the gate above
     const webhookUrl = `${cfg.apiUrl.replace(/\/+$/, '')}/webhooks/git/${rec.binding.id}`
     return reply.code(202).send({
       ok: true, binding: bindingOut(rec),
@@ -1385,7 +1407,7 @@ export function buildServer(
     const push = pushRef(event, req.body)
     if (!push) return { ok: true, ignored: 'not a push to a branch' }
     if (push.branch !== rec.binding.ref) return { ok: true, ignored: `push to ${push.branch}, tracking ${rec.binding.ref}` }
-    runGitDeploy(bindingId, push.sha)
+    runGitDeploy(bindingId, { sha: push.sha, ts: push.ts, webhook: true })
     return reply.code(202).send({ ok: true, building: push.sha })
   })
   // ---- end region G ----

@@ -1038,22 +1038,27 @@ export class Engine {
    *  port are all re-read INSIDE the same service lock that `removeComputeService` takes, so a build
    *  that finished after its target was removed sees the group gone and returns null instead of
    *  re-creating it, and a service on a non-8080 port is redeployed on that same port. Returns null
-   *  when the branch, the binding, or the group is gone (the caller then does not deploy). */
-  async deployFromGit(projectId: string, branchId: string, group: string, bindingId: string, image: string): Promise<{ deployed: true; port: number } | null> {
+   *  when the branch, the binding, or the group is gone (the caller then does not deploy). The
+   *  returned `branch` is the CURRENT name (read under the lock), so a rename mid-build is reflected
+   *  in the caller's deploy event. */
+  async deployFromGit(projectId: string, branchId: string, group: string, bindingId: string, image: string): Promise<{ deployed: true; port: number; branch: string } | null> {
     const b0 = loadState().branches[branchId]
     if (!b0 || b0.projectId !== projectId) return null
     return this.withOp([this.branchOp(b0), this.serviceKey(b0, `cp-${group}`)], async () => {
       const st = loadState()
       const b = st.branches[branchId]
-      // Re-validated under the lock (the whole point): the branch, the still-live binding, and the
-      // EXISTING app row. If removeComputeService got the key first it has already deleted both, so
-      // a stale webhook cannot re-materialise the group deployLocked would otherwise re-create.
-      if (!b || b.projectId !== projectId || !st.gitBindings?.[bindingId]) return null
+      const bind = st.gitBindings?.[bindingId]
+      // Re-validated under the lock (the whole point): the branch, and a live binding that STILL
+      // points at this exact target. Matching on identity, not mere existence, closes the
+      // rename-then-recreate race — a rename moves binding.group, so a stale build for the old group
+      // no longer matches and does not deploy to a recreated same-named group. If removeComputeService
+      // got the key first it deleted both the binding and the app, so this returns null either way.
+      if (!b || b.projectId !== projectId || !bind || bind.projectId !== projectId || bind.branchId !== branchId || bind.group !== group) return null
       const app = b.apps?.[group]
       if (!app) return null
       const port = app.port // preserve the configured port; deployLocked defaults an omitted port to 8080
       await this.deployLocked(projectId, branchId, group, { image, port })
-      return { deployed: true, port }
+      return { deployed: true, port, branch: b.name }
     })
   }
 

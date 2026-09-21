@@ -6,10 +6,12 @@
 // which needs a multi-tenant app and is left at 501; here a per-service Personal Access Token (or a
 // public repo, no token) is the whole auth model.
 //
-// Token handling: the token rides the build-context URL as `https://x-access-token:<token>@host/...`
-// so the existing redactDockerArgs DSN pattern (src/docker.ts) strips it from every error, log and
-// persisted deployment row. It is stored only as part of the binding in state.json (0600), never
-// echoed by a route.
+// Token handling: the PAT is NEVER placed in the build-context URL or anywhere else in docker's argv
+// (argv is visible in /proc and process listings to any local user, which redaction of our own error
+// strings cannot cover). It is handed to BuildKit as the `GIT_AUTH_TOKEN` build secret, sourced from
+// the child docker process's ENVIRONMENT — BuildKit uses it to authenticate the private git context
+// fetch. It is stored only as part of the binding in state.json (0600), never echoed by a route and
+// never on a command line.
 
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 
@@ -24,6 +26,10 @@ export interface GitBinding {
   webhookSecret: string
   createdAt: string
   lastDeployedSha?: string
+  /** Commit timestamp (ms) of the last commit deployed by a webhook: an out-of-order or redelivered
+   *  push whose commit is not strictly newer than this is skipped, so an older commit can never
+   *  overwrite a newer deployment even when GitHub delivers pushes out of order or twice. */
+  lastDeployedAt?: number
 }
 
 /** A binding as stored in state.json: the repo binding plus the compute target it drives, keyed by
@@ -71,16 +77,23 @@ export function newBinding(owner: string, repo: string, ref: string, token: stri
   return { id: randomUUID(), owner, repo, ref, token, webhookSecret: randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, ''), createdAt: new Date(now).toISOString() }
 }
 
-/** The BuildKit git-context URL. A token is sent as `x-access-token:<token>@` (HTTPS basic auth),
- *  the shape redactDockerArgs strips from logs; a public repo omits it. `fragment` is what BuildKit
- *  checks out: the pushed COMMIT SHA for a webhook (immutable, so an image labelled SHA A can never
- *  contain SHA B), or the branch ref for the initial connect build. */
-export function buildContextUrl(b: Pick<GitBinding, 'owner' | 'repo' | 'token'>, fragment: string): string {
-  // URL-encode the token so a malformed one (a stray '@', ':' or '/') cannot break out of the
-  // userinfo component and defeat URL parsing or the redactor's `x-access-token:<...>@` match. Valid
-  // GitHub PATs are unaffected (they encode to themselves).
-  const auth = b.token ? `x-access-token:${encodeURIComponent(b.token)}@` : ''
-  return `https://${auth}github.com/${b.owner}/${b.repo}.git#${fragment}`
+/** The BuildKit git-context URL — no credentials in it (see the token-handling note at the top).
+ *  `fragment` is what BuildKit checks out: the pushed COMMIT SHA for a webhook (immutable, so an
+ *  image labelled SHA A can never contain SHA B), or the branch ref for the initial connect build. */
+export function buildContextUrl(b: Pick<GitBinding, 'owner' | 'repo'>, fragment: string): string {
+  return `https://github.com/${b.owner}/${b.repo}.git#${fragment}`
+}
+
+/** The full `docker build` invocation for a binding: the argv (which carries NO secret) and the env
+ *  the child docker process runs with. A private repo's PAT rides `GIT_AUTH_TOKEN` in the env, which
+ *  BuildKit consumes as the `id=GIT_AUTH_TOKEN` secret to authenticate the git-context fetch — so the
+ *  credential never appears in argv. DOCKER_BUILDKIT=1 forces the BuildKit builder, required for both
+ *  `--secret` and git-context auth. */
+export function dockerBuildSpec(b: Pick<GitBinding, 'owner' | 'repo' | 'token'>, tag: string, fragment: string): { args: string[]; env: Record<string, string> } {
+  const env: Record<string, string> = { DOCKER_BUILDKIT: '1' }
+  const secret: string[] = []
+  if (b.token) { env.GIT_AUTH_TOKEN = b.token; secret.push('--secret', 'id=GIT_AUTH_TOKEN,env=GIT_AUTH_TOKEN') }
+  return { args: ['build', '--pull', ...secret, '-t', tag, buildContextUrl(b, fragment)], env }
 }
 
 /** The image tag a build produces: `io-git-<8 of binding id>-<8 of sha>` (or `-manual` with no sha). */
@@ -102,13 +115,17 @@ export function verifySignature(secret: string, rawBody: Buffer, header: unknown
   return got.length === expected.length && timingSafeEqual(got, expected)
 }
 
-/** The event + ref + head sha a GitHub push webhook carries, or null when the payload is not a push
- *  to a branch we can act on (a tag push, a delete, a ping, a malformed body). */
-export function pushRef(event: unknown, body: unknown): { branch: string; sha: string } | null {
+/** The event + ref + head sha + commit time a GitHub push webhook carries, or null when the payload
+ *  is not a push to a branch we can act on (a tag push, a delete, a ping, a malformed body). `ts` is
+ *  the head commit's timestamp in ms (used to reject out-of-order / redelivered older pushes); it
+ *  falls back to receipt time only when the payload omits a usable commit timestamp. */
+export function pushRef(event: unknown, body: unknown, now: number = Date.now()): { branch: string; sha: string; ts: number } | null {
   if (event !== 'push') return null
-  const b = (body ?? {}) as { ref?: unknown; after?: unknown; deleted?: unknown }
+  const b = (body ?? {}) as { ref?: unknown; after?: unknown; deleted?: unknown; head_commit?: { timestamp?: unknown } }
   if (b.deleted === true) return null
   if (typeof b.ref !== 'string' || !b.ref.startsWith('refs/heads/')) return null
   if (typeof b.after !== 'string' || /^0+$/.test(b.after)) return null
-  return { branch: b.ref.slice('refs/heads/'.length), sha: b.after }
+  const raw = b.head_commit?.timestamp
+  const parsed = typeof raw === 'string' ? Date.parse(raw) : NaN
+  return { branch: b.ref.slice('refs/heads/'.length), sha: b.after, ts: Number.isFinite(parsed) ? parsed : now }
 }

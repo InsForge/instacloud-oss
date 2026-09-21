@@ -1,7 +1,9 @@
-// Git push-to-deploy routes over the fake adapters: the HMAC-verified webhook (the security boundary)
-// and the connect route's auth guard + validation. Docker is mocked exactly as the other server tests
-// mock it, so a build "succeeds" instantly; the connect happy path (which needs a real compute group)
-// is covered by the on-box e2e, not here.
+// Git push-to-deploy routes over the fake adapters: the HMAC-verified webhook (the security
+// boundary), the connect route's auth guard + validation, SHA pinning, governance, and stale-push
+// ordering. Docker is mocked here so a build "succeeds" instantly. The connect happy path + GET/DELETE
+// and the deploy-side guarantees (port preservation, removal race) need a REAL compute group, so they
+// live in gitdeploy-engine.test.ts (real Engine over the fake adapters); the on-box e2e covers the
+// real docker build.
 import { test, expect, beforeEach, vi } from 'vitest'
 import { createHmac } from 'node:crypto'
 
@@ -15,6 +17,7 @@ import { buildServer } from '../src/server'
 import { loadState, mutate } from '../src/state'
 import type { Config } from '../src/config'
 import { docker } from '../src/docker'
+import * as govern from '../src/govern'
 import { newBinding, type GitBindingRecord } from '../src/gitdeploy'
 import { makeEngine, serverConfig } from './fakes'
 
@@ -128,10 +131,15 @@ test('webhook: the build is pinned to the pushed commit sha, not the branch ref'
   // The build runs detached; wait for it, then assert the git context URL checks out the SHA (so an
   // image tagged for this commit can never contain a later one), never the mutable "main" ref.
   await vi.waitFor(() => expect(dockerMock).toHaveBeenCalled())
-  const buildArgs = dockerMock.mock.calls.map((c) => (c[0] as string[])).find((a) => a[0] === 'build')
-  expect(buildArgs).toBeDefined()
-  expect(buildArgs!.some((a) => a.endsWith(`.git#${sha}`))).toBe(true)
-  expect(buildArgs!.some((a) => a.endsWith('.git#main'))).toBe(false)
+  const buildCall = dockerMock.mock.calls.find((c) => (c[0] as string[])[0] === 'build')!
+  const buildArgs = buildCall[0] as string[]
+  const buildEnv = (buildCall[1] as { env?: Record<string, string> } | undefined)?.env ?? {}
+  expect(buildArgs.some((a) => a.endsWith(`.git#${sha}`))).toBe(true)
+  expect(buildArgs.some((a) => a.endsWith('.git#main'))).toBe(false)
+  // The PAT is handed to BuildKit via the env-secret, so it must NOT appear anywhere in argv.
+  expect(buildArgs.join(' ')).not.toContain('ghp_tok')
+  expect(buildArgs).toContain('--secret')
+  expect(buildEnv.GIT_AUTH_TOKEN).toBe('ghp_tok')
 })
 
 test('webhook: a push to an untracked branch never triggers a build', async () => {
@@ -146,6 +154,37 @@ test('webhook: a push to an untracked branch never triggers a build', async () =
   // which is the docker build), and the wrong-branch path returns BEFORE dispatch, so if a build were
   // going to happen the mock would already record it by the time the response resolves. Assert now —
   // no wall-clock wait, so the negative is deterministic. A microtask flush guards a future refactor.
+  await Promise.resolve()
+  expect(dockerMock.mock.calls.some((c) => (c[0] as string[])[0] === 'build')).toBe(false)
+})
+
+test('webhook: a push is held (not built) when the deploy policy is not "allow"', async () => {
+  seedBranch()
+  const rec = seedBinding()
+  govern.setPolicy('p1', 'deploy', 'deny') // push-to-deploy honours the project's deploy governance
+  const { payload, sig } = signed(rec.binding.webhookSecret, { ref: 'refs/heads/main', after: 'e'.repeat(40) })
+  const r = await send('POST', `/webhooks/git/${rec.binding.id}`, {
+    headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': sig }, payload,
+  })
+  expect(r.statusCode).toBe(202)
+  await Promise.resolve() // the policy check precedes any build and is synchronous
+  expect(dockerMock.mock.calls.some((c) => (c[0] as string[])[0] === 'build')).toBe(false)
+  // No pending approval is created either — a webhook could never resume one.
+  expect(loadState().approvals?.length ?? 0).toBe(0)
+})
+
+test('webhook: a redelivered or out-of-order older push is skipped, never rebuilt', async () => {
+  seedBranch()
+  const deployed = 'a'.repeat(40)
+  const rec = seedBinding({ lastDeployedSha: deployed, lastDeployedAt: 1_000_000 })
+  const push = (sha: string, tsMs: number): { payload: string; sig: string } =>
+    signed(rec.binding.webhookSecret, { ref: 'refs/heads/main', after: sha, head_commit: { timestamp: new Date(tsMs).toISOString() } })
+  // A redelivery of the commit already deployed (same sha, even with a newer wall-clock stamp)…
+  const dup = push(deployed, 2_000_000)
+  await send('POST', `/webhooks/git/${rec.binding.id}`, { headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': dup.sig }, payload: dup.payload })
+  // …and an out-of-order OLDER commit (different sha, timestamp before the current deployment).
+  const older = push('b'.repeat(40), 500_000)
+  await send('POST', `/webhooks/git/${rec.binding.id}`, { headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': older.sig }, payload: older.payload })
   await Promise.resolve()
   expect(dockerMock.mock.calls.some((c) => (c[0] as string[])[0] === 'build')).toBe(false)
 })

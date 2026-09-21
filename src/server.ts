@@ -1277,29 +1277,33 @@ export function buildServer(
    *  deploys, and a recreated resource with a new id never inherits an old webhook's authority.
    *  Emits git.* events (visible in `insta events`) and never throws. */
   const doGitDeploy = async (bindingId: string, sha?: string): Promise<void> => {
-    const resolve = (): { rec: GitBindingRecord; branchName: string } | null => {
-      const st = loadState()
-      const rec = st.gitBindings?.[bindingId]
-      if (!rec) return null
-      const branch = Object.values(st.branches).find((b) => b.id === rec.branchId)
-      if (!branch || !branch.apps?.[rec.group]) return null
-      return { rec, branchName: branch.name }
-    }
-    const before = resolve()
-    if (!before) return
-    const { rec } = before
+    const st0 = loadState()
+    const rec = st0.gitBindings?.[bindingId]
+    if (!rec) return
+    const branch0 = Object.values(st0.branches).find((b) => b.id === rec.branchId)
+    if (!branch0 || !branch0.apps?.[rec.group]) return
+    const branchName = branch0.name
+    // A push-triggered deploy is subject to the project's deploy governance policy, exactly like an
+    // interactive `insta deploy`: a denied policy blocks the build, an approval-required policy
+    // records a pending approval and does not deploy. Never bypass the gate because the caller is a
+    // webhook rather than a person.
+    const g = govern.gate(rec.projectId, 'deploy')
+    if (g.decision === 'deny') { engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.blocked', { group: rec.group, reason: 'deploy denied by policy' }); return }
+    if (g.decision === 'approval_required') { engine.emit(rec.projectId, null, 'govern', 'govern.pending', { action: 'deploy', approvalId: g.approvalId, source: 'git', group: rec.group }); return }
     const tag = imageTag(bindingId, sha)
-    engine.emit(rec.projectId, before.branchName, 'resource', 'git.build', { repo: `${rec.binding.owner}/${rec.binding.repo}`, group: rec.group, sha: sha ?? null })
+    engine.emit(rec.projectId, branchName, 'resource', 'git.build', { repo: `${rec.binding.owner}/${rec.binding.repo}`, group: rec.group, sha: sha ?? null })
     try {
       // Pin the checkout to the pushed commit SHA (webhook) or the ref (initial connect); redactDockerArgs strips the token.
       await docker(['build', '--pull', '-t', tag, buildContextUrl(rec.binding, sha ?? rec.binding.ref)], { mergeStderr: true })
-      const after = resolve()
-      if (!after) { engine.emit(rec.projectId, before.branchName, 'resource', 'git.deploy.failed', { group: rec.group, error: 'binding or service removed during build; not deploying' }); return }
-      await engine.deploy(after.rec.projectId, after.branchName, { image: tag, group: after.rec.group })
+      // deployFromGit re-validates the binding + existing group and preserves its configured port,
+      // all under the service lock, so a target removed during the build is not re-materialised and a
+      // non-8080 service is not reset to 8080. null => the target is gone; do not deploy.
+      const res = await engine.deployFromGit(rec.projectId, rec.branchId, rec.group, bindingId, tag)
+      if (!res) { engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.skipped', { group: rec.group, reason: 'binding or service removed during build' }); return }
       if (sha) mutate((st) => { const r = st.gitBindings?.[bindingId]; if (r) r.binding.lastDeployedSha = sha })
-      engine.emit(after.rec.projectId, after.branchName, 'resource', 'git.deploy', { group: after.rec.group, image: tag, sha: sha ?? null })
+      engine.emit(rec.projectId, branchName, 'resource', 'git.deploy', { group: rec.group, image: tag, sha: sha ?? null, port: res.port })
     } catch (e) {
-      engine.emit(rec.projectId, before.branchName, 'resource', 'git.deploy.failed', { group: rec.group, error: e instanceof Error ? e.message : String(e) })
+      engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.failed', { group: rec.group, error: e instanceof Error ? e.message : String(e) })
     }
   }
 
@@ -1313,6 +1317,9 @@ export function buildServer(
       let cur: { sha?: string } | null = { sha }
       while (cur) { await doGitDeploy(bindingId, cur.sha); cur = q.next; q.next = null }
       q.running = false
+      // Drop the idle queue so repeated bind/delete/rebind cannot leak Map entries; the get, the
+      // !next check and the delete all run synchronously here, so nothing can re-arm q in between.
+      if (gitBuilds.get(bindingId) === q && !q.next) gitBuilds.delete(bindingId)
     })()
   }
 

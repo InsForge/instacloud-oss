@@ -1013,6 +1013,9 @@ export class Engine {
       st.branches[branchId].name = newName
       // branch-scoped user secrets are keyed by branch NAME — they follow the rename
       for (const u of st.userSecrets[projectId] ?? []) if (u.branch === oldName) u.branch = newName
+      // git bindings store branchName only for display (deploy resolves by branchId); keep it in sync
+      // so GET /…/git and `insta` output don't report a stale branch name after a rename.
+      if (st.gitBindings) for (const r of Object.values(st.gitBindings)) if (r.projectId === projectId && r.branchId === branchId) r.branchName = newName
     })
     this.emit(projectId, newName, 'resource', 'branch.rename', { from: oldName, to: newName })
     const renamed = loadState().branches[branchId]
@@ -1028,6 +1031,30 @@ export class Engine {
     // The branch key with the service key, in ONE acquisition: a deploy must not land inside a
     // branch create that has committed the row but is still building the branch.
     return this.withOp([this.branchOp(b), this.serviceKey(b, `cp-${group}`)], () => this.deployLocked(projectId, b.id, group, opts))
+  }
+
+  /** Git push-to-deploy's deploy step. Unlike `deploy`, this NEVER materialises a new group and it
+   *  preserves the existing service's configured port: the binding, the group's existence and its
+   *  port are all re-read INSIDE the same service lock that `removeComputeService` takes, so a build
+   *  that finished after its target was removed sees the group gone and returns null instead of
+   *  re-creating it, and a service on a non-8080 port is redeployed on that same port. Returns null
+   *  when the branch, the binding, or the group is gone (the caller then does not deploy). */
+  async deployFromGit(projectId: string, branchId: string, group: string, bindingId: string, image: string): Promise<{ deployed: true; port: number } | null> {
+    const b0 = loadState().branches[branchId]
+    if (!b0 || b0.projectId !== projectId) return null
+    return this.withOp([this.branchOp(b0), this.serviceKey(b0, `cp-${group}`)], async () => {
+      const st = loadState()
+      const b = st.branches[branchId]
+      // Re-validated under the lock (the whole point): the branch, the still-live binding, and the
+      // EXISTING app row. If removeComputeService got the key first it has already deleted both, so
+      // a stale webhook cannot re-materialise the group deployLocked would otherwise re-create.
+      if (!b || b.projectId !== projectId || !st.gitBindings?.[bindingId]) return null
+      const app = b.apps?.[group]
+      if (!app) return null
+      const port = app.port // preserve the configured port; deployLocked defaults an omitted port to 8080
+      await this.deployLocked(projectId, branchId, group, { image, port })
+      return { deployed: true, port }
+    })
   }
 
   // Takes a branch ID, not a Branch: anything read before the chain is a pre-queue snapshot, and an
@@ -2171,6 +2198,9 @@ export class Engine {
         for (const u of st.userSecrets[projectId] ?? []) {
           if (u.service === `compute/${oldName}`) u.service = `compute/${newName}`
         }
+        // Git bindings resolve their target by group name, so they follow the rename too — else a
+        // push would deploy to a group that no longer exists and the binding could never be pruned.
+        if (st.gitBindings) for (const r of Object.values(st.gitBindings)) if (r.projectId === projectId && r.group === oldName) r.group = newName
       })
       // The ServiceKey embeds the id, so the scheduler's ledger has to follow or the renamed group
       // is tracked under a key nothing resolves any more (and its wake would never fire).
@@ -3049,7 +3079,13 @@ export class Engine {
           // Same rule as `destroyBranch`: a row goes only when its demolition all went, so a
           // container or a directory that refused is still named by something.
           const mine = teardownSince(t, mark)
-          if (mine.failed === 0) mutate((s) => { delete s.branches[b.id] })
+          if (mine.failed === 0) mutate((s) => {
+            delete s.branches[b.id]
+            // Prune this branch's git bindings here, in the per-branch success path: on a mixed
+            // teardown the project row is kept, so the final delete-branches prune never runs for
+            // the branches that DID tear down cleanly.
+            if (s.gitBindings) for (const [k, r] of Object.entries(s.gitBindings)) if (r.projectId === projectId && r.branchId === b.id) delete s.gitBindings[k]
+          })
           else {
             kept = true
             mutate((s) => { if (s.branches[b.id]) s.branches[b.id].status = CLEANUP_FAILED })

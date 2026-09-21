@@ -142,8 +142,11 @@ test('webhook: a push to an untracked branch never triggers a build', async () =
     headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': other.sig }, payload: other.payload,
   })
   expect(r.statusCode).toBe(200)
-  // Give any (erroneously) dispatched build a chance to land before asserting it did not.
-  await new Promise((res) => setTimeout(res, 20))
+  // Dispatch is synchronous with the handler (runGitDeploy → the async IIFE runs to its first await,
+  // which is the docker build), and the wrong-branch path returns BEFORE dispatch, so if a build were
+  // going to happen the mock would already record it by the time the response resolves. Assert now —
+  // no wall-clock wait, so the negative is deterministic. A microtask flush guards a future refactor.
+  await Promise.resolve()
   expect(dockerMock.mock.calls.some((c) => (c[0] as string[])[0] === 'build')).toBe(false)
 })
 

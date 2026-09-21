@@ -76,7 +76,10 @@ export function newBinding(owner: string, repo: string, ref: string, token: stri
  *  checks out: the pushed COMMIT SHA for a webhook (immutable, so an image labelled SHA A can never
  *  contain SHA B), or the branch ref for the initial connect build. */
 export function buildContextUrl(b: Pick<GitBinding, 'owner' | 'repo' | 'token'>, fragment: string): string {
-  const auth = b.token ? `x-access-token:${b.token}@` : ''
+  // URL-encode the token so a malformed one (a stray '@', ':' or '/') cannot break out of the
+  // userinfo component and defeat URL parsing or the redactor's `x-access-token:<...>@` match. Valid
+  // GitHub PATs are unaffected (they encode to themselves).
+  const auth = b.token ? `x-access-token:${encodeURIComponent(b.token)}@` : ''
   return `https://${auth}github.com/${b.owner}/${b.repo}.git#${fragment}`
 }
 

@@ -230,8 +230,10 @@ export function registerAuth(app: FastifyInstance, cfg: Config): void {
   // there, and approving the short user code mints an `insta_` key for the CLI. Both endpoints are
   // under /api/auth/ (public allowlist) because a login flow is by definition pre-auth; the approval
   // step (POST /device/approve) is a separate, guarded route.
-  app.post('/api/auth/device/code', async (_req, reply) => {
-    const d = devices.start()
+  app.post('/api/auth/device/code', async (req, reply) => {
+    // Bounded and per-IP capped: this endpoint is unauthenticated, so a null means a flood cap was hit.
+    const d = devices.start(req.ip)
+    if (!d) return reply.code(429).send({ error: 'too many device logins in progress; try again shortly' })
     const verificationUri = `${cfg.consoleUrl}/device`
     return reply.header('cache-control', 'no-store').send({
       device_code: d.deviceCode,
@@ -243,13 +245,18 @@ export function registerAuth(app: FastifyInstance, cfg: Config): void {
     })
   })
 
-  // The CLI polls this with its device_code. RFC 8628 semantics: pending/slow_down/expired/denied
-  // ride on a 400 body `{error}`, and success is 200 `{access_token}` (the minted `insta_` key).
+  // The CLI polls this with its device_code. RFC 8628 semantics: pending/expired/denied ride on a 400
+  // body `{error}`; success is 200 `{access_token, token_type}`. The `insta_` key is minted HERE, when
+  // an approved code is collected, so an approval the CLI abandons leaves no orphan key behind.
   app.post('/api/auth/device/token', async (req, reply) => {
     const b = body(req)
     const deviceCode = typeof b.device_code === 'string' ? b.device_code : ''
     const r = devices.poll(deviceCode)
-    if (r.status === 'approved') return reply.header('cache-control', 'no-store').send({ access_token: r.token })
+    if (r.status === 'approved') {
+      const name = `CLI device login (${new Date(clock.now()).toISOString().slice(0, 10)})`
+      const key = mutate((s) => mintToken(s, { name }).key)
+      return reply.header('cache-control', 'no-store').header('pragma', 'no-cache').send({ access_token: key, token_type: 'Bearer' })
+    }
     const error = r.status === 'pending' ? 'authorization_pending' : r.status === 'denied' ? 'access_denied' : 'expired_token'
     return reply.code(400).send({ error })
   })
@@ -326,16 +333,15 @@ export function registerAuth(app: FastifyInstance, cfg: Config): void {
 
   // ---- device approval (the console page the admin opens to finish `insta login --device`) ----
   // Gated: /device is NOT in the public allowlist, so the onRequest hook has already established that
-  // this is the signed-in admin. Approving a live, pending code mints an `insta_` key for the waiting
-  // CLI; the key then shows up under Account > API Tokens and can be revoked there like any other.
+  // this is the signed-in admin. Approving marks the pending code; the `insta_` key is minted when the
+  // CLI collects it at /api/auth/device/token, and then shows up under Account > API Tokens, revocable.
   const deviceUserCode = (req: FastifyRequest): string => {
     const b = body(req)
     return typeof b.user_code === 'string' ? b.user_code : typeof b.userCode === 'string' ? b.userCode : ''
   }
   app.post('/device/approve', async (req, reply) => {
     if (!deviceUserCode(req).trim()) return reply.code(400).send({ error: 'user_code is required' })
-    const name = `CLI device login (${new Date(clock.now()).toISOString().slice(0, 10)})`
-    const outcome = devices.approve(deviceUserCode(req), () => mutate((s) => mintToken(s, { name }).key))
+    const outcome = devices.approve(deviceUserCode(req))
     if (outcome === 'ok') return { ok: true }
     if (outcome === 'not_found') return reply.code(404).send({ error: 'that code was not found; check it and try again' })
     if (outcome === 'expired') return reply.code(410).send({ error: 'that code has expired; start the login again' })

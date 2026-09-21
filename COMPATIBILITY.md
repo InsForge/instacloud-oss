@@ -15,7 +15,7 @@ domain. See [self-hosting](https://docs.instacloud.com/self-hosting/overview).
 | Command | InstaCloud OSS behavior |
 | --- | --- |
 | `status` | server: the admin email; local: `user: local` |
-| `login` / `logout` | server: `insta login --api-key insta_... --api-url https://api.<domain>`, and `--email` with the admin password; bare `insta login`, `--device` and `--oauth` are `501` (browser and OAuth flows are cloud-only). local: not needed, the daemon trusts loopback |
+| `login` / `logout` | server: `insta login --device --api-url https://api.<domain>` (a short code the admin approves at `https://console.<domain>/device`, the recommended flow), `insta login --api-key insta_... --api-url https://api.<domain>` for headless/CI, and `--email` with the admin password; bare `insta login` and `--oauth` are `501` (hosted-identity flows are cloud-only). local: not needed, the daemon trusts loopback |
 | `org list` | builtin single org (`local`) |
 | `project create/link/list/delete` | a new project provisions nothing and reports `resources: []`; add what you need with `services add`. `delete` is govern-gated and returns the cloud teardown summary (`destroyed` and `failed` counts), with **409** instead of 200 when any branch's teardown failed: those branches keep their rows and so does the project, because a branch row must never point at a project that is gone |
 | `services list` | rows carry `domain`, `endpoint`, `always_on`, `image`, `port` and a `runtime` of `online`, `asleep`, `suspended`, `stopped` or `none` |

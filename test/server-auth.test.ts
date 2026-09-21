@@ -351,11 +351,17 @@ test('device login: code -> pending -> the admin approves in the console -> the 
   expect(approve.statusCode).toBe(200)
   expect(approve.json()).toEqual({ ok: true })
 
-  // Step B, after approval: 200 with the minted insta_ key.
+  // Mint-on-collection: approval alone mints no key; it appears only when the CLI collects the code.
+  const before = (await send('GET', '/tokens', { headers: { cookie } })).json().tokens.length
+
+  // Step B, after approval: 200 with the minted insta_ key and its OAuth token_type.
   const granted = await send('POST', '/api/auth/device/token', { payload: { grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: start.device_code, client_id: 'insta-cli' } })
   expect(granted.statusCode).toBe(200)
   const accessToken = granted.json().access_token as string
   expect(accessToken).toMatch(/^insta_[A-Za-z]{64}$/)
+  expect(granted.json().token_type).toBe('Bearer')
+  const after = (await send('GET', '/tokens', { headers: { cookie } })).json().tokens.length
+  expect(after).toBe(before + 1)
 
   // The key authenticates like any other bearer, as the admin.
   const me = await send('GET', '/me', { headers: { authorization: `Bearer ${accessToken}` } })
@@ -386,6 +392,34 @@ test('device login edges: unknown code, unauthorized approve target, and deny', 
   const denied = await send('POST', '/api/auth/device/token', { payload: { device_code: start.device_code } })
   expect(denied.statusCode).toBe(400)
   expect(denied.json()).toEqual({ error: 'access_denied' })
+})
+
+test('device login: a code expires after its TTL, on both the poll and a late approval', async () => {
+  const cookie = cookieOf(await signUp())
+  const t0 = Date.now()
+  clock.now = () => t0
+  const a = (await send('POST', '/api/auth/device/code', { payload: {} })).json()
+  const b = (await send('POST', '/api/auth/device/code', { payload: {} })).json()
+  // Jump past the 15-minute TTL. gc runs only at issuance, so both records are still present and each
+  // op checks its own expiry inline: the poll on A is expired_token, and a late approval of B is 410.
+  clock.now = () => t0 + 16 * 60 * 1000
+  const poll = await send('POST', '/api/auth/device/token', { payload: { device_code: a.device_code } })
+  expect(poll.statusCode).toBe(400)
+  expect(poll.json()).toEqual({ error: 'expired_token' })
+  const approve = await send('POST', '/device/approve', { headers: { cookie }, payload: { user_code: b.user_code } })
+  expect(approve.statusCode).toBe(410)
+})
+
+test('device login: the unauthenticated issue endpoint is per-IP capped (429, no unbounded store)', async () => {
+  await signUp()
+  // The in-process inject uses one client IP, so the per-IP cap is what a flood from one source hits.
+  let capped = false
+  for (let i = 0; i < 40; i++) {
+    const r = await send('POST', '/api/auth/device/code', { payload: {} })
+    if (r.statusCode === 429) { capped = true; break }
+    expect(r.statusCode).toBe(200)
+  }
+  expect(capped).toBe(true)
 })
 
 test('CSRF belt: a cookie write is rejected only when a presented Origin is foreign', async () => {

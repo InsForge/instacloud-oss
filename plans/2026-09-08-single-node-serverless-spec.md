@@ -331,7 +331,9 @@ M0, M3 and M6 run in parallel with M1. Roughly 10 to 12 weeks for one engineer, 
 
 **Why a loop-mounted XFS image?** It works on every VPS regardless of the provider's root filesystem, needs no kernel module, and is one line. An operator with btrfs or ZFS at the data path gets reflinks natively and the installer skips the image.
 
-**Why no builder, when every one-machine PaaS has one?** Because it would be the first endpoint the cloud lacks, and the rule is the cloud's contract. The CLI on the box builds today. When the cloud exposes its build contract, the daemon mirrors it.
+**Why no builder, when every one-machine PaaS has one?** Originally: because it would be the first endpoint the cloud lacks, and the rule is the cloud's contract. The CLI on the box builds today. When the cloud exposes its build contract, the daemon mirrors it.
+
+**Update 2026-09-21 (maintainer decision, Tony's call).** This is now carved out as the one sanctioned self-hosted-only endpoint. What reversed it: the cloud's builder is a multi-tenant GitHub App, which a single node cannot run, so a builder here is a capability the cloud architecturally cannot offer rather than a gratuitous divergence from its contract, and Dokploy-style git push-to-deploy is a core reason operators self-host. The daemon ships native git push-to-deploy (`docker build` of the pushed commit, driven by an HMAC-verified webhook), recorded as a divergence in COMPATIBILITY.md and gated by the rule CONTRIBUTING now states: a self-hosted-only endpoint is allowed only for a capability the cloud cannot provide, with a maintainer sign-off. If the cloud ever exposes a build contract, the daemon mirrors that instead.
 
 **What about governance?** The code ships 12 gated actions with `project.delete` defaulting to approve and an Approvals page; the docs removed it on 2026-09-04; the README still headlines it. This spec does not touch it. Tony's call.
 

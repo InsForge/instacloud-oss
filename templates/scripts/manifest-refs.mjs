@@ -14,7 +14,8 @@
 export const FIXED_REF_RE = /\$\{([^}]+)\}/g;
 
 // Types the platform provisions and owns entirely: no address, credentials only through env.platform.
-const MANAGED_TYPES = ["postgres", "redis", "mysql", "mongodb"];
+// Exported so lint.mjs, which already imports from this file, does not carry its own copy.
+export const MANAGED_TYPES = ["postgres", "redis", "mysql", "mongodb"];
 
 /**
  * Judge one `${...}` body from an env.fixed value.

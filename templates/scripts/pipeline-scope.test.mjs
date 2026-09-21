@@ -5,7 +5,7 @@
 // version computed `[]` correctly and still exited 1, which killed the step on exactly the
 // "nothing to build" case the job exists to produce.
 import { describe, it, expect, beforeAll } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -92,12 +92,12 @@ describe('discover: which templates a push rebuilds', () => {
 
 // version-guard and lint are exercised end to end: both read the working tree, so driving them
 // through their real entrypoints is closer to what CI runs than re-implementing their predicates.
+// stdout and stderr are combined into one `out`, on success as well as failure, because lint's
+// warnings (console.warn) go to stderr on an otherwise-passing (exit 0) run, and a case asserting
+// "warns but does not fail" needs to see them.
 function run(script, args = []) {
-  try {
-    return { out: execFileSync('node', [join(root, 'scripts', script), ...args], { cwd: root, encoding: 'utf8' }), code: 0 };
-  } catch (e) {
-    return { out: `${e.stdout ?? ''}${e.stderr ?? ''}`, code: e.status ?? 1 };
-  }
+  const r = spawnSync('node', [join(root, 'scripts', script), ...args], { cwd: root, encoding: 'utf8' });
+  return { out: `${r.stdout ?? ''}${r.stderr ?? ''}`, code: r.status ?? 1 };
 }
 
 // lint discovers any directory under templates/, so a case has to BE a directory here — in the
@@ -161,6 +161,94 @@ describe('lint: sizing is the platform\'s, on every service type', () => {
   it('accepts `volume: true`', () => {
     const r = withTemplate({ ...base, services: { web: { ...web, volume: true } } }, () => run('lint.mjs'));
     expect(r.code, r.out).toBe(0);
+  });
+});
+
+describe('lint: a managed datastore is declared bare, the shape the platform owns', () => {
+  const base = lintBase;
+  const web = lintWeb;
+  const MANAGED = ['postgres', 'redis', 'mysql', 'mongodb'];
+
+  it('accepts a bare service of each managed type', () => {
+    for (const type of MANAGED) {
+      const r = withTemplate({ ...base, services: { web, store: { type } } }, () => run('lint.mjs'));
+      expect(r.code, `${type}: ${r.out}`).toBe(0);
+    }
+  });
+
+  it('names every accepted type when the type is misspelled', () => {
+    const r = withTemplate({ ...base, services: { web, store: { type: 'redys' } } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('type must be one of web, worker, postgres, redis, mysql, mongodb');
+  });
+
+  // These seven are the fields unique to the managed-type loop: spec and volume are covered in
+  // their own cases below, because both interact with the shared spec/volume check above.
+  it('refuses every field the platform owns, naming the field and the type', () => {
+    const fields = [
+      ['image', { image: 'docker.io/library/redis:7' }],
+      ['build', { build: './Dockerfile' }],
+      ['port', { port: 6379 }],
+      ['healthcheck', { healthcheck: '/' }],
+      ['volumeGib', { volumeGib: 10 }],
+      ['alwaysOn', { alwaysOn: true }],
+      // An exact empty shell, the one shape the platform's own parser tolerates. This lint refuses
+      // it anyway: the platform's tolerance is a storage round-trip concern, this only ever sees
+      // hand-authored files.
+      ['env', { env: {} }],
+    ];
+    for (const type of MANAGED) {
+      for (const [field, extra] of fields) {
+        const r = withTemplate({ ...base, services: { web, store: { type, ...extra } } }, () => run('lint.mjs'));
+        expect(r.code, `${type}.${field}: ${r.out}`).toBe(1);
+        expect(r.out).toContain(`a ${type} service is platform-managed and carries no ${field}`);
+      }
+    }
+  });
+
+  it('refuses volume: true too, the one shape the shared volume check lets through', () => {
+    const r = withTemplate({ ...base, services: { web, store: { type: 'redis', volume: true } } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('a redis service is platform-managed and carries no volume');
+    // Only the managed-type message fires here: `volume: true` is the shape the shared check
+    // accepts, so it stays silent, which is the whole reason volume has to stay in this loop.
+    expect(r.out).not.toContain("the platform's to choose");
+  });
+
+  it('reports a SIZED volume on a managed type twice, on purpose: once from each check', () => {
+    const r = withTemplate({ ...base, services: { web, store: { type: 'redis', volume: { size: 10 } } } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain("the platform's to choose");
+    expect(r.out).toContain('a redis service is platform-managed and carries no volume');
+  });
+
+  it('reports spec on a managed type once, from the shared check alone', () => {
+    // spec is deliberately absent from the managed-type loop's field list: the shared check above
+    // already refuses it on every service type, so it can never reach this loop first, and
+    // repeating it here would only double the message for one violation.
+    const r = withTemplate({ ...base, services: { web, store: { type: 'redis', spec: '1vcpu-1gb' } } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain("the platform's to choose");
+    expect(r.out).not.toContain('platform-managed and carries no spec');
+  });
+});
+
+describe('lint: warns above two managed datastores per template, never fails on the count', () => {
+  const base = lintBase;
+  const web = lintWeb;
+
+  it('does not warn at exactly two', () => {
+    const services = { web, a: { type: 'redis' }, b: { type: 'mysql' } };
+    const r = withTemplate({ ...base, services }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).not.toContain('managed datastores');
+  });
+
+  it('warns above two, without failing', () => {
+    const services = { web, a: { type: 'redis' }, b: { type: 'mysql' }, c: { type: 'mongodb' } };
+    const r = withTemplate({ ...base, services }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('declares 3 managed datastores');
   });
 });
 

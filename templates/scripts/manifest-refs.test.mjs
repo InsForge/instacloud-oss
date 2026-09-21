@@ -42,12 +42,6 @@ describe('checkFixedRef: what a fixed value may reference', () => {
     expect(check('services.nope.url').error).toContain("unknown service 'nope'");
   });
 
-  it('rejects a managed postgres, which has no address', () => {
-    const { error } = check('services.db.url');
-    expect(error).toContain('managed postgres');
-    expect(error).toContain('env.platform');
-  });
-
   it('rejects every managed database, naming its type', () => {
     for (const [name, type] of [['db', 'postgres'], ['cache', 'redis'], ['sql', 'mysql'], ['docs', 'mongodb']]) {
       const { error } = check(`services.${name}.url`);

@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
-import { FIXED_REF_RE, checkFixedRef } from "./manifest-refs.mjs";
+import { FIXED_REF_RE, checkFixedRef, MANAGED_TYPES } from "./manifest-refs.mjs";
 import { DEPLOY_BUTTON_ASSET, findDeployButtons } from "./publish-lib.mjs";
 import { ARCHITECTURES } from "./build-targets.mjs";
 
@@ -18,8 +18,7 @@ const codes = new Set();
 if (existsSync(join(root, "index.json"))) { failures++; console.error("✗ index.json: never commit it: CI generates it"); }
 
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-// Types the platform provisions and owns entirely: no image, port, sizing or credentials to declare.
-const MANAGED_TYPES = ["postgres", "redis", "mysql", "mongodb"];
+// MANAGED_TYPES comes from manifest-refs.mjs, which already needs it: one definition, not two.
 const TYPES = ["web", "worker", ...MANAGED_TYPES];
 // Images this repo builds for itself; templates-build-images derives their tag from `version:`.
 const SELF_IMAGE_PREFIX = "ghcr.io/insforge/insta-oss/templates/";
@@ -151,7 +150,19 @@ for (const dir of dirs) {
     }
     // A managed service is the platform's: it owns the image, port, sizing and credentials.
     if (MANAGED_TYPES.includes(svc.type)) {
-      for (const field of ["image", "build", "port", "healthcheck", "volume", "volumeGib", "spec", "alwaysOn", "env"]) {
+      // spec is not in this list: the shared check above already refuses it on every service type,
+      // so it can never reach this loop first, and repeating it here would just double the message
+      // for one violation.
+      // volume IS still in this list despite that same shared check above: that check lets
+      // `volume: true` through, since that is the only valid shape on a deployable service, but a
+      // managed type may carry no volume key at all. This loop is the only place that catches
+      // `volume: true` here. A SIZED volume on a managed type still trips both checks: two lines
+      // for one violation, on purpose, not by accident.
+      // env is refused outright here, even though the platform's own parser tolerates an exact
+      // empty shell. That tolerance is a storage round-trip concern: a NORMALIZED stored manifest
+      // always carries an env record, and it must still parse on every by-code deploy. This linter
+      // only ever sees hand-authored files, where an empty env shell is noise no author writes.
+      for (const field of ["image", "build", "port", "healthcheck", "volume", "volumeGib", "alwaysOn", "env"]) {
         if (svc[field] !== undefined) err(dir, `${name}: a ${svc.type} service is platform-managed and carries no ${field}, declare it bare`);
       }
       continue;

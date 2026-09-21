@@ -26,7 +26,7 @@ services:
 
   crm:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/twenty:branch-feat-twenty-template   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/twenty:1.0.0   # built from ./Dockerfile by templates-build-images.yml
     port: 3000
     healthcheck: /healthz     # Twenty's own liveness route, the one upstream's compose probes
     # Two reasons, both about work that happens with nobody watching. Twenty registers cron jobs

@@ -8,7 +8,7 @@
 // (plus the `notifications/initialized` notification, which gets no reply). Anything else is a
 // JSON-RPC "method not found".
 
-import { findTool, MCP_TOOLS, type McpToolRequest } from './tools'
+import { findTool, MCP_TOOLS, validateArgs, type McpToolRequest } from './tools'
 
 /** Whatever running a tool's HTTP request yielded: the daemon's status + parsed JSON body. */
 export type ExecResult = { status: number; body: unknown }
@@ -16,6 +16,10 @@ export type Execute = (req: McpToolRequest) => Promise<ExecResult>
 
 export const MCP_PROTOCOL_VERSION = '2025-06-18'
 export const SERVER_INFO = { name: 'instacloud-oss', version: 'daemon' } as const
+
+/** Protocol versions this server will speak if a client asks for one of them; anything else is
+ *  answered with the server's own version (spec-compliant negotiation, never a blind echo). */
+const SUPPORTED_PROTOCOL_VERSIONS = new Set<string>([MCP_PROTOCOL_VERSION])
 
 type JsonRpcId = string | number | null
 type JsonRpcRequest = { jsonrpc?: string; id?: JsonRpcId; method?: string; params?: Record<string, unknown> }
@@ -40,21 +44,27 @@ function toolContent(r: ExecResult): { content: Array<{ type: 'text'; text: stri
 
 /** Dispatch one JSON-RPC message. Returns the response, or null for a notification. */
 export async function dispatch(msg: JsonRpcRequest, execute: Execute): Promise<JsonRpcResponse | null> {
-  const id = msg.id ?? null
-  const method = msg.method ?? ''
+  const isNotification = msg == null || typeof msg !== 'object' || msg.id === undefined
+  const id = (msg != null && typeof msg === 'object' ? msg.id : undefined) ?? null
 
-  // Notifications (no id) are acknowledged by silence.
-  if (msg.id === undefined || msg.id === null) {
-    if (method.startsWith('notifications/')) return null
-    // A request that forgot its id still gets an error back on id=null.
-  }
+  // Validate the envelope before doing anything with it. A notification (no id) can never be
+  // replied to, so a malformed one is ignored rather than answered with an error on id=null.
+  if (msg == null || typeof msg !== 'object') return isNotification ? null : err(id, -32600, 'invalid request')
+  if (msg.jsonrpc !== '2.0') return isNotification ? null : err(id, -32600, 'invalid request: jsonrpc must be "2.0"')
+  if (typeof msg.method !== 'string') return isNotification ? null : err(id, -32600, 'invalid request: method must be a string')
+  const method = msg.method
+
+  // Notifications (no id) are acknowledged by silence, whatever their method, so a missing id can
+  // never let a request-only method (e.g. tools/call) run without a reply.
+  if (msg.id === undefined) return null
 
   if (method === 'initialize') {
-    // Echo the client's protocol version when it names one the server understands; otherwise the
-    // server's own. Capabilities advertise tools only.
-    const asked = (msg.params?.protocolVersion as string) || MCP_PROTOCOL_VERSION
+    // Answer with the client's protocol version only when the server actually speaks it; otherwise
+    // the server's own (never a blind echo of an arbitrary string). Capabilities advertise tools only.
+    const asked = msg.params?.protocolVersion
+    const protocolVersion = typeof asked === 'string' && SUPPORTED_PROTOCOL_VERSIONS.has(asked) ? asked : MCP_PROTOCOL_VERSION
     return ok(id, {
-      protocolVersion: asked,
+      protocolVersion,
       capabilities: { tools: { listChanged: false } },
       serverInfo: SERVER_INFO,
       instructions: 'Tools act on this self-hosted InstaCloud daemon. Project-scoped tools take projectId; branch-scoped take an optional branch (default the project default).',
@@ -69,7 +79,16 @@ export async function dispatch(msg: JsonRpcRequest, execute: Execute): Promise<J
     const name = String(msg.params?.name ?? '')
     const tool = findTool(name)
     if (!tool) return err(id, -32602, `unknown tool: ${name}`)
-    const args = (msg.params?.arguments as Record<string, unknown>) ?? {}
+    const rawArgs = msg.params?.arguments
+    if (rawArgs !== undefined && (typeof rawArgs !== 'object' || rawArgs === null || Array.isArray(rawArgs))) {
+      return ok(id, { content: [{ type: 'text', text: 'invalid arguments: expected an object' }], isError: true })
+    }
+    const args = (rawArgs as Record<string, unknown>) ?? {}
+    // Validate against the tool's schema before building the request: a bad argument is a tool
+    // error (isError content), the same shape the 202 approval and transport-failure paths use, so
+    // the agent reads the reason and retries rather than the session erroring out.
+    const invalid = validateArgs(tool, args)
+    if (invalid) return ok(id, { content: [{ type: 'text', text: `invalid arguments: ${invalid}` }], isError: true })
     let req: McpToolRequest
     try { req = tool.build(args) } catch (e) { return err(id, -32602, `invalid arguments: ${e instanceof Error ? e.message : String(e)}`) }
     try {

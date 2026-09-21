@@ -9,10 +9,13 @@ export function mcpEndpoint(apiUrl: string): string {
 }
 
 /** An `mcp.json`-style config (Claude Code, Cursor, Windsurf, and other clients that read an
- *  mcpServers map). Server mode carries the Authorization header from the env var (never an inlined
- *  key, which is shown once); local mode carries just the URL. */
+ *  mcpServers map). Server mode carries an Authorization header with an obvious replace-me
+ *  placeholder rather than `$INSTA_API_TOKEN`: this is JSON, not a shell, and most clients do NOT
+ *  expand `$VAR` here, so a literal env-var name would be sent verbatim and fail to authenticate.
+ *  The user substitutes their real token; the value is never inlined for them (it is shown once). */
+export const MCP_TOKEN_PLACEHOLDER = '<YOUR_INSTA_API_TOKEN>'
 export function mcpJsonConfig(apiUrl: string, mode: 'local' | 'server'): string {
   const server: Record<string, unknown> = { url: mcpEndpoint(apiUrl) }
-  if (mode === 'server') server.headers = { Authorization: 'Bearer $INSTA_API_TOKEN' }
+  if (mode === 'server') server.headers = { Authorization: `Bearer ${MCP_TOKEN_PLACEHOLDER}` }
   return JSON.stringify({ mcpServers: { insta: server } }, null, 2)
 }

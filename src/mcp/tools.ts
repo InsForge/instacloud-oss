@@ -107,8 +107,10 @@ export const MCP_TOOLS: McpTool[] = [
       method: 'POST', path: `/projects/${enc(a.projectId)}/services`,
       body: {
         type: str(a.type), name: str(a.name), ...(a.branch ? { branch: str(a.branch) } : {}),
-        ...(a.public !== undefined ? { public: !!a.public } : {}),
-        ...(a.volumeGib !== undefined ? { volumeGib: Number(a.volumeGib) } : {}),
+        // No coercion: only forward these when they are genuinely the right primitive (validateArgs
+        // rejects wrong types at the door, so "false" never reaches here to be flipped to true).
+        ...(typeof a.public === 'boolean' ? { public: a.public } : {}),
+        ...(typeof a.volumeGib === 'number' ? { volumeGib: a.volumeGib } : {}),
       },
     }),
   },
@@ -130,7 +132,7 @@ export const MCP_TOOLS: McpTool[] = [
     }, ['projectId', 'image']),
     build: (a) => ({
       method: 'POST', path: `/projects/${enc(a.projectId)}/deploy`,
-      body: { image: str(a.image), ...(a.group ? { group: str(a.group) } : {}), ...(a.port !== undefined ? { port: Number(a.port) } : {}), ...(a.branch ? { branch: str(a.branch) } : {}) },
+      body: { image: str(a.image), ...(a.group ? { group: str(a.group) } : {}), ...(typeof a.port === 'number' ? { port: a.port } : {}), ...(a.branch ? { branch: str(a.branch) } : {}) },
     }),
   },
   {
@@ -204,4 +206,34 @@ export const MCP_TOOLS: McpTool[] = [
 /** Look up a tool by name. */
 export function findTool(name: string): McpTool | undefined {
   return MCP_TOOLS.find((t) => t.name === name)
+}
+
+type PropSchema = { type?: string; enum?: unknown[] }
+
+/** Validate tool-call arguments against the tool's inputSchema, which uses one small JSON-Schema
+ *  subset: an object with typed properties (string | number | boolean, optionally an enum), a
+ *  required list, and additionalProperties:false. Returns a human-readable reason, or null when the
+ *  arguments are well formed. Types are checked STRICTLY, so a string like "false" is rejected where
+ *  a boolean is required: no truthiness coercion in a build() can then silently flip a flag on. */
+export function validateArgs(tool: McpTool, args: Record<string, unknown>): string | null {
+  const schema = tool.inputSchema as { properties?: Record<string, PropSchema>; required?: string[] }
+  const properties = schema.properties ?? {}
+  const required = schema.required ?? []
+
+  for (const key of Object.keys(args)) {
+    if (args[key] === undefined) continue // treat an explicit undefined as absent
+    if (!(key in properties)) return `unknown argument: ${key}`
+  }
+  for (const key of required) {
+    if (args[key] === undefined || args[key] === null) return `missing required argument: ${key}`
+  }
+  for (const [key, spec] of Object.entries(properties)) {
+    const v = args[key]
+    if (v === undefined || v === null) continue // optional and omitted
+    if (spec.enum && !spec.enum.includes(v)) return `argument ${key} must be one of: ${spec.enum.join(', ')}`
+    if (spec.type === 'string' && typeof v !== 'string') return `argument ${key} must be a string`
+    if (spec.type === 'number' && (typeof v !== 'number' || !Number.isFinite(v))) return `argument ${key} must be a number`
+    if (spec.type === 'boolean' && typeof v !== 'boolean') return `argument ${key} must be a boolean`
+  }
+  return null
 }

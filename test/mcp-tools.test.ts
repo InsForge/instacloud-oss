@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { MCP_TOOLS, findTool } from '../src/mcp/tools'
+import { MCP_TOOLS, findTool, validateArgs } from '../src/mcp/tools'
 
 test('every tool has a name, description and an object inputSchema; names are unique and insta_-prefixed', () => {
   const names = MCP_TOOLS.map((t) => t.name)
@@ -36,6 +36,26 @@ test('branch_create only sends excludeServices/from when given', () => {
   expect(findTool('insta_branch_create')!.build({ projectId: 'p1', name: 'feat' }).body).toEqual({ name: 'feat' })
   expect(findTool('insta_branch_create')!.build({ projectId: 'p1', name: 'x', from: 'main', excludeServices: true }).body)
     .toEqual({ name: 'x', from: 'main', excludeServices: true })
+})
+
+test('validateArgs enforces the schema so no truthiness coercion can flip a flag', () => {
+  const add = findTool('insta_service_add')!
+  // A well-formed call passes.
+  expect(validateArgs(add, { projectId: 'p1', type: 'storage', name: 'assets', public: false })).toBeNull()
+  // The P1 bug: a string "false" must be REJECTED, not coerced to a truthy public:true.
+  expect(validateArgs(add, { projectId: 'p1', type: 'storage', name: 'assets', public: 'false' }))
+    .toMatch(/public must be a boolean/)
+  // build() then never forwards the bad value even if reached directly.
+  expect(add.build({ projectId: 'p1', type: 'storage', name: 'assets', public: 'false' as unknown as boolean }).body)
+    .toEqual({ type: 'storage', name: 'assets' })
+  // A value outside the enum is rejected.
+  expect(validateArgs(add, { projectId: 'p1', type: 'weird', name: 'x' })).toMatch(/type must be one of/)
+  // A missing required argument is rejected.
+  expect(validateArgs(add, { type: 'postgres', name: 'db' })).toMatch(/missing required argument: projectId/)
+  // An unknown argument is rejected (additionalProperties:false).
+  expect(validateArgs(add, { projectId: 'p1', type: 'postgres', name: 'db', bogus: 1 })).toMatch(/unknown argument: bogus/)
+  // A non-number where a number is required is rejected.
+  expect(validateArgs(findTool('insta_deploy')!, { projectId: 'p1', image: 'nginx', port: '80' })).toMatch(/port must be a number/)
 })
 
 test('no tool maps to a cloud-only route (billing/usage/scale/upgrade/github/backups)', () => {

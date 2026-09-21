@@ -77,6 +77,12 @@ services:
         # own welcome page asks for it on the screen after the password. Renamed later in
         # Settings > General, so it is a convenience rather than a decision.
         WORKSPACE_NAME: Name for the workspace the deploy creates. Defaults to Twenty
+        # Twenty writes example companies, people, opportunities, workflows and a dashboard into
+        # every workspace it activates, with no flag of its own to stop it. Upstream shows them to
+        # the person who just created the workspace; here the deploy creates it, so by default the
+        # entrypoint removes them again and the operator's first login is an empty CRM. Set this
+        # to keep them. See clear-sample-data.sql.
+        SAMPLE_DATA: Set to true to keep Twenty's example companies and people. Empty workspace otherwise
 
 meta:
   name: Twenty

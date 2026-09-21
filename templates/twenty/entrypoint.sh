@@ -103,7 +103,58 @@ seed_admin() {
   fi
   if ! node /insta-seed-admin.mjs; then
     echo "entrypoint: could not create the admin account; twenty is still up and its sign-up page is open to the first visitor" >&2
+    return
   fi
+  clear_sample_data
+}
+
+# Twenty fills a workspace it activates with example records — Airbnb, Anthropic, Stripe and
+# friends, five people, six opportunities, two workflows and a dashboard. Upstream shows them to
+# the person who just created the workspace in their own browser; here the deploy creates it, so
+# without this the operator opens their new CRM and finds somebody else's demo in it. See
+# clear-sample-data.sql for what is removed and why the `SYSTEM` filter cannot reach a real
+# record. Everything here is non-fatal: the worst case is the workspace upstream would have given
+# them anyway.
+clear_sample_data() {
+  case "${SAMPLE_DATA:-}" in
+    1 | y | yes | true | on | Y | YES | True | TRUE | On | ON)
+      echo "entrypoint: SAMPLE_DATA is set, keeping twenty's example records"
+      return
+      ;;
+  esac
+
+  # `signUpInNewWorkspace` returns as soon as the workspace row exists; building its schema,
+  # installing the pre-installed apps and writing the example records all happen behind that
+  # answer and take another minute. ACTIVE is the last thing activateWorkspace writes and the
+  # prefill is committed before it, so it is the barrier to wait on rather than a sleep.
+  attempt=0
+  until [ "$(psql -tAc \
+        "SELECT count(*) FROM core.workspace WHERE \"activationStatus\" = 'ACTIVE'" \
+        "${PG_DATABASE_URL}")" != 0 ]; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 150 ]; then
+      echo "entrypoint: the workspace was still not active after 5 minutes, leaving twenty's example records in it" >&2
+      return
+    fi
+    sleep 2
+  done
+
+  # One workspace per instance (IS_MULTIWORKSPACE_ENABLED is off), and its schema name is a base36
+  # of the workspace id rather than the id, so it is read back rather than derived here.
+  schema="$(psql -tAc \
+    "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'workspace\_%' ORDER BY nspname LIMIT 1" \
+    "${PG_DATABASE_URL}")"
+  if [ -z "$schema" ]; then
+    echo "entrypoint: the workspace is active but has no schema, leaving twenty's example records alone" >&2
+    return
+  fi
+
+  if ! left="$(psql -q -tA -v ON_ERROR_STOP=1 -v schema="$schema" \
+      -f /insta-clear-sample-data.sql "${PG_DATABASE_URL}" 2>&1)"; then
+    echo "entrypoint: could not remove twenty's example records, the workspace still has them: ${left}" >&2
+    return
+  fi
+  echo "entrypoint: removed twenty's example companies, people, opportunities, workflows and dashboard; ${left} left"
 }
 
 # The worker and the cron registration boot the same Nest context the server is booting, and this

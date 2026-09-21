@@ -56,6 +56,7 @@ variable for it. It does that through Twenty's own sign-up mutation, not by writ
 | `ADMIN_EMAIL` | yes | The address you sign in with. Twenty authenticates by email and has no usernames. The deploy creates this account and it is the workspace admin. |
 | `ADMIN_PASSWORD` | yes | Password for that account. Twenty's own rule is 8 to 50 characters and it refuses anything shorter. Not stored anywhere you can read it back, so keep your copy; a lost password is reset from **Settings**, or by mail if you have configured SMTP. |
 | `WORKSPACE_NAME` | no | Name of the workspace, `Twenty` if you leave it. Twenty will not create one without a name, which is why it is here rather than in the app's onboarding; rename it any time in **Settings > General**. |
+| `SAMPLE_DATA` | no | Set it to `true` to keep Twenty's example records. Left unset, the workspace you sign into is empty; see [An empty workspace](#an-empty-workspace). |
 | `APP_SECRET` | generated | 64-character key Twenty uses to sign its tokens. You do not set it, and it must stay stable across deploys or every session is invalidated. |
 | `ENCRYPTION_KEY` | generated | 64-character key for at-rest encryption of stored secrets, such as connected-account tokens. Must stay stable across deploys or those become unreadable. |
 | `PG_DATABASE_URL` | platform | Bound to the managed `db` service's `DATABASE_URL`. Not a value you supply or can edit. |
@@ -102,6 +103,20 @@ URL is not a race. Everybody else joins by invitation from **Settings > Members*
 
 **It bills continuously.** `alwaysOn: true` is what keeps the cron jobs and the worker running, but
 it means the service is never idle-stopped and is charged from deploy until you delete it.
+
+### An empty workspace
+
+Twenty fills a new workspace with example records — five companies (Airbnb, Anthropic, Stripe,
+Figma, Notion), five people, six opportunities, two workflows and a dashboard — and v2.41.0 has no
+setting that turns it off: `activateWorkspace` calls `prefillCreatedWorkspaceRecords`
+unconditionally. Upstream shows them to the person who just created the workspace in their own
+browser, where they read as a demo. Here the deploy creates the workspace before you ever open the
+URL, so the same rows read as someone else's data in your CRM.
+
+So the entrypoint deletes them once, on the boot that created the workspace, and logs what it did.
+It matches on `createdBySource = 'SYSTEM'`, which is what Twenty stamps on its own prefill and
+never on a record a person creates, so nothing you type is in reach of it. Set `SAMPLE_DATA=true`
+at deploy time to skip the step and keep Twenty's examples.
 
 ## After deploy
 

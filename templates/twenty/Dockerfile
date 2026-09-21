@@ -11,6 +11,10 @@
 #   3. The first account. Twenty has no admin-credential variable and closes sign-up as soon as one
 #      workspace exists, so the deploy's own ADMIN_EMAIL / ADMIN_PASSWORD claim it through
 #      upstream's public sign-up mutation. See seed-admin.mjs.
+#   4. An empty workspace. Twenty prefills the workspace it activates with example companies and
+#      people, which upstream shows to whoever created it in their own browser and which here
+#      would just be somebody else's demo data in the operator's new CRM. See
+#      clear-sample-data.sql, and SAMPLE_DATA in the manifest to keep them.
 #
 # No part of Twenty is rebuilt or repackaged: the upstream release tag is the base and
 # entrypoint.sh calls upstream's own /app/entrypoint.sh for setup and migrations.
@@ -37,6 +41,7 @@ RUN printf '%s\n' "$TWENTY_TAG" > /insta-twenty-version
 COPY entrypoint.sh /insta-entrypoint.sh
 COPY boot-listener.mjs /insta-boot-listener.mjs
 COPY seed-admin.mjs /insta-seed-admin.mjs
+COPY clear-sample-data.sql /insta-clear-sample-data.sql
 RUN chmod +x /insta-entrypoint.sh
 
 # Upstream runs as uid 1000 and the platform's volume ownership follows the image's USER, so /data

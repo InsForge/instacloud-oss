@@ -54,7 +54,7 @@ services:
 
 meta:
   name: Laya
-  tagline: Self-hosted typed-decision API over a 421M encoder
+  tagline: Typed yes/no, choice and score decisions with probabilities, sub-second on plain CPU
   category: llm
   tags: [llm, ai]
   # amd64 only, declared rather than hoped for. The image installs CPU torch and bakes the
@@ -62,7 +62,7 @@ meta:
   # is the slow part of an already long build, and nothing has proved it starts on arm64. See the
   # Architectures table in ../README.md for what it would take to add the second row.
   architectures: [amd64]
-  draft: true
+  draft: false
   logo: ./logo.svg
   links:
     upstream: https://github.com/tonychang04/laya-template

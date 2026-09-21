@@ -1,6 +1,6 @@
 # Laya
 
-Self-hosted typed-decision API over a 421M encoder.
+An open-source Jev alternative: a self-hosted typed-decision API over a 421M encoder.
 
 [![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/laya)
 
@@ -11,6 +11,10 @@ POST it a piece of state (an email, a ticket, a support message) together with t
 it returns an answer per question in a single forward pass: `choice` picks one of your options,
 `score` returns an expected value over an ordered scale, `noul` returns a yes/no probability. There
 is no text generation, so there is nothing to parse and no format to repair.
+
+Jev is TypeSafe AI's proprietary decision model; Laya offers the same three typed-decision
+primitives (yes/no, choice, score) with an open Apache-2.0 model. It is not API-compatible
+with Jev's wire format, and is not affiliated with or endorsed by TypeSafe.
 
 This template is the repository's own `deploy/app.py` behind an HTTPS face, not an API written
 here. The `/decide` contract, the question types and the background checkpoint load are all

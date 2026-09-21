@@ -13,7 +13,7 @@ import { Check, Copy, ExternalLink } from 'lucide-react'
 import { useAuth } from '../components/AuthGate'
 import { copyText } from '../lib/clipboard'
 import { cliLine, DOCS_URL, quickStartCards, setupPrompt, type QuickStartCard } from '../lib/quickStart'
-import { mcpJsonConfig } from '../lib/mcpConnect'
+import { mcpJsonConfig, MCP_TOKEN_PLACEHOLDER } from '../lib/mcpConnect'
 
 const ASSET = '/quick-start/'
 
@@ -152,7 +152,8 @@ export function QuickStart() {
             mcp={mcpJsonConfig(boot.apiUrl, boot.mode)} />
           {boot.mode === 'server' && (
             <p className="text-sm leading-6 text-muted-foreground">
-              The CLI and MCP configs sign in with the API token in <code className="font-mono">$INSTA_API_TOKEN</code>.{' '}
+              Both need an API token: the CLI reads <code className="font-mono">$INSTA_API_TOKEN</code> from your shell;
+              in the MCP config, replace <code className="font-mono">{MCP_TOKEN_PLACEHOLDER}</code> with it.{' '}
               <Link to="/account/tokens" className="text-theme">Create one</Link>
             </p>
           )}

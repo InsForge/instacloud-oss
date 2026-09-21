@@ -114,12 +114,12 @@ seed_admin() {
 }
 
 # Twenty fills a workspace it activates with example records — Airbnb, Anthropic, Stripe and
-# friends, five people, six opportunities, two workflows and a dashboard. Upstream shows them to
-# the person who just created the workspace in their own browser; here the deploy creates it, so
-# without this the operator opens their new CRM and finds somebody else's demo in it. See
-# clear-sample-data.sql for what is removed and why the `SYSTEM` filter cannot reach a real
-# record. Everything here is non-fatal: the worst case is the workspace upstream would have given
-# them anyway.
+# friends, five people, six opportunities and a dashboard. Upstream shows them to the person who
+# just created the workspace in their own browser; here the deploy creates it, so without this
+# the operator opens their new CRM and finds somebody else's demo in it. See
+# clear-sample-data.sql for what is removed, why the `SYSTEM` filter cannot reach a real record,
+# and why the two prefilled workflows stay. Everything here is non-fatal: the worst case is the
+# workspace upstream would have given them anyway.
 clear_sample_data() {
   case "${SAMPLE_DATA:-}" in
     1 | y | yes | true | on | Y | YES | True | TRUE | On | ON)
@@ -159,7 +159,7 @@ clear_sample_data() {
     echo "entrypoint: could not remove twenty's example records, the workspace still has them: ${left}" >&2
     return
   fi
-  echo "entrypoint: removed twenty's example companies, people, opportunities, workflows and dashboard; ${left} left"
+  echo "entrypoint: removed twenty's example companies, people, opportunities and dashboard; ${left} left"
 }
 
 # The worker and the cron registration boot the same Nest context the server is booting, and this

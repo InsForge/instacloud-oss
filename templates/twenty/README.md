@@ -109,16 +109,23 @@ it means the service is never idle-stopped and is charged from deploy until you 
 ### An empty workspace
 
 Twenty fills a new workspace with example records — five companies (Airbnb, Anthropic, Stripe,
-Figma, Notion), five people, six opportunities, two workflows and a dashboard — and v2.41.0 has no
-setting that turns it off: `activateWorkspace` calls `prefillCreatedWorkspaceRecords`
-unconditionally. Upstream shows them to the person who just created the workspace in their own
-browser, where they read as a demo. Here the deploy creates the workspace before you ever open the
-URL, so the same rows read as someone else's data in your CRM.
+Figma, Notion), five people, six opportunities and a dashboard — and v2.41.0 has no setting that
+turns it off: `activateWorkspace` calls `prefillCreatedWorkspaceRecords` unconditionally. Upstream
+shows them to the person who just created the workspace in their own browser, where they read as a
+demo. Here the deploy creates the workspace before you ever open the URL, so the same rows read as
+someone else's data in your CRM.
 
 So the entrypoint deletes them once, on the boot that created the workspace, and logs what it did.
 It matches on `createdBySource = 'SYSTEM'`, which is what Twenty stamps on its own prefill and
 never on a record a person creates, so nothing you type is in reach of it. Set `SAMPLE_DATA=true`
 at deploy time to skip the step and keep Twenty's examples.
+
+Two things stay. The **workspace member** is your own admin profile, which the CRM cannot run
+without. And the two **workflows** — *Quick Lead* and *Create company when adding a new person* —
+belong to Twenty's pre-installed apps, which also put a *Quick Lead* entry in the command menu
+pointing at the workflow by id; deleting the record leaves that entry answering *"Record not
+found"*. They are automations rather than records, and **Workflows** in the sidebar deletes them
+if you do not want them.
 
 ## After deploy
 

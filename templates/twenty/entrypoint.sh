@@ -37,44 +37,45 @@ until redis-cli -h 127.0.0.1 -p 6379 ping >/dev/null 2>&1; do
 done
 echo "entrypoint: redis is up"
 
-# Upstream's entrypoint creates the schema, runs the migrations and registers the cron jobs, then
-# execs its argument. `true` is that argument, because this script starts the processes itself.
+# Everything between here and `node dist/main` is on the deploy's 90-second health gate, because
+# Twenty does not listen until its schema exists. Three cases, doing as little as each one allows:
 #
-# It replays `command:prod upgrade` and two cache flushes on EVERY boot, and each one pays for a
-# whole Nest context: about 50 seconds between them, spent deciding there is nothing to do
-# whenever the schema already matches the image. The marker records the version setup last ran
-# for, read from the file the Dockerfile writes out of its own FROM tag so a base-image bump
-# cannot forget to invalidate it. It lives on the volume beside the uploads, and losing the volume
-# costs one idempotent re-run.
+#   marker present   nothing. The marker records the version setup last ran for, read from the
+#                    file the Dockerfile writes out of its own FROM tag so a base-image bump
+#                    cannot forget to invalidate it. It lives on the volume beside the uploads,
+#                    and losing the volume costs one idempotent re-run.
+#   no core schema   the migrations only. See the branch.
+#   otherwise        upstream's own entrypoint, which is the path its extra steps exist for: a
+#                    schema written by an older image. `true` is the argument it execs, because
+#                    this script starts the processes itself.
 twenty_version="$(cat /insta-twenty-version)"
 setup_marker="/data/.twenty-setup-${twenty_version}"
 register_cron=no
 
+cd /app/packages/twenty-server
+
 if [ -f "$setup_marker" ]; then
   echo "entrypoint: database already set up for twenty ${twenty_version}, going straight to the server"
+elif [ "$(psql -tAc \
+      "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'core')" \
+      "${PG_DATABASE_URL}")" = f ]; then
+  # A database with no `core` schema at all: the migrations below create it AT THIS IMAGE'S
+  # VERSION, so the three steps upstream's entrypoint runs after them have nothing to find. The
+  # upgrade command walks workspaces and there are none, and the two cache flushes clear a redis
+  # this script created empty seconds ago. They are not free: each is a whole Nest context, 18 of
+  # the 105 seconds a first boot measured, against a 90-second health gate. The full upstream path
+  # still runs below whenever there IS a schema, which is the case those three steps exist for.
+  echo "entrypoint: empty database, creating the schema for twenty ${twenty_version}"
+  yarn database:init:prod
+  touch "$setup_marker"
+  register_cron=yes
 else
   echo "entrypoint: running upstream setup and migrations for twenty ${twenty_version}"
   # Cron registration is upstream's last setup step and the slowest thing standing between here
-  # and a listening server, so it is deferred to below where it overlaps the server's own boot.
+  # and a listening server, so it is deferred to below where it happens after the server is up.
   DISABLE_CRON_JOBS_REGISTRATION=true /app/entrypoint.sh true
   touch "$setup_marker"
   register_cron=yes
-fi
-
-cd /app/packages/twenty-server
-
-# The same two flags upstream's compose passes its worker, for the same reason: the block above
-# already did both, and a second migration run racing the first corrupts the metadata cache.
-DISABLE_DB_MIGRATIONS=true DISABLE_CRON_JOBS_REGISTRATION=true \
-  node dist/queue-worker/queue-worker &
-worker_pid=$!
-
-# Deferred from the setup block. The jobs are BullMQ repeatables in the redis above, which the
-# volume keeps across restarts, so this only has to run when setup did. Non-fatal: a failure here
-# costs the periodic syncs, not the CRM, and upstream's own entrypoint treats it the same way.
-if [ "$register_cron" = yes ]; then
-  (node dist/command/command cron:register:all \
-    || echo "entrypoint: cron registration failed, sync jobs will not run until the next boot" >&2) &
 fi
 
 # Hand the port over. The real server needs a few seconds to bind after this, and a refused
@@ -84,6 +85,28 @@ wait "$holder_pid" 2>/dev/null || true
 
 node dist/main &
 server_pid=$!
+
+# The worker and the cron registration boot the same Nest context the server is booting, and this
+# machine is small enough that three of them at once is measurable on the health gate's clock.
+# Neither is what the gate probes, so both wait for the server to answer. `exec` replaces this
+# subshell with the worker, which is what keeps $! usable as the worker's pid for the supervisor
+# below.
+start_worker() {
+  until curl -fsS -o /dev/null "http://127.0.0.1:${NODE_PORT}/healthz"; do sleep 1; done
+  # Deferred from the setup block. The jobs are BullMQ repeatables in the redis above, which the
+  # volume keeps across restarts, so this only has to run when setup did. Non-fatal: a failure
+  # costs the periodic syncs, not the CRM, and upstream's own entrypoint treats it the same way.
+  if [ "$register_cron" = yes ]; then
+    node dist/command/command cron:register:all \
+      || echo "entrypoint: cron registration failed, sync jobs will not run until the next boot" >&2
+  fi
+  # The same two flags upstream's compose passes its worker, for the same reason: the block above
+  # already did both, and a second migration run racing the first corrupts the metadata cache.
+  export DISABLE_DB_MIGRATIONS=true DISABLE_CRON_JOBS_REGISTRATION=true
+  exec node dist/queue-worker/queue-worker
+}
+start_worker &
+worker_pid=$!
 
 stop_all() { kill "$redis_pid" "$worker_pid" "$server_pid" 2>/dev/null || true; }
 trap 'stop_all; exit 0' TERM INT

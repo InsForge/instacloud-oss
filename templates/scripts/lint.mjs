@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
-import { FIXED_REF_RE, checkFixedRef } from "./manifest-refs.mjs";
+import { FIXED_REF_RE, checkFixedRef, MANAGED_TYPES } from "./manifest-refs.mjs";
 import { DEPLOY_BUTTON_ASSET, findDeployButtons } from "./publish-lib.mjs";
 import { ARCHITECTURES } from "./build-targets.mjs";
 
@@ -18,6 +18,8 @@ const codes = new Set();
 if (existsSync(join(root, "index.json"))) { failures++; console.error("✗ index.json: never commit it: CI generates it"); }
 
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+// MANAGED_TYPES comes from manifest-refs.mjs, which already needs it: one definition, not two.
+const TYPES = ["web", "worker", ...MANAGED_TYPES];
 // Images this repo builds for itself; templates-build-images derives their tag from `version:`.
 const SELF_IMAGE_PREFIX = "ghcr.io/insforge/insta-oss/templates/";
 const dirs = readdirSync(root).filter((d) => !NON_TEMPLATE.has(d) && statSync(join(root, d)).isDirectory());
@@ -124,8 +126,8 @@ for (const dir of dirs) {
   for (const [name, svc] of Object.entries(m?.services ?? {})) {
     for (const group of ["required", "optional"]) for (const k of Object.keys(svc.env?.[group] ?? {})) declared.add(k);
     // The platform is the authority; this check exists so a typo fails on the pull request instead
-    // of asynchronously, mid-run, on every by-code deploy after merge. Runs before the postgres
-    // skip below, because the platform checks every service.
+    // of asynchronously, mid-run, on every by-code deploy after merge. Runs before the managed-type
+    // check below, because the platform checks every service.
     for (const [k, value] of Object.entries(svc.env?.fixed ?? {})) {
       for (const mt of String(value).matchAll(FIXED_REF_RE)) {
         const verdict = checkFixedRef(mt[1], {
@@ -134,15 +136,41 @@ for (const dir of dirs) {
         if (verdict.error) err(dir, verdict.error);
       }
     }
-    // Also before the postgres skip: the platform refuses these on EVERY service type, so a lint
-    // that ran them only for compute would green-light a manifest publish then rejects.
+    // Also before the managed-type check: the platform refuses these on EVERY service type, so a
+    // lint that ran them only for compute would green-light a manifest publish then rejects.
     if (svc.spec !== undefined) {
       err(dir, `${name}: compute size is the platform's to choose — remove spec`);
     }
     if (svc.volume !== undefined && svc.volume !== true) {
       err(dir, `${name}: the volume size is the platform's to choose — declare 'volume: true'`);
     }
-    if (svc.type === "postgres") continue; // managed service: platform injects credentials
+    if (!TYPES.includes(svc.type)) {
+      err(dir, `${name}: type must be one of ${TYPES.join(", ")} (got '${svc.type}')`);
+      continue;
+    }
+    // A managed service is the platform's: it owns the image, port, sizing and credentials.
+    if (MANAGED_TYPES.includes(svc.type)) {
+      // redis, mysql and mongodb are cloud-only: the self-hosted runtime here only parses postgres.
+      if (svc.type !== "postgres") {
+        console.warn(`~ ${dir}: ${name} declares a ${svc.type} service, cloud-only today: the self-hosted runtime only parses web, worker and postgres and skips this template until it gains support`);
+      }
+      // spec is not in this list: the shared check above already refuses it on every service type,
+      // so it can never reach this loop first, and repeating it here would just double the message
+      // for one violation.
+      // volume IS still in this list despite that same shared check above: that check lets
+      // `volume: true` through, since that is the only valid shape on a deployable service, but a
+      // managed type may carry no volume key at all. This loop is the only place that catches
+      // `volume: true` here. A SIZED volume on a managed type still trips both checks: two lines
+      // for one violation, on purpose, not by accident.
+      // env is refused outright here, even though the platform's own parser tolerates an exact
+      // empty shell. That tolerance is a storage round-trip concern: a NORMALIZED stored manifest
+      // always carries an env record, and it must still parse on every by-code deploy. This linter
+      // only ever sees hand-authored files, where an empty env shell is noise no author writes.
+      for (const field of ["image", "build", "port", "healthcheck", "volume", "volumeGib", "alwaysOn", "env"]) {
+        if (svc[field] !== undefined) err(dir, `${name}: a ${svc.type} service is platform-managed and carries no ${field}, declare it bare`);
+      }
+      continue;
+    }
     // rule 1: image must be pinned (tag or digest), never latest/tagless
     if (!svc.image && !svc.build) err(dir, `${name}: needs image or build`);
     // the platform parser refuses both (image is what deploys; the Dockerfile is wired by convention)
@@ -184,6 +212,11 @@ for (const dir of dirs) {
       if (!(m.generated ?? {})[key]) err(dir, `env.generated.${k} references undeclared '${key}'`);
     }
   }
+  // Each managed datastore is born with its own volume at the deployer's plan cap, so a template
+  // declaring several of them costs several volumes. A warning, not a failure: legitimate but worth
+  // a second look on the pull request.
+  const managedCount = Object.values(m?.services ?? {}).filter((s) => MANAGED_TYPES.includes(s?.type)).length;
+  if (managedCount > 2) console.warn(`~ ${dir}: declares ${managedCount} managed datastores, each born with its own plan-cap volume`);
   // constraints may only name declared required/optional variables (platform parser rule)
   (m?.constraints ?? []).forEach((c, i) => {
     for (const kind of ["oneOf", "allOf"]) {

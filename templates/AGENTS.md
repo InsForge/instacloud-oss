@@ -70,6 +70,17 @@ IS the template code. Copying the closest existing template is the fastest way t
    it for queue consumers, schedulers and bots that only make outbound connections, and give it a
    `volume: true` if it keeps state, since a restart clears the root filesystem. `npm run lint`
    refuses the four shapes, and so does publish.
+12. A service is `web`, `worker`, or one of the managed datastores `postgres`, `redis`, `mysql` and
+   `mongodb`. A managed datastore is declared **bare**, as `{ type: redis }` and nothing else: the
+   platform owns its image, port, version, sizing and credentials, and a manifest that named any of
+   them could only drift from the platform's catalog. Consume it through `env.platform` with
+   `${{services.<name>.<KEY>}}`, never through `${services.<name>.url}`, which is refused. Each
+   managed datastore is born with its own data volume at the deployer's plan cap, so a template that
+   declares two of them costs two volumes. `npm run lint` warns above two.
+   Declaring `redis`, `mysql` or `mongodb` makes a template cloud-only today. This repository's own
+   self-hosted runtime (`src/`) still parses only `web`, `worker` and `postgres`, so it skips a
+   template that declares one of the other three, logging a warning, until it gains support for
+   them. `npm run lint` warns on this too and never fails the run over it.
 
 ## Architectures
 

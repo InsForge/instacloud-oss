@@ -13,6 +13,10 @@
 // matchAll (which clones) or replace (which resets lastIndex); .exec/.test on it would not be.
 export const FIXED_REF_RE = /\$\{([^}]+)\}/g;
 
+// Types the platform provisions and owns entirely: no address, credentials only through env.platform.
+// Exported so lint.mjs, which already imports from this file, does not carry its own copy.
+export const MANAGED_TYPES = ["postgres", "redis", "mysql", "mongodb"];
+
 /**
  * Judge one `${...}` body from an env.fixed value.
  * @returns `{ service, prop }` when it resolves, or `{ error }` with a ready-to-print message.
@@ -34,8 +38,8 @@ export function checkFixedRef(raw, { at, envName, services = {}, generated = {} 
   // Own-property: the [a-z0-9-] name class still admits words like 'constructor', which truthiness
   // on a plain object would resolve through the prototype chain.
   if (!Object.hasOwn(services, service)) return { error: `${at} references unknown service '${service}'` };
-  if (services[service]?.type === "postgres") {
-    return { error: `${at}: service '${service}' is a managed postgres: it has no url/host, reference its credentials via env.platform` };
+  if (MANAGED_TYPES.includes(services[service]?.type)) {
+    return { error: `${at}: service '${service}' is a managed ${services[service].type}: it has no url/host, reference its credentials via env.platform` };
   }
   // A worker is portless (insta-platform#490): nothing is routed to it, so it has no address either.
   if (services[service]?.type === "worker") {

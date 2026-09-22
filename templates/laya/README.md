@@ -85,11 +85,11 @@ The service is not idle-stopped, so budget for it running around the clock.
 ## Limits
 
 - **Input past ~1K tokens is silently truncated.** Keep states short.
-- **English only.** Upstream's multilingual checkpoint is not in this template.
-- **`confidence` is miscalibrated**, by upstream's own ECE numbers. Rank by it; do not read it as a probability of being right.
+- **English only.** The original project's multilingual checkpoint is not in this template.
+- **`confidence` is miscalibrated**, by the original authors' own ECE numbers. Rank by it; do not read it as a probability of being right.
 - **amd64 only.**
 
-The first and third are upstream's own findings, in its `BENCHMARKS.md` and `deploy/DEPLOY-CLOUD.md`.
+The first is the deployment fork's measured finding (`deploy/DEPLOY-CLOUD.md`); the third is the original authors' (`BENCHMARKS.md`).
 
 ## FAQ
 
@@ -109,7 +109,7 @@ A generated value would be stored write-only and you could never read it back. T
 Nothing is written between requests. A request carries the state it asks about.
 
 **Which checkpoint is this?**
-`typed-decisions`, ModernBERT-large, 421M parameters, 1024-token context - built by Convai Innovations, the original Laya authors. The one upstream's own deploy directory ships.
+`typed-decisions`, ModernBERT-large, 421M parameters, 1024-token context - built by Convai Innovations, the original Laya authors. The one the deployment fork's `deploy/` directory ships.
 
 ## Links
 

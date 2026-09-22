@@ -41,8 +41,9 @@ branch  = a disposable, fully isolated clone of all three
 
 - **Branches are forks of the disk.** `insta branch create` reflink-copies the Postgres data directory and every compute volume, copies the bucket, and redeploys the apps on their own URLs. A sleeping database on a reflink-capable filesystem forks in about a second; an awake or non-reflink source is streamed with `pg_basebackup` and scales with its size.
 - **Serverless on a single machine.** Services scale to zero and wake on the first request in about two seconds; `main` stays always-on by default, other branches opt in.
-- **The same command and API surface as the cloud.** One daemon answers the hosted platform's API, so the `insta` CLI, agent skills and dashboard work the same way self-hosted, with documented differences for the cloud-only operations (billing, scaling, domain purchase, GitHub deploys) that answer `501` with guidance.
+- **The same command and API surface as the cloud.** One daemon answers the hosted platform's API, so the `insta` CLI, agent skills and dashboard work the same way self-hosted, with documented differences for the cloud-only operations (billing, scaling, domain purchase) that answer `501` with guidance.
 - **A project is Postgres + S3 + your containers.** The daemon provisions the database, an object-storage bucket and your app containers, and wires their credentials into your environment.
+- **Git push-to-deploy.** Bind a compute service to a GitHub repo; a push to the tracked branch hits an HMAC-verified webhook, and the daemon builds the pushed commit with BuildKit and redeploys the service on its existing port. The cloud's GitHub-App connect needs a multi-tenant app (it stays `501`), so a self-hosted box ships its own webhook build instead ([usage below](#deploy-from-github)).
 - **Built for coding agents.** Per-branch sandboxes, opt-in approval gates on sensitive actions, and a full audit trail (`insta agent events`), so an agent can deploy and verify on its own branch and you keep the veto.
 - **One-command templates.** Deploy an app from the bundled catalog with `insta template deploy <code>`, served from this box with no internet access.
 
@@ -106,6 +107,32 @@ immediately. Apps land on `https://<group>-<project>-<branch>.<domain>` and data
 
 Full details, including firewalls, reflinks and your own domain:
 [docs.instacloud.com/self-hosting](https://docs.instacloud.com/self-hosting/overview).
+
+## Deploy from GitHub
+
+Server-mode boxes can auto-deploy on `git push`. Deploy a compute service once, bind it to a repo,
+add the webhook the daemon returns, and every push to the tracked branch rebuilds and redeploys that
+service. The daemon builds the pushed commit itself with BuildKit (no remote build gateway); a
+private repo authenticates with a GitHub Personal Access Token, a public one needs none. Wired via
+the API today:
+
+```bash
+# 1. deploy the service once (this creates the compute group and fixes its port)
+insta deploy --image nginx:alpine --port 3000 --group web
+
+# 2. bind it to a repo; the response carries a webhook URL and its secret
+curl -sX POST https://api.<domain>/projects/<project-id>/services/cp-web/git \
+  -H "authorization: Bearer $INSTA_API_TOKEN" -H 'content-type: application/json' \
+  -d '{"repo":"owner/repo","ref":"main","token":"<github PAT, omit for a public repo>"}'
+
+# 3. add that webhook URL to the repo (Settings > Webhooks; content type application/json), then:
+git push        # the daemon checks out the pushed commit, builds it, and redeploys the service
+```
+
+The webhook is HMAC-verified, the build is pinned to the pushed commit SHA, and the redeploy reuses
+the service's port. Push-to-deploy honours the project's `deploy` governance policy: it auto-deploys
+only when that policy is `allow`. `GET`/`DELETE` on the same path show or remove the binding. See
+[COMPATIBILITY.md](COMPATIBILITY.md) for the full behaviour.
 
 ## Run on your laptop
 

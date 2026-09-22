@@ -19,6 +19,8 @@ import type { Engine } from '../src/engine'
 let imagesRepo = ''   // the repo `docker images <repo>` must be called with to get the fixture
 let imagesFixture = ''
 let buildGate: Promise<void> | null = null // when set, a stubbed `docker build` blocks on it (in-flight)
+let buildGateResolve: (() => void) | null = null // resolves the gate (a test's release, or kill())
+const gateBuild = (): void => { buildGate = new Promise<void>((r) => { buildGateResolve = r }) }
 const rmiCalls: string[] = []
 function fakeDocker(args: string[]): Promise<Buffer> {
   if (args[0] === 'rm') for (const a of args.slice(1)) if (!a.startsWith('-')) runtime.drop(a)
@@ -35,7 +37,9 @@ vi.mock('../src/docker', async (importOriginal) => {
     docker: (args: string[], opts?: { input?: Buffer; mergeStderr?: boolean }) =>
       ['rm', 'ps', 'build', 'images', 'rmi', 'builder'].includes(args[0]) ? fakeDocker(args) : orig.docker(args, opts),
     dockerCall: (args: string[], opts?: { env?: Record<string, string> }) =>
-      args[0] === 'build' ? { done: (buildGate ?? Promise.resolve()).then(() => Buffer.from('')), kill: () => {} } : orig.dockerCall(args, opts),
+      // kill() settles the gate too, so a shutdown that kills the child lets `done` resolve (mirrors a
+      // real SIGKILL making dockerCall.done reject/settle) instead of hanging the drain.
+      args[0] === 'build' ? { done: (buildGate ?? Promise.resolve()).then(() => Buffer.from('')), kill: () => buildGateResolve?.() } : orig.dockerCall(args, opts),
   }
 })
 
@@ -58,6 +62,7 @@ beforeEach(async () => {
   imagesRepo = ''
   imagesFixture = ''
   buildGate = null
+  buildGateResolve = null
   rmiCalls.length = 0
   cfg = testConfig()
   engine = makeEngine(cfg)
@@ -204,8 +209,7 @@ test('webhook: after a successful deploy, superseded build images are reclaimed 
 test('DELETE waits for an in-flight build and the deploy it drains is skipped (no deploy after unbind)', async () => {
   const app = buildServer(engine, cfg)
   const { id, secret } = seedWebhookBinding()
-  let release!: () => void
-  buildGate = new Promise<void>((r) => { release = r })
+  gateBuild()
   calls.length = 0
   await sendPush(app, id, secret, 'a'.repeat(40), 8_000_000) // build starts and hangs on the gate
   // The webhook handler set q.running synchronously, so the binding's build is in flight now.
@@ -213,11 +217,27 @@ test('DELETE waits for an in-flight build and the deploy it drains is skipped (n
   // DELETE removes the binding, then awaits the in-flight build; it must not resolve while gated.
   const raced = await Promise.race([del.then(() => 'done'), new Promise((r) => setTimeout(() => r('pending'), 60))])
   expect(raced).toBe('pending')
-  release() // the build finishes; deployFromGit now sees the binding gone and skips
+  buildGateResolve!() // the build finishes; deployFromGit now sees the binding gone and skips
   const res = await del
   expect(res.statusCode).toBe(200)
   expect(loadState().gitBindings?.[id]).toBeUndefined()
   expect(calls.some((c) => c.startsWith('deploy:'))).toBe(false) // the drained build did not deploy after unbind
+})
+
+test('shutdown drains the in-flight build and never starts a queued one', async () => {
+  const app = buildServer(engine, cfg)
+  const { id, secret } = seedWebhookBinding()
+  gateBuild()
+  calls.length = 0
+  await sendPush(app, id, secret, 'a'.repeat(40), 1_000_000) // build A starts, hangs on the gate
+  await sendPush(app, id, secret, 'b'.repeat(40), 2_000_000) // build B is coalesced into q.next
+  // Close the server: onClose flips the shutdown flag (dropping the queued B), kills the in-flight
+  // child (which settles A's gate), and awaits the runner. It must return, not hang.
+  const closed = await Promise.race([app.close().then(() => 'closed'), new Promise((r) => setTimeout(() => r('hung'), 2000))])
+  expect(closed).toBe('closed')
+  // At most ONE deploy (build A, if its kill let it complete); the queued B must never have deployed.
+  expect(calls.filter((c) => c.includes(':bbbb') || c.includes('b'.repeat(12))).length).toBe(0)
+  expect(loadState().gitBindings?.[id]?.binding.lastDeployedSha).not.toBe('b'.repeat(40))
 })
 
 test('connect → GET → DELETE happy path over the HTTP routes', async () => {

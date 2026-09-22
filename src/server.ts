@@ -1288,18 +1288,20 @@ export function buildServer(
   // per-binding serialization + coalescing above still stands; this only bounds the heavy step.
   const GIT_BUILD_TIMEOUT_MS = 20 * 60_000
   const GIT_BUILD_CONCURRENCY = 2
-  // How much BuildKit build cache to keep. `docker rmi` reclaims tagged images but not the build
-  // cache (git sources + layers) BuildKit accumulates, so without a cap that grows without bound. A
-  // coarse LRU cap over the default builder is the stopgap; a dedicated builder with its own GC policy
-  // (so a shared docker host's other caches are untouched) is tracked as a follow-up.
-  const GIT_BUILD_CACHE_KEEP = '4GB'
   let gitBuildSlots = GIT_BUILD_CONCURRENCY
   const gitBuildWaiters: Array<() => void> = []
   // In-flight build children, so daemon shutdown can kill them and await the runners rather than
   // stranding a `docker build` past app.close() (which would reset the concurrency limit on restart).
   const activeGitBuilds = new Set<{ kill: () => void }>()
+  let gitShuttingDown = false
   app.addHook('onClose', async () => {
+    // Order matters: flip the flag FIRST so runners stop consuming queued/coalesced jobs, then kill
+    // the active children and release any semaphore waiters so a blocked runner unblocks and exits
+    // without starting a new build. Only then await the runners to finish.
+    gitShuttingDown = true
+    for (const q of gitBuilds.values()) q.next = null
     for (const b of activeGitBuilds) b.kill()
+    while (gitBuildWaiters.length) gitBuildWaiters.shift()?.()
     await Promise.allSettled([...gitBuilds.values()].map((q) => q.done ?? Promise.resolve()))
   })
   const acquireBuildSlot = async (): Promise<() => void> => {
@@ -1313,6 +1315,9 @@ export function buildServer(
   const runBuild = async (spec: { args: string[]; env: Record<string, string> }): Promise<void> => {
     const release = await acquireBuildSlot()
     try {
+      // A runner blocked on the semaphore and woken by shutdown (a killed build freed a slot) must not
+      // spawn a new child after the close hook's one kill pass.
+      if (gitShuttingDown) return
       const call = dockerCall(spec.args, { env: spec.env })
       activeGitBuilds.add(call)
       let timedOut = false
@@ -1366,6 +1371,7 @@ export function buildServer(
         return
       }
     }
+    if (gitShuttingDown) return // the daemon is closing; don't start a new build the shutdown can't drain
     const tag = imageTag(bindingId, sha)
     engine.emit(rec.projectId, branchName, 'resource', 'git.build', { repo: `${rec.binding.owner}/${rec.binding.repo}`, group: rec.group, sha: sha ?? null })
     try {
@@ -1390,10 +1396,10 @@ export function buildServer(
       engine.emit(rec.projectId, res.branch, 'resource', 'git.deploy', { group: rec.group, image: tag, sha: sha ?? null, port: res.port })
       // Reclaim this binding's now-superseded images (keep the one just deployed). Every push mints a
       // new tag, so without this the daemon's disk grows without bound (a real failure, seen in the wild).
+      // BuildKit's build CACHE (git sources + layers) is separate and NOT reclaimed here: a coarse
+      // prune of the default builder would evict unrelated workloads' cache, so a dedicated builder
+      // with its own GC policy is tracked as a follow-up (#166); operators can `docker builder prune`.
       await pruneBuildImages(tag.split(':')[0], tag)
-      // Cap BuildKit's build cache (git sources + layers), which `docker rmi` does not touch, so it
-      // cannot grow without bound across many commits. Coarse LRU cap; never fails the deploy.
-      try { await docker(['builder', 'prune', '-f', '--keep-storage', GIT_BUILD_CACHE_KEEP]) } catch { /* best effort */ }
     } catch (e) {
       // A build that produced an image but never deployed leaves an unused tag behind; drop it.
       try { await docker(['rmi', tag]) } catch { /* build may have failed before any image existed */ }
@@ -1403,6 +1409,7 @@ export function buildServer(
 
   /** Kick off (or coalesce into) a build for a binding. Detached, so the webhook answers fast. */
   const runGitDeploy = (bindingId: string, job: GitJob): void => {
+    if (gitShuttingDown) return // no new dispatch once the daemon is closing
     const q = gitBuilds.get(bindingId) ?? { running: false, next: null, done: null }
     gitBuilds.set(bindingId, q)
     // Coalesce by commit time, not arrival order: keep the pending job with the newest ts, so a
@@ -1416,7 +1423,9 @@ export function buildServer(
     q.done = (async () => {
       try {
         let cur: GitJob | null = job
-        while (cur) { await doGitDeploy(bindingId, cur); cur = q.next; q.next = null }
+        // Stop consuming jobs once shutdown starts, so app.close() cannot leave a new build running
+        // past the daemon restart.
+        while (cur && !gitShuttingDown) { await doGitDeploy(bindingId, cur); cur = gitShuttingDown ? null : q.next; q.next = null }
       } catch (e) {
         q.next = null
         console.warn(`git build runner for ${bindingId} failed: ${e instanceof Error ? e.message : String(e)}`)
@@ -1490,7 +1499,9 @@ export function buildServer(
 
   // The push webhook: OUTSIDE the auth guard (GitHub cannot present a token), verified by the
   // per-binding HMAC over the raw body. Answers 202 at once and builds detached (GitHub's 10 s budget).
-  app.post('/webhooks/git/:bindingId', async (req, reply) => {
+  // A raised bodyLimit (default 1 MB) so a large-but-valid push is not 413'd before HMAC/branch
+  // filtering; kept modest because the raw body is buffered before the signature is checked.
+  app.post('/webhooks/git/:bindingId', { bodyLimit: 5 * 1024 * 1024 }, async (req, reply) => {
     const { bindingId } = req.params as { bindingId: string }
     const rec = loadState().gitBindings?.[bindingId]
     if (!rec) return reply.code(404).send({ error: 'unknown webhook' })

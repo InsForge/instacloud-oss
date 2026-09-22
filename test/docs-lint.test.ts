@@ -190,6 +190,30 @@ test('the README and the docs pages name no command that does not exist', () => 
   }
 })
 
+// `agent policy` and `agent observe` are noun-first command GROUPS: the bare group name performs
+// no operation of its own, so every mention must carry one of the real leaf subcommands
+// (`insta policy get` / `insta observe install` / `insta observe report` before the 0.1
+// noun-first regrouping, per this file's own history). The INVENTED list above only catches exact
+// banned strings, so a doc that drops the leaf verb but keeps a valid top-level noun (`agent
+// policy` standing in for `agent policy get`) slips past it; this test catches that instead.
+const NESTED_COMMANDS: Record<string, string[]> = {
+  'agent policy': ['get'],
+  'agent observe': ['install', 'report'],
+}
+
+test('nested agent command groups are never named without one of their real subcommands', () => {
+  for (const rel of ['README.md', ...mdxPages()]) {
+    const text = readFileSync(join(root, rel), 'utf8')
+    for (const [group, subs] of Object.entries(NESTED_COMMANDS)) {
+      for (const m of text.matchAll(new RegExp(`${group}(?![\\w-])([^\\n\`]*)`, 'g'))) {
+        const rest = m[1].trimStart()
+        const ok = subs.some((s) => rest.startsWith(s))
+        expect(ok, `${rel}: "${group}${m[1]}" is missing one of: ${subs.join(', ')}`).toBe(true)
+      }
+    }
+  }
+})
+
 test('COMPATIBILITY names every new route by its real verb', () => {
   const text = readFileSync(join(root, 'COMPATIBILITY.md'), 'utf8')
   expect(CLI_VERBS.filter((v) => !text.includes(v))).toEqual([])

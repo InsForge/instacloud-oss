@@ -254,14 +254,15 @@ insta agent setup
 insta agent setup --project <id>
 insta agent manifest
 insta agent events
-insta agent policy
-insta agent observe
+insta agent policy get
+insta agent observe install
+insta agent observe report
 insta agent approvals list
 insta agent approvals approve <id>
 insta agent approvals deny <id>
 ```
 
-`agent` also covers governance for projects that gate sensitive actions: a gated action parks until someone runs `agent approvals approve` (or `deny`). `agent policy` prints the project's effective policy (read-only; `GET /projects/:id/policy`) and `agent observe` is the hook that uploads credential-audit findings to the audit trail. Setting a policy is still dashboard-only (Settings > Agent Governance) or `PUT /projects/:id/policy/:action`; the CLI has no verb that writes one.
+`agent` also covers governance for projects that gate sensitive actions: a gated action parks until someone runs `agent approvals approve` (or `deny`). `agent policy get` prints the project's effective policy (read-only; `GET /projects/:id/policy`); `agent observe install` sets up the local credential-audit hook and `agent observe report` uploads its findings to the audit trail. Setting a policy is still dashboard-only (Settings > Agent Governance) or `PUT /projects/:id/policy/:action`; the CLI has no verb that writes one.
 
 
 ### config
@@ -303,7 +304,7 @@ CLI 0.1 grouped several previously top-level commands under a resource noun. If 
 | `insta manifest` | `insta agent manifest` |
 | `insta events` | `insta agent events` |
 | `insta approvals list` / `approve` / `deny` | `insta agent approvals list` / `approve` / `deny` |
-| top-level `policy` / `observe` (retired) | `insta agent policy` / `insta agent observe` |
+| top-level `policy get` / `observe install` / `observe report` (retired) | `insta agent policy get` / `insta agent observe install` / `insta agent observe report` |
 | `insta mcp install` | `insta config install-mcp` |
 | `insta regions` | `insta config regions` |
 | `insta autoupdate` | `insta config autoupdate` |

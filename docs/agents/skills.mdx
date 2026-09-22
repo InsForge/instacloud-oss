@@ -11,27 +11,27 @@ What it teaches:
 
 - Check `insta status` before assuming login or project state
 - Work on a branch, not on `main` — create, switch, refresh secrets
-- Reach credentials through the seam (`insta secrets`, `insta run`, `insta db url`, bindings) instead of asking for them
-- Deploy with `insta deploy` and verify with `insta logs` / `insta metrics`
+- Reach credentials through the seam (`insta secrets`, `insta run`, `insta postgres url`, bindings) instead of asking for them
+- Deploy with `insta deploy` and verify with `insta compute logs` / `insta compute metrics`
 
 ## Installing
 
 ```bash
-npx insta@latest setup agent
+npx insta@latest agent setup
 ```
 
 Setup installs the skill user-globally into every agent directory the skills tool knows — Claude Code, Cursor, OpenAI Codex, OpenCode, GitHub Copilot, Gemini CLI, Windsurf, Factory Droid, Goose, Aider, Continue, Roo, Kilo Code, Qwen, and the universal `.agents` directory among them.
 
 ## Project-level skills
 
-`insta project create` and `insta project link` also install skills into the repo's agent directories (`.claude/skills/`, `.agents/skills/`), so any agent working in that checkout picks them up: the `insta` skill plus a fixed set of stack skills for the platform's storage and auth integrations (installed regardless of which services the project runs). These directories are gitignored — they don't travel with a clone. On a teammate or CI machine, run `insta project link <id>` (or `insta setup agent`) once to install them there.
+`insta project create` and `insta project link` also install skills into the repo's agent directories (`.claude/skills/`, `.agents/skills/`), so any agent working in that checkout picks them up: the `insta` skill plus a fixed set of stack skills for the platform's storage and auth integrations (installed regardless of which services the project runs). These directories are gitignored — they don't travel with a clone. On a teammate or CI machine, run `insta project link <id>` (or `insta agent setup`) once to install them there.
 
 ## Updating
 
 Rerun setup:
 
 ```bash
-insta setup agent
+insta agent setup
 ```
 
 Skills reinstall from the current published set each time; there is nothing to version-pin locally.

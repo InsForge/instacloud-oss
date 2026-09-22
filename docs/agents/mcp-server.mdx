@@ -14,18 +14,18 @@ https://mcp.instacloud.com/mcp
 Streamable HTTP; there is no stdio server to run locally. Register it with your agent in one command:
 
 ```bash
-insta mcp install                  # Claude Code + all detected agents
-insta mcp install --agent cursor   # one agent
+insta config install-mcp                # Claude Code + all detected agents
+insta config install-mcp --agent cursor # one agent
 ```
 
-Supported agents: `claude-code`, `cursor`, `codex`, `opencode`, `copilot`, `factory-droid`. [`insta setup agent`](/agents/setup) does this as part of full setup.
+Supported agents: `claude-code`, `cursor`, `codex`, `opencode`, `copilot`, `factory-droid`. [`insta agent setup`](/agents/setup) does this as part of full setup.
 
 ## Authentication
 
 Two options, both a Bearer credential the server forwards to the platform — it stores nothing itself:
 
 - **OAuth** (default) — the agent runs the OAuth 2.1 + PKCE flow, discovered via the standard protected-resource metadata. No credential is written to disk.
-- **API token** — a durable `insta_` token, for headless machines and CI. `insta mcp install --mcp-token` mints one and embeds it (Claude Code only); other agents use OAuth.
+- **API token** — a durable `insta_` token, for headless machines and CI. `insta config install-mcp --mcp-token` mints one and embeds it (Claude Code only); other agents use OAuth.
 
 ## Tools overview
 

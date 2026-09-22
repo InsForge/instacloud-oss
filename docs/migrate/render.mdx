@@ -43,7 +43,7 @@ services:
 Your agent reads the service straight from Render's API, so it needs your repo name and a Render API key, not a checkout. Give it the skill first:
 
 ```bash
-npx -y insta@latest setup agent
+npx -y insta@latest agent setup
 ```
 
 That installs the `insta` CLI, the `insta` skill, and the MCP server for every coding agent on this machine. The skill is what knows how to read a `render.yaml` and turn it into services.

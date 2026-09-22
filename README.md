@@ -187,7 +187,7 @@ service: `insta compute always-on off web`.
 
 **Governance at the credential boundary.** The daemon is the only thing holding credentials, and
 every sensitive action passes an allow, deny or approve gate before it touches a resource. Agents
-propose, humans approve: a gated action parks until someone runs `insta approvals approve`, and an
+propose, humans approve: a gated action parks until someone runs `insta agent approvals approve`, and an
 agent that ignores its instructions still cannot get past it. Every action lands in the
 `insta agent events` audit timeline.
 

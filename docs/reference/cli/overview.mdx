@@ -254,9 +254,12 @@ insta agent setup
 insta agent setup --project <id>
 insta agent manifest
 insta agent events
+insta agent approvals list
+insta agent approvals approve <id>
+insta agent approvals deny <id>
 ```
 
-`agent` also covers governance for projects that gate sensitive actions: `agent policy`, `agent approvals`, `agent observe`.
+`agent` also covers governance for projects that gate sensitive actions: a gated action parks until someone runs `agent approvals approve` (or `deny`). The policy itself is set from the dashboard (Settings > Agent Governance) or `PUT /projects/:id/policy/:action`; the CLI has no `policy` command of its own.
 
 
 ### config
@@ -297,6 +300,7 @@ CLI 0.1 grouped several previously top-level commands under a resource noun. If 
 | `insta setup agent` | `insta agent setup` (old form kept as a hidden alias) |
 | `insta manifest` | `insta agent manifest` |
 | `insta events` | `insta agent events` |
+| `insta approvals list` / `approve` / `deny` | `insta agent approvals list` / `approve` / `deny` |
 | `insta mcp install` | `insta config install-mcp` |
 | `insta regions` | `insta config regions` |
 | `insta autoupdate` | `insta config autoupdate` |

@@ -164,7 +164,23 @@ const CLI_VERBS = [
 // Commands that do not exist. `insta policy` was RETIRED from the CLI (insta-cli's
 // test/retired-policy.test.ts pins "unknown command 'policy'"); opt-in approval is the dashboard's
 // policy matrix or PUT /projects/:id/policy/:action. It was being recommended to operators anyway.
-const INVENTED = ['compute domain add', 'insta compute domain', 'tokens list', 'insta tokens', 'insta policy']
+// A top-level verb check alone missed the same mistake one level down: `agent policy` and
+// `agent observe` were never real subcommands either (COMPATIBILITY.md pins "the CLI has no
+// `policy` command of its own, on the cloud or here"), and `services scale` / `services upgrade`
+// were renamed to `compute scale` / `compute limits` under the 0.1 noun-first regrouping, so both
+// retired sequences are pinned here alongside the top-level ones.
+const INVENTED = [
+  'compute domain add',
+  'insta compute domain',
+  'tokens list',
+  'insta tokens',
+  'insta policy',
+  'agent policy',
+  'agent observe',
+  'insta observe',
+  'insta services scale',
+  'insta services upgrade',
+]
 
 test('the README and the docs pages name no command that does not exist', () => {
   for (const rel of ['README.md', ...mdxPages()]) {

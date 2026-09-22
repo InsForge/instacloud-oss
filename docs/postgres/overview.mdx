@@ -32,7 +32,7 @@ insta postgres url         # print the DSN
 It is standard Postgres — no custom storage engine, no protocol proxy rewriting your queries. Each instance runs with its own provisioned volume:
 
 - `insta postgres volume` shows the provisioned size and your plan's cap on any plan; `--size` grows it (paid plans; grow-only). Billing is actual data stored — the size is a cap, not a price.
-- `insta postgres limits` shows or sets the instance's resource ceiling (paid plans). Unlike `insta services upgrade`, which is up-only, limits move both directions.
+- `insta postgres limits` shows or sets the instance's resource ceiling (paid plans). Unlike `insta compute limits`, which is up-only, limits move both directions.
 - Backups and restore are managed.
 
 ## Cloud versus self-hosted

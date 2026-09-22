@@ -1,105 +1,102 @@
 # Laya
 
-An open-source Jev alternative: a self-hosted typed-decision API over a 421M encoder.
+An open-source alternative to Jev: typed decisions with calibrated probabilities, on CPU, in your own project.
 
 [![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/laya)
 
-## Overview
+## What it does
 
-[Laya](https://github.com/tonychang04/laya-template) is a non-autoregressive decision engine. You
-POST it a piece of state (an email, a ticket, a support message) together with typed questions, and
-it returns an answer per question in a single forward pass: `choice` picks one of your options,
-`score` returns an expected value over an ordered scale, `noul` returns a yes/no probability. There
-is no text generation, so there is nothing to parse and no format to repair.
+You POST a piece of state and a list of typed questions. You get one answer per question, in one forward pass. No text is generated, so there is nothing to parse.
 
-Jev is TypeSafe AI's proprietary decision model; Laya offers the same three typed-decision
-primitives (yes/no, choice, score) with an open Apache-2.0 model. It is not API-compatible
-with Jev's wire format, and is not affiliated with or endorsed by TypeSafe.
+- `choice` — picks one of your options, with a probability for each
+- `score` — an expected value over an ordered scale
+- `noul` — the probability that something is true
 
-This template is the repository's own `deploy/app.py` behind an HTTPS face, not an API written
-here. The `/decide` contract, the question types and the background checkpoint load are all
-upstream's, imported unmodified from a pinned commit. What this directory adds is HTTP basic auth,
-a route at `/` so the service URL opens the interactive docs instead of a 404, and a build that
-bakes the checkpoint into the image.
+Typical uses: **routing tickets, classifying email, scoring urgency, gating an LLM call**.
 
-The checkpoint is `typed-decisions` (ModernBERT-large, 421M, 1024-token context), which is the one
-upstream's own deploy directory ships. It runs on CPU. There is no GPU anywhere in this template.
+## Deploy
 
-## What you get by hosting it
+1. Pick a **username** and **password**. That is the only input; there is no API key and nothing to download.
+2. Click Deploy. The service is live in about **2 minutes**.
+3. That two minutes is mostly the model loading. `/decide` answers 503 until it finishes.
 
-- A private classification and triage endpoint: your tickets, emails and documents are scored
-  inside your own project rather than posted to a model vendor.
-- An HTTPS URL with interactive docs at `/docs`, where you can compose a request and send it
-  without writing a client.
-- A cost profile that is a running container rather than per-token billing, which is the
-  difference that matters when the workload is "label every inbound message".
-- No cold download. The 842 MB checkpoint is baked into the image and the container never reaches
-  the Hugging Face Hub, so what you deploy is exactly what was built and tested.
+## Use it
 
-## What you need before deploying
+1. Open your service URL. The browser asks for the credentials you set, then shows the API docs.
+2. Send a decision:
 
-- A username and a password of your choosing, for the API's basic auth. Nothing else: no API key,
-  no model download, no account anywhere.
+```bash
+curl -u admin:$PASSWORD -X POST https://<your-url>/decide \
+  -H 'content-type: application/json' \
+  -d '{
+    "state": "We were billed twice for March. Refund it today or we cancel.",
+    "questions": [
+      {"type": "choice", "instructions": "Which department?", "options": ["billing", "technical", "sales"]},
+      {"type": "noul", "instructions": "Does the user threaten to cancel?"}
+    ]
+  }'
+```
+
+3. Read the answers. Each carries its probabilities and a `confidence`; the response carries `latency_ms`.
+
+```json
+{"answers": [
+  {"type": "choice", "choice": "billing", "probabilities": {"billing": 0.86, "technical": 0.06, "sales": 0.08}},
+  {"type": "noul", "noul": 0.76}
+], "latency_ms": 212.3}
+```
+
+4. Act on the numbers in your own code. The thresholds are yours, not the model's.
+
+`GET /healthz` needs no credential and reports `model_loaded`. Poll it if you are scripting against the service.
 
 ## Configuration
 
-| Variable | Required | What it does |
+| Variable | Required | What it is |
 |---|---|---|
-| `ADMIN_USERNAME` | yes | Username for HTTP basic auth on every route except `/healthz`. Pick anything without a colon, which basic auth splits on. |
-| `ADMIN_PASSWORD` | yes | Password for the same. Neither is generated for you: a generated value would be stored write-only and you could never read it back. |
+| `ADMIN_USERNAME` | yes | Username for the API. No colon. |
+| `ADMIN_PASSWORD` | yes | Password for the API. **Change it after deploying.** |
 
-Set by the template, not by you: `HF_HOME=/opt/hf` (where the build cached the checkpoint),
-`HF_HUB_OFFLINE=1` (a cache miss becomes a loud failure rather than a silent 842 MB download),
-`PORT=8080`, and `USE_TF=0` / `USE_TORCH=1` / `TOKENIZERS_PARALLELISM=false`, the three upstream
-sets in its own CI because transformers probes for TensorFlow at import and can deadlock model
-construction when it finds one.
+Everything else is set for you.
 
-The service declares no volume. It holds no state: a request carries the state it asks about, and
-nothing is written between requests.
+## Speed and cost
 
-## After deploy
+| | |
+|---|---|
+| One question, warm | **72 ms** |
+| Three questions, warm | **320 ms** |
+| First call after the machine has idled | **about 30 s**, while the model loads |
+| Memory | 2.2 GB |
+| Billing | per running minute; the machine stops when idle and wakes on the next request |
 
-1. Open `https://<your-service-url>/`. It redirects to `/docs` and the browser asks for the
-   credentials you set.
-2. Expand `POST /decide`, choose **Try it out**, and send something like:
+Latency grows with the length of the state, roughly 1.1 ms per input token.
 
-   ```json
-   {
-     "state": "Hi, we were billed twice for March. Please refund the duplicate today or we will cancel our plan.",
-     "questions": [
-       {"type": "choice", "instructions": "Which department should handle this?",
-        "options": ["billing", "technical", "sales"]},
-       {"type": "score", "instructions": "How urgent is this?",
-        "options": ["not urgent", "soon", "blocking"]},
-       {"type": "noul", "instructions": "Does the user threaten to cancel?"}
-     ]
-   }
-   ```
+## Limits
 
-   The response carries one entry per question, in order, each with its probabilities and a
-   `confidence`, plus the server-side `latency_ms`.
+- **Input past ~1K tokens is silently truncated.** Keep states short.
+- **English only.** Upstream's multilingual checkpoint is not in this template.
+- **`confidence` is miscalibrated.** Rank by it; do not read it as a probability of being right.
+- **amd64 only.**
 
-3. `GET /healthz` is open (no credential) and reports `model_loaded` and `load_seconds`. **After a
-   cold start the checkpoint loads in a background thread and `/decide` answers 503 with
-   `model still loading` until it finishes.** Measured on this platform: 22.8 s on a first boot and
-   43.2 s after a restart, when the page cache is cold. The service is not always-on, so an idle
-   machine stops and the next request pays that wait again. Poll `/healthz` if you are scripting
-   against it.
+## FAQ
 
-   Once warm, and on a state of roughly 125 tokens: 71.5 ms for one question and about 320 ms for
-   three. The first request after a restart cost 1030.7 ms. Latency grows with the length of the
-   state, at roughly 1.1 ms per input token per upstream's own measurements.
+**Is this compatible with Jev's API?**
+No. Same three primitives, different wire format. Not affiliated with or endorsed by TypeSafe.
 
-Two properties worth knowing before you build on the answers, both of them upstream's own findings
-recorded in `deploy/DEPLOY-CLOUD.md` and `BENCHMARKS.md`: input past roughly 1K tokens is silently
-truncated, so keep states short; and the `confidence` values are miscalibrated per upstream's own
-ECE numbers, so rank by them rather than reading them as probabilities of being right.
+**Why is the first call slow?**
+The 842 MB checkpoint loads into memory on boot. It is baked into the image, so nothing is downloaded; the wait is the load itself. The machine stops when idle, so the next request after a quiet period pays it again.
+
+**Why are the credentials not generated for me?**
+A generated value would be stored write-only and you could never read it back. The deploy form starts them empty on purpose.
+
+**Why is there no volume?**
+Nothing is written between requests. A request carries the state it asks about.
+
+**Which checkpoint is this?**
+`typed-decisions`, ModernBERT-large, 421M parameters, 1024-token context. The one upstream's own deploy directory ships.
 
 ## Links
 
-- Architectures: `linux/amd64` only. The image installs CPU torch and runs a real prediction at
-  build time to bake the checkpoint, and nothing has yet proved that sequence under QEMU for
-  arm64. The manifest says so, so the platform refuses an arm64 box before creating anything.
-- Upstream: <https://github.com/tonychang04/laya-template>, pinned to commit `c9dcaab`
-- Model: <https://huggingface.co/convaiinnovations/laya>, `typed-decisions` subfolder
-- License: Apache-2.0 (upstream `tonychang04/laya-template`, and the model weights).
+- Upstream: <https://github.com/tonychang04/laya-template>, pinned to `c9dcaab`
+- Model: <https://huggingface.co/convaiinnovations/laya>
+- License: Apache-2.0

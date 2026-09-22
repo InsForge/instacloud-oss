@@ -48,7 +48,7 @@ services:
         # and a generated one would be stored write-only where the operator could never read it
         # back. The console renders one empty field and will not submit until it is filled.
         API_KEY:
-          description: "API key for every route except /healthz. Send `Authorization: Bearer <key>`, or HTTP basic auth with username `api` and the key as the password"
+          description: "Paste an API key of your choosing; it guards every route except /healthz. Send `Authorization: Bearer <key>`, or HTTP basic auth with username `api` and the key as the password"
 
 meta:
   name: Laya

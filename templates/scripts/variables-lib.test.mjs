@@ -86,7 +86,7 @@ describe('the credentialed templates ship no credential of their own', () => {
   });
 
   it('laya makes the operator supply exactly one API key', () => {
-    // laya left the ADMIN pair in 0.2.0: it is an API consumed programmatically (Bearer key, or
+    // laya dropped the ADMIN pair in 0.2.0: it is an API consumed programmatically (Bearer key, or
     // basic auth with the fixed username `api`), unlike the browser terminals above where a
     // login prompt fits. The same security property holds: required, no default, no generator.
     const svc = Object.values(templates.find((t) => t.dir === 'laya').manifest.services)[0];

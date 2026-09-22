@@ -47,7 +47,7 @@ interactive docs let you run the same request from **Try it out**.
 ], "latency_ms": 321.9}
 ```
 
-4. Act on the numbers in your own code. The thresholds are yours, not the model's.
+Act on the numbers in your own code. The thresholds are yours, not the model's.
 
 `GET /healthz` needs no credential and reports `model_loaded`. Poll it if you are scripting against the service.
 
@@ -55,8 +55,7 @@ interactive docs let you run the same request from **Try it out**.
 
 | Variable | Required | What it is |
 |---|---|---|
-| `ADMIN_USERNAME` | yes | Username for the API. No colon. |
-| `ADMIN_PASSWORD` | yes | Password for the API. **Change it after deploying.** |
+| `API_KEY` | yes | The key for every route except `/healthz`. **Rotate it by redeploying with a new value.** |
 
 Everything else is set for you.
 
@@ -89,8 +88,8 @@ No. Same three primitives, different wire format. Not affiliated with or endorse
 **Why is the first call slow?**
 The 842 MB checkpoint loads into memory on boot. It is baked into the image, so nothing is downloaded; the wait is the load itself. The machine stops when idle, so the next request after a quiet period pays it again.
 
-**Why are the credentials not generated for me?**
-A generated value would be stored write-only and you could never read it back. The deploy form starts them empty on purpose.
+**Why is the API key not generated for me?**
+A generated value would be stored write-only and you could never read it back. The deploy form starts the field empty on purpose: paste a key of your choosing.
 
 **Why is there no volume?**
 Nothing is written between requests. A request carries the state it asks about.

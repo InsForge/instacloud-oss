@@ -117,7 +117,8 @@ private repo authenticates with a GitHub Personal Access Token, a public one nee
 the API today:
 
 ```bash
-# tokens in env vars, never inline (so they stay out of shell history and process listings)
+# tokens in env vars, never inline, and fed to curl off the command line (via a header file and
+# stdin below), so neither the API token nor the PAT lands in shell history or a process listing
 export INSTA_API_TOKEN=insta_...        # from `insta login` / Account > API Tokens
 export GITHUB_PAT=...                    # only for a private repo; leave empty for a public one
 
@@ -127,9 +128,11 @@ export GITHUB_PAT=...                    # only for a private repo; leave empty 
 insta deploy --image nginx:alpine --port 3000 --group web
 
 # 2. bind it to a repo. The response carries a webhook URL and its SECRET (needed in step 3).
-#    The body (with the PAT) is piped via stdin, so the token never appears in the command line.
+#    The auth header is read from a process-substitution file and the body (with the PAT) from
+#    stdin, so neither secret is passed as a command-line argument.
 curl -sX POST https://api.<domain>/projects/<project-id>/services/cp-web/git \
-  -H "authorization: Bearer $INSTA_API_TOKEN" -H 'content-type: application/json' --data @- <<JSON
+  -H @<(printf 'authorization: Bearer %s' "$INSTA_API_TOKEN") \
+  -H 'content-type: application/json' --data @- <<JSON
 {"repo":"owner/repo","ref":"main","token":"$GITHUB_PAT"}
 JSON
 

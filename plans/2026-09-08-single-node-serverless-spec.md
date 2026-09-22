@@ -37,7 +37,7 @@ Three facts shape the plan.
 - Private registries in v1.
 - Point-in-time recovery. Scheduled backups are a later milestone in this doc, not v1.
 - Cloud to self-host migration.
-- Any endpoint the cloud lacks. Any change to platform, console or MCP.
+- Any endpoint the cloud lacks (superseded 2026-09-21 for one sanctioned exception: the self-hosted-only git push-to-deploy build endpoint, see the builder note below). Any change to platform, console or MCP.
 - Governance product decisions. The code stays as is (FAQ).
 - Open-sourcing insta-compute or insta-db.
 
@@ -198,7 +198,7 @@ The daemon has no template code today (`grep template src/server.ts` is empty); 
 
 - **Image**: `insta deploy --image` and the dashboard Deploy dialog. Works today.
 - **Template**: section 6.
-- **Source**: unchanged. The CLI builds locally when the daemon 501s `/deploy-token` and hands over a local tag. That works when the CLI runs on the box (ssh in, or an agent running there). From a laptop against a remote daemon it cannot, and the CLI says so. No daemon-side builder and no context-upload route in this spec: the cloud has no such contract, and adding one would be an oss-only endpoint. Revisit when the cloud's build contract is exposed.
+- **Source**: unchanged. The CLI builds locally when the daemon 501s `/deploy-token` and hands over a local tag. That works when the CLI runs on the box (ssh in, or an agent running there). From a laptop against a remote daemon it cannot, and the CLI says so. No daemon-side builder and no context-upload route in this spec: the cloud has no such contract, and adding one would be an oss-only endpoint. Revisit when the cloud's build contract is exposed. (Superseded 2026-09-21: the daemon now ships native git push-to-deploy, `docker build` from an HMAC-verified webhook, as the one sanctioned self-hosted-only endpoint. See the builder note below for the reasoning.)
 
 ### 8. Backups (M7, after v1)
 
@@ -234,7 +234,7 @@ flowchart LR
 
 Routes the daemon starts answering, all of which exist on the cloud today: `/tokens` (GET, POST, DELETE), `/templates`, `/templates/:code`, `/projects/:id/template-deployments`, `/template-deployments/:id`, `…/services/:sid/always-on`, `…/services/:sid/limits`, `/projects/:id/compute/domain` (POST, GET, DELETE), `/projects/:id/backups` family (M7), `POST /projects/:id/services` for more than one postgres or storage. Routes that stay 501: billing, usage, orgs, members, invitations, `scale`, `upgrade`, `deploy-token`, `images/inspect`.
 
-Endpoints added that the cloud lacks: **none**.
+Endpoints added that the cloud lacks: **one, sanctioned 2026-09-21** (git push-to-deploy, see the builder note); otherwise none.
 
 ## The changes broken down per repo
 
@@ -277,7 +277,7 @@ Endpoints added that the cloud lacks: **none**.
 - **ACME inside the router.** Fewer containers; certificate issuance and renewal is code nobody should write twice. The edge is boring on purpose. The router still needs the certificate for 5432, so it reads the edge's store.
 - **Shared Postgres with `FILE_COPY` reflink clones.** Faster still, but the source must be quiesced and every branch shares one server's settings, extensions, sleep state and failure domain. Directory fork keeps today's model at the same order of speed.
 - **`docker pause` as sleep.** Instant resume, RAM never freed. Kept as the optional first tier.
-- **A daemon-side builder and a context-upload route.** What every one-machine PaaS does, and what v1 of this spec proposed. Dropped: the cloud has no such contract, and the rule is no oss-only endpoints. Source deploy works with the CLI on the box.
+- **A daemon-side builder and a context-upload route.** What every one-machine PaaS does, and what v1 of this spec proposed. Dropped in v1: the cloud has no such contract, and the rule is no oss-only endpoints. **Reinstated 2026-09-21** as the one sanctioned self-hosted-only endpoint (see the builder note): the cloud's builder is a multi-tenant GitHub App a single node cannot run, so native git push-to-deploy now ships. Source deploy with the CLI on the box still works too.
 - **Data moves inside the daemon for `migrate`.** Would need `/migrate/*` routes the cloud lacks. Dropped for the same reason; the CLI runs `pg_dump` and `rclone` like it already runs `psql`.
 - **A bearer token in a config file instead of a setup page.** One line less in the installer, but the cloud experience is an account plus `insta_` tokens, and every one-machine PaaS creates the admin on first visit.
 - **Never sleeping databases.** Simpler, and they idle small. But "serverless" that excludes the database is the cloud's own gap made permanent; on one node the TCP lane is a few hundred lines and the wake is 1 to 3 s.
@@ -331,7 +331,9 @@ M0, M3 and M6 run in parallel with M1. Roughly 10 to 12 weeks for one engineer, 
 
 **Why a loop-mounted XFS image?** It works on every VPS regardless of the provider's root filesystem, needs no kernel module, and is one line. An operator with btrfs or ZFS at the data path gets reflinks natively and the installer skips the image.
 
-**Why no builder, when every one-machine PaaS has one?** Because it would be the first endpoint the cloud lacks, and the rule is the cloud's contract. The CLI on the box builds today. When the cloud exposes its build contract, the daemon mirrors it.
+**Why no builder, when every one-machine PaaS has one?** Originally: because it would be the first endpoint the cloud lacks, and the rule is the cloud's contract. The CLI on the box builds today. When the cloud exposes its build contract, the daemon mirrors it.
+
+**Update 2026-09-21 (maintainer decision, Tony's call).** This is now carved out as the one sanctioned self-hosted-only endpoint. What reversed it: the cloud's builder is a multi-tenant GitHub App, which a single node cannot run, so a builder here is a capability the cloud architecturally cannot offer rather than a gratuitous divergence from its contract, and Dokploy-style git push-to-deploy is a core reason operators self-host. The daemon ships native git push-to-deploy (`docker build` of the pushed commit, driven by an HMAC-verified webhook), recorded as a divergence in COMPATIBILITY.md and gated by the rule CONTRIBUTING now states: a self-hosted-only endpoint is allowed only for a capability the cloud cannot provide, with a maintainer sign-off. If the cloud ever exposes a build contract, the daemon mirrors that instead.
 
 **What about governance?** The code ships 12 gated actions with `project.delete` defaulting to approve and an Approvals page; the docs removed it on 2026-09-04; the README still headlines it. This spec does not touch it. Tony's call.
 

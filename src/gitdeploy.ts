@@ -1,0 +1,144 @@
+// Git push-to-deploy for the self-hosted daemon (server mode). A compute service can be bound to a
+// GitHub repo; a push to the tracked branch hits POST /webhooks/git/<id>, which this module verifies
+// (HMAC over the raw body, RFC-style constant-time) and turns into a build + redeploy. The daemon
+// builds the repo itself with `docker build <git-context-url>`, which BuildKit fetches directly, so
+// no local git clone is needed. This is the self-hosted equivalent of the cloud's GitHub App flow,
+// which needs a multi-tenant app and is left at 501; here a per-service Personal Access Token (or a
+// public repo, no token) is the whole auth model.
+//
+// Token handling: the PAT is NEVER placed in the build-context URL or anywhere else in docker's argv
+// (argv is visible in /proc and process listings to any local user, which redaction of our own error
+// strings cannot cover). It is handed to BuildKit as the `GIT_AUTH_TOKEN` build secret, sourced from
+// the child docker process's ENVIRONMENT — BuildKit uses it to authenticate the private git context
+// fetch. It is stored only as part of the binding in state.json (0600), never echoed by a route and
+// never on a command line.
+
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
+
+/** A compute service's git binding, stored under the branch's app in state. `token` is a GitHub PAT
+ *  (or empty for a public repo); `webhookSecret` verifies the push. */
+export interface GitBinding {
+  id: string
+  owner: string
+  repo: string
+  ref: string
+  token: string
+  webhookSecret: string
+  createdAt: string
+  lastDeployedSha?: string
+  /** Commit timestamp (ms) of the last commit deployed by a webhook: an out-of-order or redelivered
+   *  push whose commit is not strictly newer than this is skipped, so an older commit can never
+   *  overwrite a newer deployment even when GitHub delivers pushes out of order or twice. */
+  lastDeployedAt?: number
+}
+
+/** A binding as stored in state.json: the repo binding plus the compute target it drives, keyed by
+ *  `binding.id` so the webhook can find it in one lookup. */
+export interface GitBindingRecord {
+  binding: GitBinding
+  projectId: string
+  branchId: string
+  branchName: string
+  group: string
+}
+
+/** The binding as a route may safely echo it: no token, no webhook secret. */
+export function bindingOut(r: GitBindingRecord): Record<string, unknown> {
+  return {
+    id: r.binding.id, repo: `${r.binding.owner}/${r.binding.repo}`, ref: r.binding.ref,
+    group: r.group, branch: r.branchName, private: r.binding.token !== '',
+    lastDeployedSha: r.binding.lastDeployedSha ?? null, createdAt: r.binding.createdAt,
+  }
+}
+
+const OWNER_REPO_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
+const REF_RE = /^[A-Za-z0-9._/-]+$/
+
+/** Parse an `owner/repo` (or a github.com URL) into its parts, or throw a 400-class Error. */
+export function parseRepo(input: unknown): { owner: string; repo: string } {
+  const s = typeof input === 'string' ? input.trim() : ''
+  let slug = s
+  const m = /^https?:\/\/github\.com\/([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(s)
+  if (m) slug = m[1]
+  if (!OWNER_REPO_RE.test(slug)) throw new Error(`invalid repository ${JSON.stringify(input)}: expected owner/repo or a github.com URL`)
+  const [owner, repo] = slug.split('/')
+  return { owner, repo: repo.replace(/\.git$/, '') }
+}
+
+/** A branch/ref name safe to place in a git URL fragment. Defaults to `main`. */
+export function normalizeRef(input: unknown): string {
+  const s = typeof input === 'string' && input.trim() ? input.trim() : 'main'
+  if (!REF_RE.test(s) || s.includes('..')) throw new Error(`invalid ref ${JSON.stringify(input)}`)
+  return s
+}
+
+/** A fresh binding for a repo. The webhook secret is what GitHub signs the push with. */
+export function newBinding(owner: string, repo: string, ref: string, token: string, now: number): GitBinding {
+  return { id: randomUUID(), owner, repo, ref, token, webhookSecret: randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, ''), createdAt: new Date(now).toISOString() }
+}
+
+/** The BuildKit git-context URL — no credentials in it (see the token-handling note at the top).
+ *  `fragment` is what BuildKit checks out: the pushed COMMIT SHA for a webhook (immutable, so an
+ *  image labelled SHA A can never contain SHA B), or the branch ref for the initial connect build. */
+export function buildContextUrl(b: Pick<GitBinding, 'owner' | 'repo'>, fragment: string): string {
+  return `https://github.com/${b.owner}/${b.repo}.git#${fragment}`
+}
+
+/** The full `docker build` invocation for a binding: the argv (which carries NO secret) and the env
+ *  the child docker process runs with. A private repo's PAT rides `GIT_AUTH_TOKEN` in the env, which
+ *  BuildKit consumes as the `id=GIT_AUTH_TOKEN` secret to authenticate the git-context fetch — so the
+ *  credential never appears in argv. DOCKER_BUILDKIT=1 forces the BuildKit builder, required for both
+ *  `--secret` and git-context auth. */
+export function dockerBuildSpec(b: Pick<GitBinding, 'owner' | 'repo' | 'token'>, tag: string, fragment: string): { args: string[]; env: Record<string, string> } {
+  const env: Record<string, string> = { DOCKER_BUILDKIT: '1' }
+  const secret: string[] = []
+  if (b.token) { env.GIT_AUTH_TOKEN = b.token; secret.push('--secret', 'id=GIT_AUTH_TOKEN,env=GIT_AUTH_TOKEN') }
+  return { args: ['build', '--pull', ...secret, '-t', tag, buildContextUrl(b, fragment)], env }
+}
+
+/** The image tag a build produces: `io-git-<full binding id, hyphens stripped>:<12 of sha>` (or
+ *  `:manual` with no sha). The repo name uses the WHOLE binding id, not a prefix: image cleanup lists
+ *  by `io-git-<id>`, so a shared prefix would let one binding's prune remove a peer binding's image
+ *  (docker rmi refuses a RUNNING container's image, but not a stopped/asleep one). A full 32-hex id
+ *  gives every binding its own image namespace. */
+export function imageTag(bindingId: string, sha?: string): string {
+  const clean = typeof sha === 'string' ? sha.replace(/[^a-f0-9]/gi, '').slice(0, 12) : ''
+  const short = clean || 'manual'
+  return `io-git-${bindingId.replace(/-/g, '')}:${short}`
+}
+
+/** Constant-time check of GitHub's `X-Hub-Signature-256: sha256=<hex>` over the RAW request body.
+ *  A missing/malformed header or a mismatched length is false, never a throw. */
+export function verifySignature(secret: string, rawBody: Buffer, header: unknown): boolean {
+  if (typeof header !== 'string') return false
+  const m = /^sha256=([a-f0-9]{64})$/i.exec(header.trim())
+  if (!m) return false
+  const expected = createHmac('sha256', secret).update(rawBody).digest()
+  let got: Buffer
+  try { got = Buffer.from(m[1], 'hex') } catch { return false }
+  return got.length === expected.length && timingSafeEqual(got, expected)
+}
+
+/** The event + ref + head sha + ordering key a GitHub push webhook carries, or null when the payload
+ *  is not a push to a branch we can act on (a tag push, a delete, a ping, a malformed body).
+ *
+ *  `ts` is a best-effort ordering key in ms: the head commit's timestamp, but CLAMPED to receipt time
+ *  (`now`) and defaulted to it when absent/invalid. `head_commit.timestamp` is client-supplied and
+ *  not monotonic with push order, so an un-clamped value is unsafe in both directions — a future date
+ *  (a skewed committer clock, `git commit --date`) would otherwise persist as the last-deployed time
+ *  and permanently wedge the binding, silently skipping every honest push after it. Clamping to `now`
+ *  makes the key never exceed arrival time, so no push can wedge a later one; paired with the caller's
+ *  `<=` staleness compare and the `lastDeployedSha` redelivery dedupe, an out-of-order or
+ *  equal-timestamp older commit is skipped. It is NOT a guarantee of git ancestry. */
+export function pushRef(event: unknown, body: unknown, now: number = Date.now()): { branch: string; sha: string; ts: number } | null {
+  if (event !== 'push') return null
+  const b = (body ?? {}) as { ref?: unknown; after?: unknown; deleted?: unknown; head_commit?: { timestamp?: unknown } }
+  if (b.deleted === true) return null
+  if (typeof b.ref !== 'string' || !b.ref.startsWith('refs/heads/')) return null
+  // `after` must be a real full commit id (40-hex sha1 or 64-hex sha256), never the all-zero
+  // branch-delete sentinel or any other shape, before it becomes a git fragment and an image tag.
+  if (typeof b.after !== 'string' || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(b.after) || /^0+$/.test(b.after)) return null
+  const raw = b.head_commit?.timestamp
+  const parsed = typeof raw === 'string' ? Date.parse(raw) : NaN
+  return { branch: b.ref.slice('refs/heads/'.length), sha: b.after, ts: Math.min(Number.isFinite(parsed) ? parsed : now, now) }
+}

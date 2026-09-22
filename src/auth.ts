@@ -29,6 +29,10 @@ export function isPublicPath(method: string, path: string): boolean {
   if (path === '/healthz') return true
   if (path.startsWith('/api/auth/')) return true
   if (path.startsWith('/auth/')) return true
+  // Git push-to-deploy webhooks authenticate with a per-binding HMAC over the body, not the guard.
+  // Exactly one path segment after /webhooks/git/ (the binding id), so a future nested route under
+  // this prefix cannot become public by accident.
+  if (method === 'POST' && /^\/webhooks\/git\/[^/]+$/.test(path)) return true
   if (method === 'GET' && (path === '/templates' || path.startsWith('/templates/'))) return true
   if (method === 'GET' && !isApiPath(path)) return true
   return false

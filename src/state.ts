@@ -18,6 +18,7 @@ import { homedir, hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Project, Branch, Approval, AuditEvent, GatedAction, Decision, UserSecret, CustomDomainEntry, TemplateDeploymentRecord } from './types'
+import type { GitBindingRecord } from './gitdeploy'
 
 // ---- region WP1 (identity/config) ----
 export interface IdentityState {
@@ -48,6 +49,8 @@ export interface State {
   // ---- region WP5 (templates/parity) ----
   templateDeployments: Record<string, TemplateDeploymentRecord>
   // ---- end region WP5 ----
+  // Git push-to-deploy bindings (server mode), keyed by binding id so the webhook resolves in one lookup.
+  gitBindings?: Record<string, GitBindingRecord>
 }
 
 /** saveState keeps the newest EVENTS_CAP events (decision 54). */

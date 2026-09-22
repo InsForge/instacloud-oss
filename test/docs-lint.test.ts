@@ -161,22 +161,20 @@ const CLI_VERBS = [
   'POST /tokens',
 ]
 
-// Commands that do not exist. `insta policy` was RETIRED from the CLI (insta-cli's
-// test/retired-policy.test.ts pins "unknown command 'policy'"); opt-in approval is the dashboard's
-// policy matrix or PUT /projects/:id/policy/:action. It was being recommended to operators anyway.
-// A top-level verb check alone missed the same mistake one level down: `agent policy` and
-// `agent observe` were never real subcommands either (COMPATIBILITY.md pins "the CLI has no
-// `policy` command of its own, on the cloud or here"), and `services scale` / `services upgrade`
-// were renamed to `compute scale` / `compute limits` under the 0.1 noun-first regrouping, so both
-// retired sequences are pinned here alongside the top-level ones.
+// Commands that do not exist. `insta policy` and `insta observe` were RETIRED from the CLI
+// (insta-cli's test/retired-policy.test.ts pins "unknown command 'policy'") and replaced by the
+// noun-first `insta agent policy` / `insta agent observe`, which ARE real subcommands (e2e/lib.sh
+// names `insta agent policy` alongside `insta agent approvals` as governance verbs the CLI ships;
+// src/server.ts's `POST /projects/:id/events` route is what the CLI's observe hook uploads to) and
+// must not be pinned here. Only the bare top-level forms are invented. `services scale` /
+// `services upgrade` were renamed to `compute scale` / `compute limits` under the 0.1 noun-first
+// regrouping, so that retired sequence is pinned here alongside the top-level ones.
 const INVENTED = [
   'compute domain add',
   'insta compute domain',
   'tokens list',
   'insta tokens',
   'insta policy',
-  'agent policy',
-  'agent observe',
   'insta observe',
   'insta services scale',
   'insta services upgrade',

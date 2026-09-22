@@ -1288,8 +1288,20 @@ export function buildServer(
   // per-binding serialization + coalescing above still stands; this only bounds the heavy step.
   const GIT_BUILD_TIMEOUT_MS = 20 * 60_000
   const GIT_BUILD_CONCURRENCY = 2
+  // How much BuildKit build cache to keep. `docker rmi` reclaims tagged images but not the build
+  // cache (git sources + layers) BuildKit accumulates, so without a cap that grows without bound. A
+  // coarse LRU cap over the default builder is the stopgap; a dedicated builder with its own GC policy
+  // (so a shared docker host's other caches are untouched) is tracked as a follow-up.
+  const GIT_BUILD_CACHE_KEEP = '4GB'
   let gitBuildSlots = GIT_BUILD_CONCURRENCY
   const gitBuildWaiters: Array<() => void> = []
+  // In-flight build children, so daemon shutdown can kill them and await the runners rather than
+  // stranding a `docker build` past app.close() (which would reset the concurrency limit on restart).
+  const activeGitBuilds = new Set<{ kill: () => void }>()
+  app.addHook('onClose', async () => {
+    for (const b of activeGitBuilds) b.kill()
+    await Promise.allSettled([...gitBuilds.values()].map((q) => q.done ?? Promise.resolve()))
+  })
   const acquireBuildSlot = async (): Promise<() => void> => {
     if (gitBuildSlots <= 0) await new Promise<void>((resolve) => gitBuildWaiters.push(resolve))
     gitBuildSlots--
@@ -1302,9 +1314,10 @@ export function buildServer(
     const release = await acquireBuildSlot()
     try {
       const call = dockerCall(spec.args, { env: spec.env })
+      activeGitBuilds.add(call)
       let timedOut = false
       const timer = setTimeout(() => { timedOut = true; call.kill() }, GIT_BUILD_TIMEOUT_MS)
-      try { await call.done } catch (e) { throw timedOut ? new Error(`build exceeded ${GIT_BUILD_TIMEOUT_MS / 1000}s and was terminated`) : e } finally { clearTimeout(timer) }
+      try { await call.done } catch (e) { throw timedOut ? new Error(`build exceeded ${GIT_BUILD_TIMEOUT_MS / 1000}s and was terminated`) : e } finally { clearTimeout(timer); activeGitBuilds.delete(call) }
     } finally { release() }
   }
   /** Reclaim a binding's superseded build images, keeping `keep` (the tag currently deployed, or null
@@ -1378,6 +1391,9 @@ export function buildServer(
       // Reclaim this binding's now-superseded images (keep the one just deployed). Every push mints a
       // new tag, so without this the daemon's disk grows without bound (a real failure, seen in the wild).
       await pruneBuildImages(tag.split(':')[0], tag)
+      // Cap BuildKit's build cache (git sources + layers), which `docker rmi` does not touch, so it
+      // cannot grow without bound across many commits. Coarse LRU cap; never fails the deploy.
+      try { await docker(['builder', 'prune', '-f', '--keep-storage', GIT_BUILD_CACHE_KEEP]) } catch { /* best effort */ }
     } catch (e) {
       // A build that produced an image but never deployed leaves an unused tag behind; drop it.
       try { await docker(['rmi', tag]) } catch { /* build may have failed before any image existed */ }

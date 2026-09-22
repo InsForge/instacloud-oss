@@ -33,7 +33,7 @@ vi.mock('../src/docker', async (importOriginal) => {
   return {
     ...orig,
     docker: (args: string[], opts?: { input?: Buffer; mergeStderr?: boolean }) =>
-      ['rm', 'ps', 'build', 'images', 'rmi'].includes(args[0]) ? fakeDocker(args) : orig.docker(args, opts),
+      ['rm', 'ps', 'build', 'images', 'rmi', 'builder'].includes(args[0]) ? fakeDocker(args) : orig.docker(args, opts),
     dockerCall: (args: string[], opts?: { env?: Record<string, string> }) =>
       args[0] === 'build' ? { done: (buildGate ?? Promise.resolve()).then(() => Buffer.from('')), kill: () => {} } : orig.dockerCall(args, opts),
   }

@@ -45,8 +45,7 @@ curl -X POST https://YOUR-SERVICE-URL/decide \
 
 Each answer carries its probabilities and a `confidence`; the response carries `latency_ms`.
 Basic auth sends the same secret in RFC 7617 form: `curl -u api:YOUR_API_KEY ...` (the username is
-always `api`). Prefer a browser? Open the service URL, sign in as `api` with your key, and the
-interactive docs let you run the same request from **Try it out**.
+always `api`).
 
 ```json
 {"answers": [

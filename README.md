@@ -117,22 +117,33 @@ private repo authenticates with a GitHub Personal Access Token, a public one nee
 the API today:
 
 ```bash
-# 1. deploy the service once (this creates the compute group and fixes its port)
+# tokens in env vars, never inline (so they stay out of shell history and process listings)
+export INSTA_API_TOKEN=insta_...        # from `insta login` / Account > API Tokens
+export GITHUB_PAT=...                    # only for a private repo; leave empty for a public one
+
+# 1. deploy the service once. This creates the compute group and FIXES its port, so set the port
+#    your repo's app listens on (the demo repo below serves 3000). The image here is a throwaway
+#    placeholder; the first build from your repo replaces it.
 insta deploy --image nginx:alpine --port 3000 --group web
 
-# 2. bind it to a repo; the response carries a webhook URL and its secret
+# 2. bind it to a repo. The response carries a webhook URL and its SECRET (needed in step 3).
+#    The body (with the PAT) is piped via stdin, so the token never appears in the command line.
 curl -sX POST https://api.<domain>/projects/<project-id>/services/cp-web/git \
-  -H "authorization: Bearer $INSTA_API_TOKEN" -H 'content-type: application/json' \
-  -d '{"repo":"owner/repo","ref":"main","token":"<github PAT, omit for a public repo>"}'
+  -H "authorization: Bearer $INSTA_API_TOKEN" -H 'content-type: application/json' --data @- <<JSON
+{"repo":"owner/repo","ref":"main","token":"$GITHUB_PAT"}
+JSON
 
-# 3. add that webhook URL to the repo (Settings > Webhooks; content type application/json), then:
+# 3. add that webhook to the repo: Settings > Webhooks > Add webhook:
+#    Payload URL = the returned webhook URL, Content type = application/json,
+#    Secret = the returned webhook secret (REQUIRED: without it GitHub sends no signature and the
+#    daemon rejects the push 401). Then just push:
 git push        # the daemon checks out the pushed commit, builds it, and redeploys the service
 ```
 
-The webhook is HMAC-verified, the build is pinned to the pushed commit SHA, and the redeploy reuses
-the service's port. Push-to-deploy honours the project's `deploy` governance policy: it auto-deploys
-only when that policy is `allow`. `GET`/`DELETE` on the same path show or remove the binding. See
-[COMPATIBILITY.md](COMPATIBILITY.md) for the full behaviour.
+The webhook is HMAC-verified over the raw body, the build is pinned to the pushed commit SHA, and the
+redeploy reuses the service's port. Push-to-deploy honours the project's `deploy` governance policy:
+it auto-deploys only when that policy is `allow`. `GET`/`DELETE` on the same path show or remove the
+binding. See [COMPATIBILITY.md](COMPATIBILITY.md) for the full behaviour.
 
 ## Run on your laptop
 

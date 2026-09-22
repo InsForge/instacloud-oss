@@ -19,6 +19,7 @@ import { randomBytes } from 'node:crypto'
 import { docker, destroyContainer, inspectField, UNREADABLE, UnreadableProbeError } from '../docker'
 import { forkMethod, probedCapabilities, sharedDataDir } from '../datadir'
 import { loadConfig } from '../config'
+import { maskSqlText } from '../sqlsurface'
 import { NoReflinkError } from '../types'
 import type { Config } from '../config'
 import type { DataDirOps, DatabaseAdapter, PgTarget, ServiceLimits } from '../types'
@@ -136,17 +137,28 @@ export class LocalPostgres implements DatabaseAdapter {
     return { url: swapHost(src.url, dst.container), method: 'basebackup', ms: Date.now() - t0 }
   }
 
-  async query(container: string, sql: string): Promise<string> {
+  async query(container: string, sql: string, opts: { statementTimeoutMs?: number; sqlOnly?: boolean } = {}): Promise<string> {
     const deadline = Date.now() + QUERY_DEADLINE_MS
+    // A per-statement bound through the server's own option (PGOPTIONS), so an ad-hoc statement
+    // cannot hold the request and the docker child open indefinitely.
+    const timeout = opts.statementTimeoutMs
+      ? ['-e', `PGOPTIONS=-c statement_timeout=${Math.trunc(opts.statementTimeoutMs)}`] : []
+    // The security backstop for UNTRUSTED SQL, at the transport itself so no caller can bypass it:
+    // `-f -` (stdin) processes psql meta-commands (`\!` shells out as this exec's user, `\g`/`\gexec`
+    // run extra buffers, `\watch` outlives the statement timeout). A backslash is never SQL outside
+    // a string/comment, so a single unquoted one — masking the literals first (sqlsurface) so a
+    // backslash IN data is fine — means a meta-command, and it is refused here, not merely at the
+    // engine. The engine still rejects earlier with a friendlier message; this is the layer that
+    // cannot be forgotten.
+    if (opts.sqlOnly && maskSqlText(sql).includes('\\')) {
+      throw new Error('psql meta-commands are not supported: send SQL only')
+    }
     for (;;) {
       try {
-        // TCP (`-h 127.0.0.1`), not the unix socket: the image's init-time temporary server listens
-        // on the socket only (#34), and a cloned database doing crash recovery can briefly accept a
-        // socket connection then close it with `server closed the connection unexpectedly`. The TCP
-        // path is the same one `pgWaitReady` probes, so a query after readiness cannot hit a server
-        // the readiness check could not see.
-        const out = await this.exec(['exec', '-i', container, 'psql', '-h', '127.0.0.1', '-U', 'postgres', '-d', DB,
-          '-v', 'ON_ERROR_STOP=1', '-tAc', sql])
+        // The SQL rides STDIN, not argv: `-tAc <sql>` sat in the host's process listing for the
+        // life of the exec (redaction only covered error MESSAGES). `-X` skips psqlrc.
+        const out = await this.exec(['exec', '-i', ...timeout, container, 'psql', '-X', '-U', 'postgres', '-d', DB,
+          '-v', 'ON_ERROR_STOP=1', '-tA', '-f', '-'], { input: Buffer.from(sql) })
         return out.toString().trim()
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)

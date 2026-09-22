@@ -15,6 +15,7 @@ import { EllipsisVertical } from 'lucide-react'
 import { api } from '../../api'
 import type { PendingApproval } from '../ApprovalPrompt'
 import type { SecretGroup, SecretKind, SecretRow, SecretScope } from '../../lib/secretRows'
+import { newSecretNameError } from '../../lib/secretNames'
 
 const UNBOUND = 'none'
 
@@ -121,12 +122,14 @@ export function SecretDialog({ projectId, branch, services, editing, noun = 'Sec
     event.preventDefault()
     setError(null)
     const nextName = name.trim()
-    // Only what the daemon itself refuses. The dialog used to demand SCREAMING_SNAKE_CASE within 64 characters and
-    // cap the value at 8 KiB, none of which the daemon enforces, so a secret created with the CLI could be listed here
-    // and then not edited: the form rejected its own existing name. An env var name cannot be empty or contain `=`;
-    // that is the real floor.
+    // A NEW name must be a usable environment variable name (lib/secretNames.ts): the dialog used to take anything but
+    // an empty name or `=`, so "bad name" was stored and then never reached a container as a variable. An existing name
+    // is not re-checked, since the field is locked while editing; a secret created with the CLI stays editable.
     if (!nextName) return setError('A name is required.')
-    if (nextName.includes('=')) return setError(`A ${noun.toLowerCase()} name cannot contain "=".`)
+    if (!editing) {
+      const nameError = newSecretNameError(nextName)
+      if (nameError) return setError(nameError)
+    }
     // The other door onto the same trap the row actions close: a name a BINDING already maps into the selected service
     // can be written as a user secret, and `envFor` applies bindings last, so the container keeps the bound value and
     // the row you just created does nothing. The daemon allows it (bindings bypass `isReservedSecret` by design), so

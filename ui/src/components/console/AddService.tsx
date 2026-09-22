@@ -11,9 +11,11 @@
 //     branch while the daemon's default is on, scale-to-zero on a preview) and is sent only when
 //     changed; the console always starts it on and always sends it
 //   - creates apply now instead of staging into an apply-changes batch
+//   - the console pre-fills the Service Name, safe there because Add only stages a change behind
+//     Deploy/Discard; here Add creates the service immediately, so the name starts empty (the
+//     suggestion is the placeholder) and Add stays disabled until one is typed
 
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
   Button, cn, Dialog, DialogBody, DialogClose, DialogContent, DialogDivider, DialogFooter, DialogHeader, DialogTitle,
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger,
@@ -29,9 +31,11 @@ import {
 } from '../../lib/serviceNames'
 import { AdvancedSettings, DEFAULT_VOLUME_GIB, FormRow, VolumeFormRow } from './FormRows'
 import { ServiceIcon, ServiceTypeIcon } from './ServiceIcon'
+import { DeployDialog } from '../DeployDialog'
+import { TemplateDeployDialog } from './TemplateDeployDialog'
 
-type CreateFlow = { kind: 'create'; type: ServiceType; label: string; placeholder: string }
-type Flow = CreateFlow | { kind: 'image' } | { kind: 'templates' }
+type CreateFlow = { kind: 'create'; type: ServiceType; label: string }
+type Flow = CreateFlow | { kind: 'image' } | { kind: 'templates' } | { kind: 'template-deploy'; code: string }
 
 export const SECTIONS = [
   { category: 'code', label: 'Deploy your code', cols: 'grid-cols-2' },
@@ -45,12 +49,12 @@ type Source = { key: string; label: string; category: Category; flow: Flow; icon
 
 const SOURCES: Source[] = [
   { key: 'docker', label: 'Docker Image', category: 'code', flow: { kind: 'image' }, icon: (c) => <ServiceIcon service="docker" className={c} /> },
-  { key: 'compute', label: 'Empty Service', category: 'code', flow: { kind: 'create', type: 'compute', label: 'Empty Service', placeholder: 'compute' }, icon: (c) => <ServiceTypeIcon type="compute" className={c} /> },
-  { key: 'postgres', label: 'Postgres', category: 'database', flow: { kind: 'create', type: 'postgres', label: 'Postgres', placeholder: 'main-db' }, icon: (c) => <ServiceIcon service="postgresql" className={c} /> },
-  { key: 'redis', label: 'Redis', category: 'database', flow: { kind: 'create', type: 'redis', label: 'Redis', placeholder: 'cache' }, icon: (c) => <ServiceIcon service="redis" className={c} /> },
-  { key: 'mysql', label: 'MySQL', category: 'database', flow: { kind: 'create', type: 'mysql', label: 'MySQL', placeholder: 'mysql-db' }, icon: (c) => <ServiceIcon service="mysql" className={c} /> },
-  { key: 'mongodb', label: 'MongoDB', category: 'database', flow: { kind: 'create', type: 'mongodb', label: 'MongoDB', placeholder: 'mongo-db' }, icon: (c) => <ServiceIcon service="mongodb" className={c} /> },
-  { key: 'storage', label: 'Object Storage', category: 'storage', flow: { kind: 'create', type: 'storage', label: 'Object Storage', placeholder: 'assets' }, icon: (c) => <ServiceTypeIcon type="storage" className={c} /> },
+  { key: 'compute', label: 'Empty Service', category: 'code', flow: { kind: 'create', type: 'compute', label: 'Empty Service' }, icon: (c) => <ServiceTypeIcon type="compute" className={c} /> },
+  { key: 'postgres', label: 'Postgres', category: 'database', flow: { kind: 'create', type: 'postgres', label: 'Postgres' }, icon: (c) => <ServiceIcon service="postgresql" className={c} /> },
+  { key: 'redis', label: 'Redis', category: 'database', flow: { kind: 'create', type: 'redis', label: 'Redis' }, icon: (c) => <ServiceIcon service="redis" className={c} /> },
+  { key: 'mysql', label: 'MySQL', category: 'database', flow: { kind: 'create', type: 'mysql', label: 'MySQL' }, icon: (c) => <ServiceIcon service="mysql" className={c} /> },
+  { key: 'mongodb', label: 'MongoDB', category: 'database', flow: { kind: 'create', type: 'mongodb', label: 'MongoDB' }, icon: (c) => <ServiceIcon service="mongodb" className={c} /> },
+  { key: 'storage', label: 'Object Storage', category: 'storage', flow: { kind: 'create', type: 'storage', label: 'Object Storage' }, icon: (c) => <ServiceTypeIcon type="storage" className={c} /> },
   { key: 'template', label: 'View Templates', category: 'bundle', flow: { kind: 'templates' }, icon: (c) => <LayoutTemplate className={cn(c, 'text-muted-foreground')} /> },
 ]
 
@@ -61,15 +65,12 @@ type FlowProps = {
   onDone: () => void; onApproval: (p: NonNullable<PendingApproval>) => void
 }
 
-/** `pick` opens a source's dialog (or leaves for the templates gallery); render `dialogs`. */
+/** `pick` opens a source's dialog in place; render `dialogs`. View Templates is the console's Deploy a Template
+ *  dialog, and a picked template continues into the template deploy form. */
 function useAddServiceFlow(props: FlowProps, onClosed?: () => void): { pick: (source: Source) => void; dialogs: ReactNode } {
-  const nav = useNavigate()
   const [flow, setFlow] = useState<Flow | null>(null)
   const close = (open: boolean) => { if (!open) { setFlow(null); onClosed?.() } }
-  const pick = (source: Source) => {
-    if (source.flow.kind === 'templates') nav(`/p/${props.projectId}/${props.branch}/templates`)
-    else setFlow(source.flow)
-  }
+  const pick = (source: Source) => setFlow(source.flow)
   const dialogs = (
     <>
       {flow?.kind === 'create' && (
@@ -77,6 +78,14 @@ function useAddServiceFlow(props: FlowProps, onClosed?: () => void): { pick: (so
           onConnectImage={flow.type === 'compute' ? () => setFlow({ kind: 'image' }) : undefined} />
       )}
       {flow?.kind === 'image' && <DeployImageDialog {...props} open onOpenChange={close} />}
+      {flow?.kind === 'templates' && (
+        <TemplateDeployDialog open projectId={props.projectId} branch={props.branch} onOpenChange={close}
+          onPicked={(code) => setFlow({ kind: 'template-deploy', code })} />
+      )}
+      {flow?.kind === 'template-deploy' && (
+        <DeployDialog projectId={props.projectId} branch={props.branch} services={props.services} initialLane="template"
+          initialTemplateCode={flow.code} onClose={() => close(false)} onDone={props.onDone} onApproval={props.onApproval} />
+      )}
     </>
   )
   return { pick, dialogs }
@@ -208,13 +217,11 @@ function CreateServiceDialog({ projectId, branch, services, flow, onConnectImage
   flow: CreateFlow; onConnectImage?: () => void; open: boolean; onOpenChange: (open: boolean) => void
 }) {
   const { boot } = useAuth()
-  const { type, label, placeholder } = flow
+  const { type, label } = flow
   const taken = new Set(services.filter((s) => s.type === type).map((s) => s.name))
   const [whimsy] = useState(() => whimsicalBaseName())
-  const defaultName = uniqueServiceName(type === 'compute' ? whimsy : type, taken)
-  const [nameInput, setNameInput] = useState('')
-  const [nameEdited, setNameEdited] = useState(false)
-  const name = nameEdited ? nameInput : defaultName
+  const suggestedName = uniqueServiceName(type === 'compute' ? whimsy : type, taken)
+  const [name, setName] = useState('')
   const [isPublic, setIsPublic] = useState(false)
   const [picked, setPicked] = useState<boolean | null>(null)
   const [volumeEnabled, setVolumeEnabled] = useState(false)
@@ -281,8 +288,8 @@ function CreateServiceDialog({ projectId, branch, services, flow, onConnectImage
               </>
             )}
             <FormRow htmlFor="svc-name" label="Service Name" hint="A unique name for your service.">
-              <Input id="svc-name" name="name" required autoFocus placeholder={placeholder} value={name}
-                onChange={(e) => { setNameInput(e.target.value); setNameEdited(true) }} />
+              <Input id="svc-name" name="name" required autoFocus placeholder={suggestedName} value={name}
+                onChange={(e) => setName(e.target.value)} />
             </FormRow>
             {type === 'storage' && (
               <>

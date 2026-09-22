@@ -22,7 +22,7 @@ Branching happens at the environment level: one command clones the whole stack, 
 | Managed databases (`redis`/`mysql`/`mongodb`) | A fresh, empty instance, with no data cloned from the parent |
 | Compute `/data` volume | Same size, empty (self-hosted InstaCloud OSS forks the volume files instead) |
 
-The branch's connection string reaches your code the same way as any credential: `insta db url` prints it, `insta secrets bind` wires it into a compute service. After `insta branch switch`, both target the branch automatically.
+The branch's connection string reaches your code the same way as any credential: `insta postgres url` prints it, `insta secrets bind` wires it into a compute service. After `insta branch switch`, both target the branch automatically. On self-hosted InstaCloud OSS, `secrets bind` answers `501`: every compute container already receives each service's credentials under their own names (`insta secrets list` names them).
 
 ## Workflows
 

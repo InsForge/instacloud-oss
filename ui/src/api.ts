@@ -42,6 +42,20 @@ export type DbActivityRow = {
 }
 export type DbQueryStatRow = { queryId: string; query: string; calls: number; meanMs: number; totalMs: number; rows: number }
 export type DbQueryStats = { stats: DbQueryStatRow[]; extensionReady: boolean }
+/** `POST /database/query`: rows for a SELECT-ish statement, psql's command tag otherwise. */
+export type DbQueryResult =
+  | { columns: string[]; rows: unknown[][]; rowCount: number; ms: number }
+  | { status: string; ms: number }
+export type DbExtensions = { available: Array<{ name: string; required?: boolean }>; enabled: string[] }
+/** The redis key browser (`GET .../redis/keys` and `/redis/value`). */
+export type RedisKeys = { dbs: Array<{ db: number; keys: number }>; keys: string[]; cursor?: string }
+export type RedisValue = { type: string; ttl: number; value: unknown }
+export type RedisStats = {
+  version: string; uptimeSec: number; connectedClients: number
+  usedMemoryBytes: number; maxMemoryBytes: number
+  totalCommands: number; opsPerSec: number; keyspaceHits: number; keyspaceMisses: number
+  expiredKeys: number; evictedKeys: number
+}
 export type Operation = { id: string; action: string; status: string; createdAt?: string }
 export type SecretTree = {
   projectWide: string[]
@@ -78,6 +92,13 @@ export function obsComponentFor(type: string): ObsComponent | undefined {
   if (type === 'postgres') return 'db'
   if (type === 'redis' || type === 'mysql' || type === 'mongodb') return type
   return undefined
+}
+
+/** `GET /objects` (src/types.ts ObjectListing): flat S3 list-type=2 — no contentType, no folder
+ *  rollup; ui/src/lib/objectRows.ts derives both. */
+export type ObjectListing = {
+  objects: Array<{ key: string; size: number; lastModified: string; etag: string }>
+  nextCursor?: string
 }
 
 export type LogLine = { ts: string; level?: string; message: string; instance?: string }
@@ -158,7 +179,10 @@ export const api = {
     (await get<{ services: Service[] }>(`/projects/${p}/services${qs({ branch })}`)).services,
   approvals: async (p: string) => (await get<{ approvals: Approval[] }>(`/projects/${p}/approvals`)).approvals,
   policy: async (p: string) => (await get<{ policy: Policy }>(`/projects/${p}/policy`)).policy,
-  events: async (p: string, limit = 30) => (await get<{ events: AuditEvent[] }>(`/projects/${p}/events?limit=${limit}`)).events,
+  /** `kinds` (comma-joined) filters server-side BEFORE the limit slice, so a deploy-events page
+   *  is not spent on browse-rate audit rows. */
+  events: async (p: string, limit = 30, branch?: string, kinds?: string) =>
+    (await get<{ events: AuditEvent[] }>(`/projects/${p}/events${qs({ limit, branch, kinds })}`)).events,
   /** `group` narrows to ONE service's container. It matters for more than bandwidth: the daemon
    *  merges every container in the component and truncates to `limit` LAST, so a noisy sibling can
    *  fill the whole window and a quiet service looks like it has no logs at all. */
@@ -174,6 +198,9 @@ export const api = {
   secretTree: (p: string) => get<SecretTree>(`/projects/${p}/secrets/tree`),
   /** The same read, returning an approval instead of throwing: the canvas stops polling a gated tree. */
   secretTreeResult: (p: string) => call<SecretTree>('GET', `/projects/${p}/secrets/tree`),
+  /** One service's host-facing credential bundle. Gated `secrets.read`, so it answers an approval instead of throwing. */
+  credentialsResult: (p: string, sid: string, branch: string) =>
+    call<{ credentials: Record<string, string> }>('GET', `/projects/${p}/services/${sid}/credentials${qs({ branch })}`),
   // Database reads answer 503 `database is sleeping` when the branch database is asleep and
   // never wake it (decision 48); `group` picks one of several postgres services (WP5).
   dbMetrics: (p: string, branch: string, group?: string) =>
@@ -202,11 +229,55 @@ export const api = {
     call<{ service: Service }>('POST', `/projects/${p}/services/${sid}/rename${qs({ branch })}`, { name }),
   lifecycle: (p: string, sid: string, verb: 'start' | 'stop' | 'suspend' | 'restart', branch: string) =>
     call<{ service?: Service; state?: string }>('POST', `/projects/${p}/services/${sid}/${verb}${qs({ branch })}`),
+  /** Wake a sleeping service (any type) and wait for it to be ready: the Database tab's Wake and browse. */
+  wakeService: (p: string, sid: string, branch: string) =>
+    call<{ state?: string }>('POST', `/projects/${p}/services/${sid}/wake${qs({ branch })}`),
   setAccess: (p: string, sid: string, isPublic: boolean, branch: string) =>
     call<{ service?: Service }>('PUT', `/projects/${p}/services/${sid}/access`, { public: isPublic, branch }),
 
-  createBranch: (p: string, name: string, from: string) =>
-    call<{ branch: { id: string; name: string } }>('POST', `/projects/${p}/branches`, { name, from }),
+  /** The SQL editor and Data tab. Through `call`: db.query is governable, and a sleeping instance
+   *  answers 503 (the wake gate fronts every caller). */
+  dbQuery: (p: string, sql: string, branch: string, group?: string) =>
+    call<DbQueryResult>('POST', `/projects/${p}/database/query`, { sql, branch, ...(group ? { group } : {}) }),
+  dbExtensions: (p: string, branch: string, group?: string) =>
+    get<DbExtensions>(`/projects/${p}/database/extensions${qs({ branch, group })}`),
+  /** Regenerate the postgres password (server-minted; re-mints DATABASE_URL). Gated secrets.read
+   *  because the answer carries the new connection string. */
+  dbRegeneratePassword: (p: string, branch: string, group?: string) =>
+    call<{ connString: string; password: string }>('POST', `/projects/${p}/database/password${qs({ branch, group })}`, {}),
+  dbPatchExtensions: (p: string, body: { enable?: string[]; disable?: string[] }, branch: string, group?: string) =>
+    call<DbExtensions>('PATCH', `/projects/${p}/database/extensions${qs({ branch, group })}`, body),
+
+  // The redis key browser (governable db.read; 503 while the instance sleeps).
+  redisKeys: (p: string, sid: string, branch: string, opts?: { db?: number; cursor?: string; count?: number }) =>
+    call<RedisKeys>('GET', `/projects/${p}/services/${sid}/redis/keys${qs({ branch, ...opts })}`),
+  redisValue: (p: string, sid: string, key: string, branch: string, db?: number) =>
+    call<RedisValue>('GET', `/projects/${p}/services/${sid}/redis/value${qs({ key, branch, db })}`),
+  redisStats: (p: string, sid: string, branch: string) =>
+    call<RedisStats>('GET', `/projects/${p}/services/${sid}/redis/stats${qs({ branch })}`),
+
+  // Object storage (the Buckets tab). All four go through `call`: the actions are governable
+  // (storage.read/write/delete), so any of them can answer 202 approval_required.
+  listObjects: (p: string, sid: string, branch: string, opts?: { prefix?: string; cursor?: string; limit?: number }) =>
+    call<ObjectListing>('GET', `/projects/${p}/services/${sid}/objects${qs({ branch, ...opts })}`),
+  /** Presigned GET, 60s TTL: fetch it right before handing the URL to the browser. */
+  presignDownload: (p: string, sid: string, key: string, branch: string) =>
+    call<{ url: string; expiresAt: string }>('GET', `/projects/${p}/services/${sid}/objects/download${qs({ key, branch })}`),
+  /** Presigned POST form policy, 300s TTL: the browser multiparts `fields` + the file to `url`. */
+  presignUpload: (p: string, sid: string, body: { key: string; contentType: string; size: number }, branch: string) =>
+    call<{ url: string; fields: Record<string, string>; expiresAt: string }>('POST', `/projects/${p}/services/${sid}/objects/upload${qs({ branch })}`, body),
+  deleteObject: (p: string, sid: string, key: string, branch: string) =>
+    call<{ deleted: true }>('DELETE', `/projects/${p}/services/${sid}/objects${qs({ key, branch })}`),
+  deleteObjects: (p: string, sid: string, keys: string[], branch: string) =>
+    call<{ deleted: number; failed: Array<{ key: string; message: string }> }>('POST', `/projects/${p}/services/${sid}/objects/delete${qs({ branch })}`, { keys }),
+
+  /** `excludeServices` is the console's "Exclude all services": an empty branch, none of the
+   *  parent's services, secrets, or secret bindings are copied. Sent only when set. */
+  createBranch: (p: string, name: string, from: string, excludeServices?: boolean) =>
+    call<{ branch: { id: string; name: string } }>('POST', `/projects/${p}/branches`,
+      { name, from, ...(excludeServices ? { excludeServices } : {}) }),
+  renameBranch: (p: string, branchId: string, name: string) =>
+    call<{ branch: { id: string; name: string } }>('PATCH', `/projects/${p}/branches/${branchId}`, { name }),
   deleteBranch: (p: string, branchId: string) =>
     call<Teardown>('DELETE', `/projects/${p}/branches/${branchId}`),
   removeService: (p: string, sid: string, branch?: string) =>
@@ -237,6 +308,10 @@ export const api = {
   createToken: (b: { name: string; expiresInDays?: number }) =>
     call<{ token: string; record: ApiToken }>('POST', '/tokens', b),
   revokeToken: (id: string) => call<{ ok: boolean }>('DELETE', `/tokens/${encodeURIComponent(id)}`),
+  /** The device-login approval the /device page posts: the signed-in admin turns a CLI's user code
+   *  into an `insta_` key. Gated (not under /api/auth/), so it carries the session like any write. */
+  approveDevice: (userCode: string) => call<{ ok: boolean }>('POST', '/device/approve', { user_code: userCode }),
+  denyDevice: (userCode: string) => call<{ ok: boolean }>('POST', '/device/deny', { user_code: userCode }),
 
   // Health, wake, always-on, limits (WP3).
   runtimeHealth: async (p: string, branch: string) =>

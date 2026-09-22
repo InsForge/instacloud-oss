@@ -3,20 +3,22 @@
 // `&tab=`), with the side tab rail per service type and Settings as label-left rows.
 //
 // Tabs, as the console orders them:
-//   compute   Metrics, Variables, Runtime Logs, Volume, Settings (General / Custom Domain)
-//   postgres  Database, Metrics, Variables, Runtime Logs, Settings
-//   managed   Metrics, Variables, Runtime Logs, Volume, Settings
-//   storage   Variables, Settings
-// Self-host divergences: no Deployment Logs (the daemon has no deploy-events route); Variables are
-// names only (values stay behind `insta secrets`); a Runtime row for Start / Stop / Suspend, states
-// the console does not have; Custom Domain only in server mode; changes apply immediately.
+//   compute   Metrics, Variables, Deployment Logs, Runtime Logs, Volume, Settings (General / Custom Domain)
+//   postgres  Database, Metrics, Variables, Deployment Logs, Runtime Logs, Settings
+//   redis     Database, Metrics, Variables, Deployment Logs, Runtime Logs, Settings
+//   managed   Metrics, Variables, Deployment Logs, Runtime Logs, Settings
+//   storage   Buckets, Variables, Settings
+// Self-host divergences: Deployment Logs renders the daemon's audit stream, not a machine-operation
+// feed (see DeploymentLogs.tsx); Variables are names only (values stay behind `insta secrets`); a
+// Runtime row for Start / Stop / Suspend, states the console does not have; Custom Domain only in
+// server mode; changes apply immediately.
 
 import { useEffect, useRef, useState } from 'react'
 import {
   Button, CopyButton, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input, SearchInput,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Switch,
 } from '@insforge/ui'
-import { ArrowDownAZ, ArrowUpZA, Check, ChevronDown, Plus, RotateCw, X } from 'lucide-react'
+import { ArrowDownAZ, ArrowUpZA, Check, ChevronDown, Plug, Plus, RotateCw, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { api, obsComponentFor, type Service } from '../../api'
 import { usePoll } from '../../hooks'
@@ -30,8 +32,14 @@ import { DomainsSection } from '../DomainsSection'
 import { ErrorNote, hrefFor } from '../ui'
 import { LogsPanel } from '../../pages/Logs'
 import { DatabasePanel } from '../../pages/DatabaseInsight'
+import { dbPanelKey } from '../../lib/dbWakeGate'
 import { MetricCharts } from '../metrics/MetricCharts'
+import { BucketsPanel } from './BucketsPanel'
+import { DeploymentLogsPanel } from './DeploymentLogs'
+import { RedisPanel } from './RedisPanel'
 import { VolumeCard } from './VolumeCard'
+import { ConnectDatabaseDialog } from './ConnectDatabaseDialog'
+import { isDbConnectEngine } from '../../lib/databaseConnect'
 import { DeleteServiceDialog, RestartServiceDialog } from './ServiceDialogs'
 import { SettingsCard, SettingsRow } from './SettingsRow'
 import { SideTabs, TopTabs } from './Tabs'
@@ -52,9 +60,14 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
   const [approval, setApproval] = useState<PendingApproval>(null)
   const [error, setError] = useState<string>()
   const [restartOpen, setRestartOpen] = useState(false)
+  const [connectOpen, setConnectOpen] = useState(false)
   const tabs = tabsFor(service?.type ?? 'storage')
   const [tab, setTab] = useState<TabId | null>(null)
-  const active: TabId = tab ?? (tabs.includes(requestedTab as TabId) ? (requestedTab as TabId) : tabs[0])
+  // The overlay stays mounted when another service opens, so a locally-selected tab must not
+  // follow you to a service whose rail does not carry it (Buckets on a postgres, say).
+  useEffect(() => { setTab(null) }, [serviceId])
+  const picked = tab ?? (requestedTab as TabId)
+  const active: TabId = tabs.includes(picked) ? picked : tabs[0]
   // The URL carries `?service=&tab=` so a tab can be linked and survives a refresh, but selecting
   // one only moved local state, so reload reopened the tab the link had named rather than the one
   // in front of you. Keep the URL in step, replacing rather than stacking history entries.
@@ -169,6 +182,13 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
                 Restart
               </Button>
             )}
+            {/* The console's Connect, on every database engine: URL, raw client command and CLI in one dialog. */}
+            {isDbConnectEngine(service.type) && (
+              <Button type="button" variant="secondary" className="h-9 shrink-0 gap-1.5" onClick={() => setConnectOpen(true)}>
+                <Plug className="size-4" />
+                Connect
+              </Button>
+            )}
             <button type="button" aria-label="Close" onClick={onClose}
               className="flex size-9 cursor-pointer items-center justify-center border border-border bg-card text-muted-foreground transition-colors hover:bg-alpha-4 hover:text-foreground">
               <X className="size-5" />
@@ -183,7 +203,22 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
             <div id="service-detail-panel" role="tabpanel" aria-labelledby={`service-detail-panel-tab-${active}`}
               className="flex min-w-0 flex-1 flex-col gap-3">
               <ErrorNote error={error} />
-              {active === 'database' && <DatabasePanel projectId={projectId} branch={branch} group={service.name} />}
+              {/* Keyed by the database's full identity (lib/dbWakeGate.ts): the overlay stays mounted when another service
+                  opens, and the gate's wake state must not follow you to it. A service id alone repeats across projects. */}
+              {active === 'database' && service.type === 'postgres' && (
+                <DatabasePanel key={dbPanelKey(projectId, branch, service.id)} projectId={projectId} branch={branch} group={service.name} serviceId={service.id}
+                  onApproval={setApproval}
+                  footer={
+                    <div className="flex justify-center">
+                      <Button type="button" variant="secondary" onClick={() => selectTab('settings')}>Service settings</Button>
+                    </div>
+                  } />
+              )}
+              {/* The console's redis key browser (E01), behind the same wake gate. */}
+              {active === 'database' && service.type === 'redis' && (
+                <RedisPanel key={dbPanelKey(projectId, branch, service.id)} projectId={projectId} branch={branch}
+                  service={service} onApproval={setApproval} />
+              )}
               {/* The console's Metrics tab, with its time range picker for every service type. */}
               {active === 'metrics' && obsComponentFor(service.type) && (
                 // Keyed by service: the overlay stays mounted when another service is opened, and a
@@ -191,7 +226,15 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
                 <MetricCharts key={service.id} projectId={projectId} component={obsComponentFor(service.type)!} branch={branch}
                   group={service.name} lineName={service.name} />
               )}
+              {/* Keyed by service, like Metrics: the overlay stays mounted when another storage
+                  service opens, and one bucket's listing must not wear the next's name. Type-gated
+                  too, so a mid-switch render can never ask a non-storage service for objects. */}
+              {active === 'buckets' && service.type === 'storage' && (
+                <BucketsPanel key={service.id} projectId={projectId} branch={branch} service={service}
+                  onDone={reload} onApproval={setApproval} />
+              )}
               {active === 'variables' && <VariablesTab projectId={projectId} branch={branch} service={service} onApproval={setApproval} />}
+              {active === 'deploys' && <DeploymentLogsPanel projectId={projectId} branch={branch} service={service} />}
               {active === 'runtime' && runtimeComponent && (
                 <LogsPanel projectId={projectId} branch={branch} component={runtimeComponent} service={service} />
               )}
@@ -202,6 +245,10 @@ export function ServiceDetailModal({ projectId, branch, serviceId, requestedTab,
         </div>
       </div>
       {restartOpen && <RestartServiceDialog {...ctx} open={restartOpen} onOpenChange={setRestartOpen} />}
+      {connectOpen && isDbConnectEngine(service.type) && (
+        <ConnectDatabaseDialog projectId={projectId} branch={branch} open={connectOpen} onOpenChange={setConnectOpen}
+          service={{ id: service.id, name: service.name, type: service.type }} />
+      )}
       <ApprovalPrompt projectId={projectId} pending={approval} onClose={() => setApproval(null)} />
     </div>
   )

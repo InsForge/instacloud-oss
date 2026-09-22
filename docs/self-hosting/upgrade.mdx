@@ -9,13 +9,13 @@ Re-run the one-liner. The script sees the existing `/etc/instacloud/instad.env`,
 setting in it, and recreates only what changed:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh
 ```
 
 Pin a version, or go back to one:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sh -s -- --version v0.1.0
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh -s -- --version v0.1.0
 ```
 
 Branch containers are not part of the compose stack, so they are not recreated and keep running
@@ -52,8 +52,8 @@ managed database while appearing to succeed.
 **The databases**, one dump per branch, which is the copy you should trust:
 
 ```bash
-pg_dump "$(insta db url)" > main.sql
-pg_dump "$(insta db url --branch feat)" > feat.sql
+pg_dump "$(insta postgres url)" > main.sql
+pg_dump "$(insta postgres url --branch feat)" > feat.sql
 ```
 
 **Everything else.** Stop EVERY writer first, not just the daemon: the branch containers and the
@@ -86,7 +86,7 @@ curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/instal
 cd /etc/instacloud && docker compose stop
 tar -C /var/lib/instacloud -xzf instacloud-data.tgz
 docker compose start
-psql "$(insta db url)" < main.sql                     # per branch, if you restored from dumps
+psql "$(insta postgres url)" < main.sql                     # per branch, if you restored from dumps
 ```
 
 Restore the archive BEFORE the first `insta` command: the daemon reads `state.json` at boot, and
@@ -119,5 +119,5 @@ State stays in `~/.insta-oss`.
 
 ## Events
 
-The daemon keeps the newest 5000 events and drops older ones, so treat `insta events` as a recent
+The daemon keeps the newest 5000 events and drops older ones, so treat `insta agent events` as a recent
 timeline rather than an archive. Anything you want to keep, export.

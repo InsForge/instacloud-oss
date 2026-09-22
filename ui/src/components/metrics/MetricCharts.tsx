@@ -1,9 +1,9 @@
 // The console's metric charts (insta-frontend components/metrics/metric-charts.tsx), shared by the
 // branch Observability page and a service's Metrics tab: the console's time range picker over
 // a grid of cards, one request per component merged onto the same cards, and inline loading, error
-// and note states. Missing series draw as flat zero lines ("no data" reads as 0 usage); the empty
-// state appears only when the daemon sends a `note`, so nothing is fabricated for a source that
-// doesn't exist.
+// and note states. Missing series draw as flat zero lines ("no data" reads as 0 usage); when the daemon
+// sends a `note` (nothing to measure) the cards draw EMPTY, as the console's do, with the note once above
+// them, so nothing is fabricated for a source that doesn't exist.
 //
 // Self-host divergences: fetched with usePoll every 30 s — the daemon samples every 30 s — instead of
 // React Query, with the window recomputed on every poll (lib/metricRanges.ts); `also` is a list, since
@@ -11,11 +11,10 @@
 // lines at all rather than zero lines (lib/metrics.ts, mergeMetricSources).
 
 import { useMemo, useState } from 'react'
-import { Button, cn, EmptyState, Skeleton } from '@insforge/ui'
-import { Gauge } from 'lucide-react'
+import { Button, cn, Skeleton } from '@insforge/ui'
 import { api } from '../../api'
 import { usePoll } from '../../hooks'
-import { cardsForSources, type MetricComponent } from '../../lib/metrics'
+import { cardsForSources, emptyMetricCards, type MetricComponent } from '../../lib/metrics'
 import { activeRange, tickedRange, type ActiveRange } from '../../lib/metricRanges'
 import { TimeRangePicker } from './TimeRangePicker'
 import { metricChartsView } from '../../lib/metricChartsView'
@@ -114,8 +113,15 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
           <Button variant="secondary" onClick={reload}>Retry</Button>
         </div>
       ) : view === 'note' ? (
-        <div className="rounded-lg border border-border bg-card py-16">
-          <EmptyState icon={Gauge} title="No metrics available" description={note} />
+        // Nothing to measure: the console's empty charts, with the daemon's reason once above them.
+        <div className="flex flex-col gap-3">
+          <p className="text-[13px] text-muted-foreground">{note ? `${note.charAt(0).toUpperCase()}${note.slice(1)}.` : 'No metrics yet.'}</p>
+          <div className={grid}>
+            {emptyMetricCards(component).map((card) => (
+              <MetricCard key={card.id} card={card}
+                domain={data ? { from: data.zeroWindow.from, to: data.zeroWindow.to, step: data.zeroWindow.stepSeconds } : undefined} />
+            ))}
+          </div>
         </div>
       ) : (
         <div className={grid}>

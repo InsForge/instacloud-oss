@@ -30,7 +30,7 @@ import { docker as dockerFn } from '../src/docker'
 import { buildServer } from '../src/server'
 import { Engine } from '../src/engine'
 import type { Branch, ComputeAdapter, StorageAdapter } from '../src/types'
-import { loadState, mutate } from '../src/state'
+import { flushTouchLater, loadState, mutate } from '../src/state'
 import { calls, data, db, compute, storage, managed, makeEngine, resetFakes, runtime, serverConfig, testConfig } from './fakes'
 import { SuppliedCertWatch, suppliedCert, suppliedFiles } from '../src/router/certs'
 
@@ -117,6 +117,33 @@ test('branch create clones data + redeploys apps; branches list has is_default/s
   // the branch's data roots, counted.
   expect(del.json().teardown).toMatchObject({ failed: 0 })
   expect(del.json().teardown.destroyed).toBeGreaterThan(0)
+})
+
+test('branch create with excludeServices forks nothing: no services, secrets or bindings copied', async () => {
+  const id = await createProject()
+  await post(`/projects/${id}/deploy`, { image: 'app:1', branch: 'main', port: 3000 })
+  await put(`/projects/${id}/secrets/API_KEY`, { value: 'k', branch: 'main' })
+
+  const r = await post(`/projects/${id}/branches`, { name: 'empty', from: 'main', excludeServices: true })
+  expect(r.statusCode).toBe(201)
+  expect(r.json().branch.name).toBe('empty')
+  // None of the parent's services materialise: no database fork, no bucket copy, no redeploy —
+  // anchored to the adapter verbs the fork would use, not to the branch name as a substring
+  // (bookkeeping calls legitimately carry the name in paths).
+  expect(calls.filter((c) => /^(db\.fork|db\.provision|st\.provision|st\.clone|deploy|md\.provision):/.test(c) && c.includes('empty'))).toEqual([])
+  const row = Object.values(loadState().branches).find((b) => b.name === 'empty')!
+  expect(Object.keys(row.databases ?? {})).toEqual([])
+  expect(Object.keys(row.buckets ?? {})).toEqual([])
+  expect(Object.keys(row.apps ?? {})).toEqual([])
+  // The parent's branch-scoped user secrets are NOT inherited...
+  expect(loadState().userSecrets[id]?.filter((u) => u.branch === 'empty')).toEqual([])
+  // ...and the event still records what the branch was cut from, marked as an empty cut.
+  const ev = loadState().events.filter((e) => e.kind === 'branch.created' && e.branch === 'empty')
+  expect(ev).toHaveLength(1)
+  expect(ev[0].payload).toMatchObject({ from: 'main', excludedServices: true })
+  // A malformed flag is a 400, not a silent full fork.
+  const bad = await post(`/projects/${id}/branches`, { name: 'empty2', from: 'main', excludeServices: 'yes' })
+  expect(bad.statusCode).toBe(400)
 })
 
 test('secrets returns the branch bundle (seam) and is gateable', async () => {
@@ -1583,6 +1610,78 @@ test('group picks one postgres service out of several, for logs and for metrics'
   expect(m.series.every((s: { labels?: { instance?: string } }) => s.labels?.instance?.includes('analytics'))).toBe(true)
 
   vi.mocked(dockerFn).mockImplementation(fakeDocker)
+})
+
+// A wake that could not finish answers the router lane's codes, not 400: 504 when it timed out, 503 otherwise, so a
+// client can tell "coming up, retry" from "do not retry".
+test('POST /services/:sid/wake answers 504 for a wake that timed out and 503 for one that could not finish', async () => {
+  const id = await createProject()
+  const services = (await get(`/projects/${id}/services?branch=main`)).json().services as Array<{ id: string; type: string }>
+  const pg = services.find((s) => s.type === 'postgres')!
+  const wake = vi.spyOn(engine, 'wake')
+  try {
+    wake.mockRejectedValueOnce(new Error('this request timed out after 60 s waiting for the service to wake'))
+    const timedOut = await post(`/projects/${id}/services/${pg.id}/wake?branch=main`, {})
+    expect(timedOut.statusCode).toBe(504)
+    expect(timedOut.json().error).toMatch(/timed out/)
+
+    wake.mockRejectedValueOnce(new Error('could not make room to wake the service'))
+    const noRoom = await post(`/projects/${id}/services/${pg.id}/wake?branch=main`, {})
+    expect(noRoom.statusCode).toBe(503)
+
+    // Resolution errors keep their codes: a branch that does not exist is still 404, and never reaches the wake.
+    const calls = wake.mock.calls.length
+    expect((await post(`/projects/${id}/services/${pg.id}/wake?branch=nope`, {})).statusCode).toBe(404)
+    expect(wake.mock.calls.length).toBe(calls)
+  } finally {
+    wake.mockRestore()
+  }
+})
+
+// The Database tab's Wake and browse. A dashboard read never wakes a database, so the tab asks for the wake: through
+// the scheduler's api door, on the key the scheduler knows the service by. Something with nothing to schedule is 404.
+test('POST /services/:sid/wake wakes a sleeping database through the api door, 404s what has nothing to wake, and refuses compute', async () => {
+  const id = await createProject()
+  const services = (await get(`/projects/${id}/services?branch=main`)).json().services as Array<{ id: string; type: string }>
+  const pg = services.find((s) => s.type === 'postgres')!
+  const storage = services.find((s) => s.type === 'storage')!
+  const target = engine.serviceTargets().find((t) => t.serviceId === pg.id)
+  expect(target).toBeDefined()
+  const wake = vi.spyOn(engine, 'wake').mockResolvedValue(undefined)
+  try {
+    const res = await post(`/projects/${id}/services/${pg.id}/wake?branch=main`, {})
+    expect(res.statusCode).toBe(200)
+    expect(wake).toHaveBeenCalledTimes(1)
+    expect(wake).toHaveBeenCalledWith(target!.key, { door: 'api' })
+
+    const none = await post(`/projects/${id}/services/${storage.id}/wake?branch=main`, {})
+    expect(none.statusCode).toBe(404)
+    expect((await post('/projects/nope/services/pg-db/wake', {})).statusCode).toBe(404)
+    expect(wake).toHaveBeenCalledTimes(1)
+
+    // Compute is refused: the api door would wake a durably STOPPED app without clearing its stop intent. `start` does.
+    await post(`/projects/${id}/deploy`, { image: 'app:1', branch: 'main', port: 3000 })
+    const app = ((await get(`/projects/${id}/services?branch=main`)).json().services as Array<{ id: string; type: string }>)
+      .find((s) => s.type === 'compute')!
+    expect(engine.serviceTargets().some((t) => t.serviceId === app.id)).toBe(true)
+    const compute = await post(`/projects/${id}/services/${app.id}/wake?branch=main`, {})
+    expect(compute.statusCode).toBe(400)
+    expect(compute.json().error).toMatch(/start/)
+    expect(wake).toHaveBeenCalledTimes(1)
+  } finally {
+    wake.mockRestore()
+  }
+})
+
+// A service's Metrics tab asks with `group`. With nothing deployed for it, the note used to say "nothing deployed on
+// this branch" even while the branch ran a database, which the tab then showed as its reason.
+test('metrics with nothing to measure name the service when asked for one, and the branch when not', async () => {
+  const id = await createProject()
+  const scoped = (await get(`/projects/${id}/metrics?component=compute&branch=main&group=web`)).json()
+  expect(scoped.series).toEqual([])
+  expect(scoped.note).toBe('nothing deployed for this service')
+  const branch = (await get(`/projects/${id}/metrics?component=compute&branch=main`)).json()
+  expect(branch.note).toBe('nothing deployed on this branch')
 })
 
 test('metrics endpoint answers in the cloud series names (cpu_cores in vCPU, memory_used_bytes), labelled by service', async () => {
@@ -4912,6 +5011,147 @@ test('database management wakes a sleeping instance; observability answers 503 a
   }
   // ...and now that it is awake, the observability pages answer again.
   expect((await get(`/projects/${id}/database/metrics`)).statusCode).toBe(200)
+})
+
+test('redis key browser: keys + value routes, typed refusals, and the sleeping 503', async () => {
+  const { engine, id } = await wp3Project()
+  expect((await post(`/projects/${id}/services`, { type: 'redis', name: 'cache' })).statusCode).toBe(201)
+
+  const keys = await get(`/projects/${id}/services/rd-cache/redis/keys`)
+  expect(keys.statusCode).toBe(200)
+  expect(keys.json()).toEqual({ dbs: [{ db: 0, keys: 2 }], keys: ['user:1', 'user:2'] })
+  const value = await get(`/projects/${id}/services/rd-cache/redis/value?key=user:1`)
+  expect(value.statusCode).toBe(200)
+  expect(value.json()).toEqual({ type: 'string', ttl: -1, value: '{"name":"ada"}' })
+  // A hash reads through HSCAN's bounded page, never HGETALL.
+  const hash = await get(`/projects/${id}/services/rd-cache/redis/value?key=session:9`)
+  expect(hash.json()).toEqual({ type: 'hash', ttl: -1, value: { token: 'abc', ttl: '60' } })
+  expect(calls.some((c) => c.includes('HGETALL'))).toBe(false)
+  expect(calls.some((c) => c.startsWith('md.cmd:io-demo-main-rd-cache:'))).toBe(true)
+  // The REAL adapter keeps the password out of argv (the fake replaces command() wholesale, so
+  // asserting on ITS recording proved nothing — review round 3's negative control): call
+  // LocalManagedDb.command against the mocked docker seam and read the argv it actually builds.
+  const { LocalManagedDb } = await import('../src/adapters/manageddb')
+  vi.mocked(dockerFn).mockClear()
+  await new LocalManagedDb().command('c1', 'hunter2xyz', ['GET', 'k'])
+  const [argv, execOpts] = vi.mocked(dockerFn).mock.calls.at(-1)! as unknown as [string[], { env?: Record<string, string> } | undefined]
+  expect(argv.join(' ')).not.toContain('hunter2xyz')
+  expect(argv).toContain('REDISCLI_AUTH')
+  expect(execOpts?.env?.REDISCLI_AUTH).toBe('hunter2xyz')
+  // Governed reads land on the audit timeline (coalesced through touchLater — a browse must not
+  // pay a synchronous full-state save), op only — never key names or values.
+  flushTouchLater()
+  const reads = loadState().events.filter((e) => e.kind === 'db.read')
+  expect(reads.length).toBeGreaterThanOrEqual(2)
+  expect(reads.every((e) => !JSON.stringify(e.payload).includes('user:1'))).toBe(true)
+
+  // Stats: the INFO counters picked into the console's shape.
+  const stats = await get(`/projects/${id}/services/rd-cache/redis/stats`)
+  expect(stats.statusCode).toBe(200)
+  expect(stats.json()).toMatchObject({
+    version: '7.2.14', uptimeSec: 120, connectedClients: 2, usedMemoryBytes: 1048576,
+    totalCommands: 42, keyspaceHits: 9, keyspaceMisses: 1,
+  })
+
+  // Typed refusals: a non-redis target, an out-of-range logical db, a missing key.
+  expect((await get(`/projects/${id}/services/pg-db/redis/keys`)).statusCode).toBe(400)
+  expect((await get(`/projects/${id}/services/rd-cache/redis/keys?db=16`)).statusCode).toBe(400)
+  expect((await get(`/projects/${id}/services/rd-cache/redis/value`)).statusCode).toBe(400)
+
+  // A sleeping instance answers 503 (the dashboard's wake gate keys on it) and runs NO command.
+  const bid = await branchId(id)
+  expect(await engine.sleep(keyFor(bid, 'rd-cache'), 'idle')).toBe(true)
+  calls.length = 0
+  const asleep = await get(`/projects/${id}/services/rd-cache/redis/keys`)
+  expect(asleep.statusCode).toBe(503)
+  expect(asleep.json().error).toMatch(/sleeping/)
+  expect(calls.filter((c) => c.startsWith('md.cmd'))).toEqual([])
+})
+
+test('the *SCAN page parsers hold the 200-entry bound however large the page the server hands back', async () => {
+  const { scanPageToHash, scanPageMembers } = await import('../src/manageddb')
+  const big: string[] = []
+  for (let i = 0; i < 600; i++) big.push(`f${i}`, `v${i}`)
+  expect(Object.keys(scanPageToHash(['0', big])).length).toBe(200)
+  expect(scanPageMembers(['0', big]).length).toBe(200)
+  // Garbage shapes answer empty, never throw.
+  expect(scanPageToHash('nope')).toEqual({})
+  expect(scanPageMembers(null)).toEqual([])
+})
+
+test('POST /database/query: rows for a select, a command tag otherwise, 503 asleep, gated db.query', async () => {
+  const { engine, id } = await wp3Project()
+  // Every statement executes EXACTLY once, whatever the classifier decides.
+  const queriesRun = () => calls.filter((c) => c.startsWith('db.query:')).length
+  const one = async (sql: string) => {
+    const before = queriesRun()
+    const r = await post(`/projects/${id}/database/query`, { sql })
+    expect(queriesRun() - before, sql).toBe(1)
+    return r
+  }
+
+  const r = await one('select 1 as one')
+  expect(r.statusCode).toBe(200)
+  // Values travel as TEXT: a bigint past 2^53 survives un-rounded, null stays null.
+  expect(r.json()).toMatchObject({ columns: ['one', 'two'], rows: [['1', 'b'], ['9007199254740993', null]], rowCount: 2 })
+
+  // A non-select runs as written and reports the command tag ('' from the fake reads as OK).
+  expect((await one('create table t (a int)')).json()).toMatchObject({ status: 'OK' })
+  // A leading comment does not demote a SELECT to a command…
+  expect((await one('-- note\nselect 1 as one')).json()).toMatchObject({ columns: ['one', 'two'] })
+  // …nor does a terminal semicolon shadowed by a trailing comment break the wrapper…
+  expect('columns' in (await one('select 1 as one; -- done')).json()).toBe(true)
+  // …a `;` inside a string literal does not either…
+  expect('columns' in (await one("select 'a;b' as v")).json()).toBe(true)
+  // …SHOW runs as written (a utility statement the wrapper cannot host)…
+  expect('status' in (await one('show search_path')).json()).toBe(true)
+  expect(calls.some((c) => c === 'db.query:show search_path')).toBe(true)
+  // …several statements are REFUSED (one statement per request), executing nothing…
+  const beforeMulti = queriesRun()
+  const multi = await post(`/projects/${id}/database/query`, { sql: 'select 1; select 2' })
+  expect(multi.statusCode).toBe(400)
+  expect(multi.json().error).toContain('one statement per request')
+  expect(queriesRun() - beforeMulti).toBe(0)
+  // …a WITH ending in SELECT is row-shaped, one ending in UPDATE runs as a command…
+  expect('columns' in (await one('with a as (select 1) select * from a')).json()).toBe(true)
+  expect((await one('with d as (select 1) update t set a = 1')).json()).toMatchObject({ status: 'OK' })
+  // …a parenthesized query expression is row-shaped, bare or after a WITH…
+  expect('columns' in (await one('(select 1 as n)')).json()).toBe(true)
+  expect('columns' in (await one('with x as (select 7 as n) (select * from x)')).json()).toBe(true)
+  // …and psql meta-commands are refused before anything executes (over stdin they would RUN:
+  // a backslash outside literals is never SQL).
+  const beforeMeta = queriesRun()
+  const metaG = await post(`/projects/${id}/database/query`, { sql: 'select 1 \\g select 2 \\g' })
+  expect(metaG.statusCode).toBe(400)
+  const meta = await post(`/projects/${id}/database/query`, { sql: 'select 1 \\watch 1' })
+  expect(meta.statusCode).toBe(400)
+  expect(meta.json().error).toContain('meta-commands')
+  expect(queriesRun() - beforeMeta).toBe(0)
+  expect('columns' in (await one("select 'literal \\watch is fine' as v")).json()).toBe(true)
+  // The row transport is server-bounded: a statement timeout and a row cap ride every call.
+  expect(calls.some((c) => c.startsWith('db.query:select json_build_object'))).toBe(true)
+
+  // Every successful statement lands on the audit timeline (coalesced through touchLater) —
+  // action metadata only, never SQL text.
+  flushTouchLater()
+  const audited = loadState().events.filter((e) => e.kind === 'db.query')
+  expect(audited.length).toBeGreaterThanOrEqual(7)
+  expect(audited.every((e) => (e.payload as { service?: string }).service === 'pg-db')).toBe(true)
+  expect(audited.every((e) => !JSON.stringify(e.payload).includes('select'))).toBe(true)
+
+  expect((await post(`/projects/${id}/database/query`, {})).statusCode).toBe(400)
+  expect((await post(`/projects/${id}/database/query`, { sql: '  ' })).statusCode).toBe(400)
+
+  // Asleep: 503 and no SQL runs (decision 48 — a dashboard read never wakes the database).
+  const bid = await branchId(id)
+  expect(await engine.sleep(keyFor(bid, 'pg-db'), 'idle')).toBe(true)
+  calls.length = 0
+  expect((await post(`/projects/${id}/database/query`, { sql: 'select 1' })).statusCode).toBe(503)
+  expect(calls.filter((c) => c.startsWith('db.query'))).toEqual([])
+
+  // The action is governable on its own: deny db.query and the route answers 403.
+  await put(`/projects/${id}/policy/db.query`, { decision: 'deny' })
+  expect((await post(`/projects/${id}/database/query`, { sql: 'select 1' })).statusCode).toBe(403)
 })
 
 test('PATCH database/settings: scaleToZero, idleTimeout and the cpu/memory grid, echoed by the instance', async () => {

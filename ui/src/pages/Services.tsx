@@ -4,8 +4,10 @@
 // thing stored. Canvas mode is full-bleed; the toggle and Add Service float at the same spots in both
 // views, so switching never moves them.
 //
-// Self-host divergences: no agent-connect panel on the empty state; the canvas's own divergences are in
-// components/console/ServiceCanvas.tsx.
+// The empty state docks the console's connect-agent panel over the bottom of both views, CLI first
+// (components/console/ConnectAgentPanel.tsx), with this daemon's setup commands from lib/quickStart.ts.
+//
+// Self-host divergences: the canvas's own are in components/console/ServiceCanvas.tsx.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
@@ -19,7 +21,10 @@ import { linksFromSecretTree } from '../lib/serviceLinks'
 import { healthFor } from '../lib/status'
 import { ApprovalPrompt, type PendingApproval } from '../components/ApprovalPrompt'
 import { AddFirstServiceDialog, AddServiceButton, AddSourceDialog } from '../components/console/AddService'
-import { addIntent } from '../lib/quickStart'
+import { addIntent, cliSteps, setupPrompt } from '../lib/quickStart'
+import { servicesFor } from '../lib/servicesLoad'
+import { useAuth } from '../components/AuthGate'
+import { ConnectAgentPanel } from '../components/console/ConnectAgentPanel'
 import { ServiceCanvas } from '../components/console/ServiceCanvas'
 import { ServiceTable } from '../components/console/ServiceTable'
 import { ServiceDetailModal } from '../components/console/ServiceDetailModal'
@@ -79,7 +84,11 @@ export function Services() {
   const openService = useCallback((s: Service, tab?: string) => setParams(tab ? { service: s.id, tab } : { service: s.id }), [setParams])
   const waking = useWaking()
   const interval = waking.anyWaking ? 2000 : 5000
-  const { data: services, error, reload } = usePoll(() => api.services(projectId, branch), [projectId, branch], interval)
+  // Tagged with the scope that made it: the hook keeps its last data across a project or branch switch and a failed
+  // read, and an empty branch's list must not keep the next branch looking empty (lib/servicesLoad.ts).
+  const { data: servicesLoad, error, reload } = usePoll(
+    async () => ({ projectId, branch, services: await api.services(projectId, branch) }), [projectId, branch], interval)
+  const services = servicesFor(servicesLoad, projectId, branch)
   const { data: health } = usePoll(() => api.runtimeHealth(projectId, branch), [projectId, branch], interval)
   const [storedMode, setStoredMode] = useLocalPref(VIEW_MODE_KEY)
   const mode: 'canvas' | 'list' = storedMode === 'list' ? 'list' : 'canvas'
@@ -112,6 +121,7 @@ export function Services() {
 
   useEffect(() => { waking.reconcile(health, healthFor) }, [health, waking])
 
+  const { boot } = useAuth()
   const rows = services ?? []
   const empty = services !== undefined && rows.length === 0
   const links = useMemo(() => linksFromSecretTree(secretTree, branch, rows), [secretTree, branch, rows])
@@ -139,6 +149,14 @@ export function Services() {
       <div className="absolute top-6 right-6 z-10"><AddServiceButton {...flow} /></div>
     </>
   )
+  // The empty state's agent bar, docked 40px above the view's bottom edge in both views, CLI first, as on the console.
+  // Pointer events pass through around it.
+  const emptyConnectBar = empty ? (
+    <div className="pointer-events-none absolute inset-x-0 bottom-10 z-10 flex justify-center px-6">
+      <ConnectAgentPanel title="Connect your agent to deploy services directly" leadWith="cli" className="pointer-events-auto w-[720px]"
+        cli={cliSteps(projectId, boot.mode, boot.apiUrl)} prompt={setupPrompt(projectId, boot.mode, boot.apiUrl, boot.consoleUrl)} />
+    </div>
+  ) : null
   const overlays = (
     <>
       <AddFirstServiceDialog {...flow} open={addFirstOpen} onOpenChange={setAddFirstOpen} />
@@ -161,6 +179,7 @@ export function Services() {
           onAddFirstService={empty ? () => setAddFirstOpen(true) : undefined}
           onDone={reload} onError={setActionError} onApproval={setApproval} />
         {floating}
+        {emptyConnectBar}
         {(actionError || error) && <div className="absolute bottom-6 left-6 z-10"><ErrorNote error={actionError ?? error} /></div>}
         {overlays}
       </div>
@@ -193,6 +212,7 @@ export function Services() {
         </div>
       )}
       {(actionError || error) && <div className="px-6"><ErrorNote error={actionError ?? error} /></div>}
+      {emptyConnectBar}
       {overlays}
     </div>
   )

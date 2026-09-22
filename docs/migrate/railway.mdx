@@ -32,7 +32,7 @@ We will migrate [Railway's own Django template](https://github.com/railwayapp-te
 Your agent reads the project straight from Railway's API, so it needs your repo name and a project token, not a checkout. Give it the skill first:
 
 ```bash
-npx -y insta@latest setup agent
+npx -y insta@latest agent setup
 ```
 
 That installs the `insta` CLI, the `insta` skill, and the MCP server for every coding agent on this machine. The skill is what knows how a Railway project maps onto services here.
@@ -61,10 +61,6 @@ Leave the Railway project frozen rather than deleted, so you can go back to it.
 
 {/* screenshot: console, project with a compute service and a postgres service deployed */}
 
-## Cron jobs
+## Limitations
 
-Cron jobs are not supported for now.
-
-And that is it. Every InstaCloud action your agent took is a command you can run yourself, in the [CLI reference](/reference/cli/overview). The inspection on the other side used Railway's own CLI and API.
-
-Once you are settled in, [database branching](/postgres/branching) is the part most people came for: one command clones your database, storage and apps, data included, so work an agent does *on its branch* stays there. The branch boundary is separation, not authorization: any command taking `--branch` still reaches `main`, so set policy for the actions that matter. Stuck anywhere? Come to [Discord](https://discord.com/invite/MPxwj5xVvW).
+A few things are not here yet. [Limitations](/limitations/overview) covers the ones people hit most, and is worth the minute before you commit. Stuck anywhere? Come to [Discord](https://discord.com/invite/MPxwj5xVvW).

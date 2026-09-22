@@ -11,7 +11,13 @@ Server mode wants a machine you can point DNS at:
   publish both, and `insta template list` reports each template's `architectures` next to this
   box's own `hostArchitecture`, so a template that will not run here is refused before it creates
   anything rather than failing on the image pull
-- root (the script uses `sudo` nothing: run it as root)
+- root: pipe the one-liner to `sudo sh` (the script itself calls `sudo` for nothing, and a
+  non-root run stops at once with the command to use)
+- inbound TCP 80 and 443 allowed in the cloud firewall or security group, and 5432 only if
+  Postgres clients outside the box need it. Keep Redis (6379), MongoDB (27017) and the MySQL lane
+  range closed at the provider: those lanes are for containers on the box, and the installer's own
+  firewall rules leave them private. It opens a host firewall it finds active, but it cannot see
+  your provider's, and certificates are issued through 80 and 443
 - 2 vCPU, 2 GiB RAM, 15 GiB free disk. A first install refuses a box under the memory or disk
   minimum and says which one; an upgrade of a box that is already installed warns and continues.
   One vCPU is a warning either way: it runs, and every deploy and fork is slow
@@ -24,15 +30,16 @@ Server mode wants a machine you can point DNS at:
 ## The one-liner
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh
 ```
 
 It pulls `ghcr.io/insforge/instacloud`, published for linux/amd64 and linux/arm64.
 
 With no `--version` and no tag on `INSTA_OSS_IMAGE`, the installer asks GitHub for the newest
 published **Release** and installs that, on a first install and on an upgrade alike. The mutable
-`latest` tag is only the fallback, used when that lookup returns nothing. Pin a specific one with
-`--version v0.1.0`. (The `--print-*` modes skip the lookup, so the version they print is the
+`latest` tag is only the fallback, used when that lookup returns nothing. Pin a specific one by
+ending the one-liner with `| sudo sh -s -- --version v0.1.0`: flags go after `sh -s --`, because the
+script arrives on stdin. (The `--print-*` modes skip the lookup, so the version they print is the
 fallback rather than what a real run would choose.)
 
 ## Build the image yourself
@@ -69,7 +76,14 @@ script. The build needs about 1 GiB of free memory and a minute on a 2 vCPU box.
 4. Checks the sizing: the vCPU count, `MemTotal`, and the free space on the filesystem that will
    hold the data directory. See [Requirements](#requirements) for what is fatal and what is a
    warning.
-5. Opens the firewall, but only when one is active, and only for its own services (see below:
+5. Installs Docker when missing, enables it, requires `docker compose version`, and starts the
+   daemon when it is installed but not answering.
+6. Writes `/etc/docker/daemon.json` with `default-address-pools` and restarts Docker when the file
+   is missing or empty. A `daemon.json` that already holds other settings is
+   left untouched, with a warning that prints the key to add: until you add it and restart Docker,
+   the box holds only 31 branch networks. See [Docker address
+   pools](#docker-address-pools) for why.
+7. Opens the firewall, but only when one is active, and only for its own services (see below:
    never for SSH). Under `ufw`: inbound 80, 443 and the Postgres lane, plus 443, the three
    database lanes and the per-service lane range from `docker0` and from every Docker address
    pool. The ports come from the values it resolved, so a lane you moved is the lane it opens;
@@ -103,11 +117,6 @@ script. The build needs about 1 GiB of free memory and a minute on a 2 vCPU box.
    systemctl show ssh.socket sshd.socket --value -p Listen
    ss -tlnpH | grep -i ssh
    ```
-6. Installs Docker when missing, enables it, requires `docker compose version`, and starts the
-   daemon when it is installed but not answering.
-7. Writes `/etc/docker/daemon.json` with `default-address-pools` and restarts Docker, on a fresh
-   Docker install or when the file has no such key. See [Docker address
-   pools](#docker-address-pools) for why.
 8. Creates `/var/lib/instacloud` and probes for reflinks, falling back to an XFS loop image. See
    [Reflinks](#reflinks).
 9. Resolves the domain: `--domain`, then `INSTA_OSS_DOMAIN`, then the value already in
@@ -123,18 +132,30 @@ script. The build needs about 1 GiB of free memory and a minute on a 2 vCPU box.
     landed by then is a warning, not a failure: the edge keeps retrying on its own, and the
     database lanes start presenting it the moment it lands. With `INSTA_OSS_TLS=internal` the root
     CA is then copied to `/var/lib/instacloud/edge/ca.pem`. Under `custom` there is nothing to wait
-    for, so it probes instead: the edge has to answer `api.<domain>` with the serial of the
-    certificate you supplied, and a pair the edge cannot load fails the install rather than
+    for, so it probes instead: the edge has to answer `api.<domain>` with the SHA-256
+    fingerprint of the certificate you supplied, and a pair the edge cannot load fails the install rather than
     leaving it crash-looping behind a success message.
 
-Then it prints two lines you need:
+Then it prints where to go. This is a real run on a `t3.small` (2 vCPU, 2 GiB) with Ubuntu 24.04,
+start to finish in about a minute, with the address replaced by a documentation one:
 
 ```
-  Setup:    https://console.<domain>/setup
-  CLI:      insta login --api-key <token from the setup page> --api-url https://api.<domain>
+InstaCloud is running.
+  Setup:    https://console.203-0-113-10.sslip.io/setup
+  API:      https://api.203-0-113-10.sslip.io
+  Note:     203.0.113.10 is this cloud VM's public address, mapped by the provider: make sure its security group or firewall allows 80 and 443 (and the database lanes you use).
+  CLI:      insta login --api-key <token from the setup page> --api-url https://api.203-0-113-10.sslip.io
+  Config /etc/instacloud   Data /var/lib/instacloud   Reflinks: loop image (10 GiB)
 ```
 
-Open the setup URL to create the admin account. See [set up access](/self-hosting/setup).
+- `Setup:` is where you create the admin account. See [set up access](/self-hosting/setup).
+- `API:` is what the CLI, MCP and agents talk to.
+- `Note:` appears when the box's public address is mapped by a cloud provider or NAT. Act on it
+  before anything else: the certificates for your URLs are issued through 80 and 443.
+- `CA:` appears with `--tls internal`, naming the root clients must trust.
+- `CLI:` is the login line, once you have a token.
+
+Check it answers: `curl -s https://api.<domain>/healthz` returns `{"ok":true}`.
 
 ## What it writes
 
@@ -147,7 +168,7 @@ Open the setup URL to create the admin account. See [set up access](/self-hostin
 | `/var/lib/instacloud` | all data: `state.json`, `pg/`, `vol/`, `md/`, `garage/`, `caddy/`, `edge/ca.pem` |
 | `/var/lib/instacloud.img` | the XFS loop image, only when one was needed |
 | `/etc/fstab` | `/var/lib/instacloud.img /var/lib/instacloud xfs loop,nofail,x-systemd.required-by=docker.service,x-systemd.before=docker.service 0 0` |
-| `/etc/docker/daemon.json` | `default-address-pools`, on a fresh install or when the key is absent |
+| `/etc/docker/daemon.json` | `default-address-pools`, when the file is missing or empty |
 
 The `x-systemd.required-by=docker.service` part matters: Docker must not start before the data
 mount is there. Without it a reboot where the image failed to mount would let dockerd restart the
@@ -169,14 +190,18 @@ Postgres containers against empty directories.
 | `--print-firewall` | | print the firewall rules and exit |
 | `--print-daemon-json` | | print the Docker address-pool block and exit |
 | `--print-env`, `--print-compose`, `--print-caddyfile` | | print the file and exit |
+| `--print-ssh-advice` | | print which ports your SSH daemon listens on, to allow before you enable a firewall, and exit |
+| `--print-domain-note` | | print whether the automatic domain resolves to this box, and exit |
 | `-y` | | assume yes |
 
-Every `INSTA_OSS_*` variable in the environment when you run the script is passed through into
-`instad.env`, so the idle and sleep knobs can be set at install time. They are all listed on the
-[sleep and wake](/self-hosting/sleep) page.
+Every `INSTA_OSS_*` variable the script runs with is passed through into `instad.env`, so the idle
+and sleep knobs can be set at install time. They are all listed on the
+[sleep and wake](/self-hosting/sleep) page. Put them after `sudo`, as below: `sudo` resets the
+environment it inherits, so a variable you only `export` in your shell never reaches the script, and
+the install succeeds with the defaults instead.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | INSTA_OSS_IDLE_COMPUTE_SEC=900 sh -s -- --domain example.com --email ops@example.com
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo INSTA_OSS_IDLE_COMPUTE_SEC=900 sh -s -- --domain example.com --email ops@example.com
 ```
 
 ## Docker address pools
@@ -190,9 +215,9 @@ them: `172.17.0.0/16` through `172.31.0.0/16` minus `docker0`, plus 16 `/20` net
 { "default-address-pools": [ { "base": "10.100.0.0/14", "size": 24 } ] }
 ```
 
-That is 1024 `/24` networks. The installer writes it only when `/etc/docker/daemon.json` is absent
-or has no `default-address-pools` key. A box that already sets the key keeps its own value, and the
-script prints the block for you to merge by hand when the file carries other keys.
+That is 1024 `/24` networks. The installer writes it only when `/etc/docker/daemon.json` is missing
+or empty. A box that already sets the key keeps its own value, and when the file carries other keys
+but not this one the script leaves it untouched and prints the block for you to merge by hand.
 
 ## Reflinks
 
@@ -370,8 +395,8 @@ What you take on:
 
   The `certificate` object is absent in the other TLS modes, and absent if the file cannot be
   read, which is worth alerting on too.
-- **A custom domain outside your wildcard has no certificate.** `insta compute domain` still
-  attaches the hostname and routes it, and `insta compute check-domain` reports it as `pending`
+- **A custom domain outside your wildcard has no certificate.** `insta domain attach` still
+  attaches the hostname and routes it, and `insta domain check` reports it as `pending`
   rather than `ready` because the certificate does not cover it. Add it as a SAN to the
   certificate you supply, or keep that name on `--tls acme`.
 - **Issuance for the wildcard itself is not automated here.** A DNS-01 wildcard order needs a

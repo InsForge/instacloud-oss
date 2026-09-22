@@ -44,10 +44,10 @@ recover at all. Postgres allows a file-level copy only against a stopped server,
 filesystem snapshot, or its own backup protocol, so an always-on database always streams. The
 [install](/self-hosting/install#reflinks) page has the reflink check and how to get one.
 
-Either way, `insta events` records what happened:
+Either way, `insta agent events` records what happened:
 
 ```bash
-insta events --json
+insta agent events --json
 # branch.created  {"from":"main","db":{"method":"reflink","ms":180},"volumes":1}
 ```
 

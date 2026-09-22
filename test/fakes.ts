@@ -41,6 +41,11 @@ export const db: DatabaseAdapter = {
       enabled: ['pg_stat_statements', 'plpgsql'],
     })
     if (sql.includes('not datistemplate')) return JSON.stringify([{ name: 'app' }, { name: 'postgres' }])
+    // The ad-hoc query route's wrap (before the metrics SQL's bare row_to_json below). Values are
+    // TEXT, as json_each_text answers — including a bigint past 2^53, which must survive as-is.
+    if (sql.includes("json_build_object('columns'")) {
+      return JSON.stringify({ columns: ['one', 'two'], rows: [['1', 'b'], ['9007199254740993', null]] })
+    }
     if (sql.includes('row_to_json')) return JSON.stringify({ total: 3, active: 1, idle: 2, max: 100, db_size_bytes: 123456, deadlocks: 0, inserted: 10, updated: 5, deleted: 1, blks_hit: 90, blks_read: 10 })
     if (sql.includes('pg_stat_statements')) return JSON.stringify([{ queryId: 'q1', query: 'select 1', calls: 3, totalMs: 9, meanMs: 3, rows: 3 }])
     if (sql.includes('pg_stat_activity')) return JSON.stringify([{ pid: 42, state: 'active', durationMs: 12.5, query: 'select 1' }])
@@ -117,6 +122,28 @@ export const managed: ManagedDbAdapter = {
   provision: async (t) => { calls.push(`md.provision:${t.container}`); runtime.put(t.container, 'running') },
   destroy: async (container) => { calls.push(`md.destroy:${container}`); runtime.drop(container) },
   rename: async (container, to) => { calls.push(`md.rename:${container}->${to}`); runtime.move(container, to) },
+  // Canned valkey-cli answers for the key-browser routes. The recorded call carries the RAW argv
+  // (container + args), so tests can assert the password never rides it — the real adapter sends
+  // it through the exec env instead.
+  command: async (container, _password, args) => {
+    calls.push(`md.cmd:${container}:${args.join(' ')}`)
+    const joined = args.join(' ')
+    // Order matters: HSCAN/SSCAN carry a key, the keyspace SCAN does not.
+    if (joined.includes('HSCAN')) return '["0",["token","abc","ttl","60"]]'
+    if (joined.includes('SSCAN')) return '["0",["a","b"]]'
+    if (joined.includes('SCAN')) return '["0",["user:1","user:2"]]'
+    if (joined.includes('INFO keyspace')) return '# Keyspace\ndb0:keys=2,expires=0,avg_ttl=0'
+    if (joined === 'INFO') {
+      return ['# Server', 'valkey_version:7.2.14', 'uptime_in_seconds:120', '# Clients', 'connected_clients:2',
+        '# Memory', 'used_memory:1048576', 'maxmemory:0', '# Stats', 'total_commands_processed:42',
+        'instantaneous_ops_per_sec:1', 'keyspace_hits:9', 'keyspace_misses:1', 'expired_keys:0', 'evicted_keys:0'].join('\n')
+    }
+    // TYPE answers by key name, so the hash/set arms are actually reachable in tests.
+    if (joined.includes('TYPE')) return joined.includes('session') ? '"hash"' : '"string"'
+    if (joined.includes('TTL')) return '-1'
+    if (joined.includes('GET')) return '"{\\"name\\":\\"ada\\"}"'
+    return ''
+  },
 }
 
 export const data: DataDirOps = {

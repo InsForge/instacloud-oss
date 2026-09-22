@@ -109,10 +109,13 @@ A generated value would be stored write-only and you could never read it back. T
 Nothing is written between requests. A request carries the state it asks about.
 
 **Which checkpoint is this?**
-`typed-decisions`, ModernBERT-large, 421M parameters, 1024-token context. The one upstream's own deploy directory ships.
+`typed-decisions`, ModernBERT-large, 421M parameters, 1024-token context - built by Convai Innovations, the original Laya authors. The one upstream's own deploy directory ships.
 
 ## Links
 
-- Upstream: <https://github.com/tonychang04/laya-template>, pinned to `c9dcaab`
-- Model: <https://huggingface.co/convaiinnovations/laya>
+- Original project: [Laya](https://github.com/NandhaKishorM/laya) by **Convai Innovations**, who
+  built and trained the model - GitHub <https://github.com/NandhaKishorM/laya>, Hugging Face
+  <https://huggingface.co/convaiinnovations/laya>
+- Deployment source: <https://github.com/tonychang04/laya-template>, pinned to `c9dcaab` (packages
+  the original project's model and deploy directory for this template)
 - License: Apache-2.0

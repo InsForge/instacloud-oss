@@ -1,5 +1,5 @@
 code: laya
-version: 0.1.1
+version: 0.2.0
 maintainer: official
 sourceRepo: InsForge/instacloud-oss
 
@@ -15,7 +15,7 @@ upstream:
 services:
   laya:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/laya:0.1.1   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/laya:0.2.0   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
     # Upstream's own liveness route. There is no route at `/` in deploy/app.py, so the gate would
     # read a 404 there; this template's serve.py adds a redirect at `/` for humans and leaves the
@@ -44,13 +44,11 @@ services:
         # Neither a `default:` nor a `generate:`, matching the terminal templates. This service is
         # an inference endpoint on the public internet whose cheapest request costs a few hundred
         # milliseconds of CPU, so an unauthenticated one is a free compute faucet for whoever finds
-        # the URL. A credential written here would be the same one on every deploy in the world,
+        # the URL. A key written here would be the same one on every deploy in the world,
         # and a generated one would be stored write-only where the operator could never read it
-        # back. The console renders two empty fields and will not submit until they are filled.
-        ADMIN_USERNAME:
-          description: "Username for the API's HTTP basic auth. No colon: basic auth splits on the first one"
-        ADMIN_PASSWORD:
-          description: "Password for the API's HTTP basic auth"
+        # back. The console renders one empty field and will not submit until it is filled.
+        API_KEY:
+          description: "Paste an API key of your choosing; it guards every route except /healthz. Send `Authorization: Bearer <key>`, or HTTP basic auth with username `api` and the key as the password"
 
 meta:
   name: Laya

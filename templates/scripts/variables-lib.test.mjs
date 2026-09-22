@@ -65,7 +65,7 @@ describe('the credentialed templates ship no credential of their own', () => {
   // `generate:` would be a password the operator never sees. The manifests declare both variables
   // required with neither, which is what makes the console render two empty fields it will not let
   // you submit blank.
-  it.each(['claude-code', 'codex', 'dsh', 'hermes', 'laya', 'pi'])('%s makes the operator supply both', (dir) => {
+  it.each(['claude-code', 'codex', 'dsh', 'hermes', 'pi'])('%s makes the operator supply both', (dir) => {
     const svc = Object.values(templates.find((t) => t.dir === dir).manifest.services)[0];
     for (const k of ['ADMIN_USERNAME', 'ADMIN_PASSWORD']) {
       // null = nothing to fall back on. The platform answers MissingTemplateVariables; the console
@@ -78,11 +78,21 @@ describe('the credentialed templates ship no credential of their own', () => {
   // hermes joined this list in 2.2.0, when its OpenRouter key and Telegram values moved to
   // `optional`: the admin pair is now the whole of what it demands, and this is the regression
   // guard that keeps the keyless, channel-less deploy contract from drifting.
-  it.each(['claude-code', 'codex', 'dsh', 'hermes', 'laya', 'pi'])('%s demands those two and nothing else', (dir) => {
+  it.each(['claude-code', 'codex', 'dsh', 'hermes', 'pi'])('%s demands those two and nothing else', (dir) => {
     // Scoped both ways on purpose: a fourth required variable would be a new thing to type on the
     // deploy form, and dropping one would mean a credential came back from somewhere.
     expect(demands(templates.find((t) => t.dir === dir).manifest))
       .toEqual(['ADMIN_PASSWORD', 'ADMIN_USERNAME']);
+  });
+
+  it('laya makes the operator supply exactly one API key', () => {
+    // laya dropped the ADMIN pair in 0.2.0: it is an API consumed programmatically (Bearer key, or
+    // basic auth with the fixed username `api`), unlike the browser terminals above where a
+    // login prompt fits. The same security property holds: required, no default, no generator.
+    const svc = Object.values(templates.find((t) => t.dir === 'laya').manifest.services)[0];
+    expect(demands(templates.find((t) => t.dir === 'laya').manifest)).toEqual(['API_KEY']);
+    expect(valueSource(svc.env.required.API_KEY, undefined), 'API_KEY must have no fallback').toBeNull();
+    expect(valueSource(svc.env.required.API_KEY, 'typed'), 'API_KEY must accept a value').toBe('provided');
   });
 
   it('no template lets a required variable fall back to anything', () => {

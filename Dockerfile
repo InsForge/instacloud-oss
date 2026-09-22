@@ -40,6 +40,10 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
+# The buildx plugin too: git push-to-deploy builds the pushed repo with BuildKit (git-context fetch
+# and the GIT_AUTH_TOKEN build secret), which the legacy builder cannot do. Without this the daemon's
+# `docker build` errors immediately and every push-to-deploy build fails.
+COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/lib/docker/cli-plugins/docker-buildx
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json tsconfig.json ./

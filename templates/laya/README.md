@@ -1,6 +1,6 @@
 # Laya
 
-An open-source alternative to Jev: typed decisions with calibrated probabilities, on CPU, in your own project.
+An open-source alternative to Jev. If you do not want a closed, vendor-hosted model, self-host this one and call the API: typed yes/no, choice and score decisions with probabilities, on CPU, in your own project.
 
 [![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/laya)
 
@@ -45,8 +45,7 @@ curl -X POST https://YOUR-SERVICE-URL/decide \
 
 Each answer carries its probabilities and a `confidence`; the response carries `latency_ms`.
 Basic auth sends the same secret in RFC 7617 form: `curl -u api:YOUR_API_KEY ...` (the username is
-always `api`). Prefer a browser? Open the service URL, sign in as `api` with your key, and the
-interactive docs let you run the same request from **Try it out**.
+always `api`).
 
 ```json
 {"answers": [
@@ -68,20 +67,6 @@ Act on the numbers in your own code. The thresholds are yours, not the model's.
 
 Everything else is set for you.
 
-## Speed and cost
-
-| | |
-|---|---|
-| One question, warm | **72 ms** |
-| Three questions, warm | **320 ms** |
-| First call after a restart | **about 45 s**, while the model loads |
-| Memory | 2.2 GB |
-| Billing | **continuous.** The service is always on, charged from deploy until you delete it |
-
-Latency grows with the length of the state, roughly 1.1 ms per input token.
-
-The service is not idle-stopped, so budget for it running around the clock.
-
 ## Limits
 
 - **Input past ~1K tokens is silently truncated.** Keep states short.
@@ -97,7 +82,7 @@ The first is the deployment fork's measured finding (`deploy/DEPLOY-CLOUD.md`); 
 No. Same three primitives, different wire format. Not affiliated with or endorsed by TypeSafe.
 
 **Why is the first call slow?**
-The 842 MB checkpoint loads into memory on boot. It is baked into the image, so nothing is downloaded; the wait is the load itself. It happens once per boot, so only a restart or a redeploy pays it again.
+The 842 MB checkpoint loads into memory on boot, which takes about 45 seconds. It is baked into the image, so nothing is downloaded; the wait is the load itself. It happens once per boot, so only a restart or a redeploy pays it again.
 
 **Does it stop when nobody is using it?**
 No. It stays up, so a request never waits for a boot. That also means it is charged the whole time; delete the service when you are done with it.

@@ -39,7 +39,7 @@ Promotion is a migration, not a copy:
 insta branch delete task-auth-refactor
 ```
 
-`insta branch merge <source> --into main` creates any service the branch added as an empty service of the same type and name on the target — deploy to it afterwards; data never merges. Audit what the agent did at any point with `insta events`.
+`insta branch merge <source> --into main` creates any service the branch added as an empty service of the same type and name on the target — deploy to it afterwards; data never merges. Audit what the agent did at any point with `insta agent events`.
 
 <Note>
 On self-hosted InstaCloud OSS, a merged compute group is created **and deployed** with the source branch's image, against the target's own database and bucket — an agent-built image can go live on `main` through merge alone.

@@ -43,7 +43,7 @@ branch  = a disposable, fully isolated clone of all three
 - **Serverless on a single machine.** Services scale to zero and wake on the first request in about two seconds; `main` stays always-on by default, other branches opt in.
 - **The same command and API surface as the cloud.** One daemon answers the hosted platform's API, so the `insta` CLI, agent skills and dashboard work the same way self-hosted, with documented differences for the cloud-only operations (billing, scaling, domain purchase, GitHub deploys) that answer `501` with guidance.
 - **A project is Postgres + S3 + your containers.** The daemon provisions the database, an object-storage bucket and your app containers, and wires their credentials into your environment.
-- **Built for coding agents.** Per-branch sandboxes, opt-in approval gates on sensitive actions, and a full audit trail (`insta events`), so an agent can deploy and verify on its own branch and you keep the veto.
+- **Built for coding agents.** Per-branch sandboxes, opt-in approval gates on sensitive actions, and a full audit trail (`insta agent events`), so an agent can deploy and verify on its own branch and you keep the veto.
 - **One-command templates.** Deploy an app from the bundled catalog with `insta template deploy <code>`, served from this box with no internet access.
 
 ## Install on a VPS
@@ -128,7 +128,7 @@ npm install -g insta
 export INSTA_API_URL=http://127.0.0.1:8080      # the CLI defaults to the cloud
 ```
 
-No `insta login`: the daemon trusts loopback. Skip `insta setup agent`, which registers the cloud's
+No `insta login`: the daemon trusts loopback. Skip `insta agent setup`, which registers the cloud's
 MCP server; the dashboard's Quick Start page prints this box's own setup steps. App URLs are
 `http://<group>-<project>-<branch>.localhost:8080`.
 
@@ -168,7 +168,7 @@ $ curl -s https://web-demo-main.example.com/ | head -1   # a request wakes it in
 $ insta branch delete feat          # done with the task: throw the clone away
 ```
 
-`insta manifest` shows each branch's db, storage and compute with their URLs.
+`insta agent manifest` shows each branch's db, storage and compute with their URLs.
 
 ## What makes it different
 
@@ -189,7 +189,7 @@ service: `insta compute always-on off web`.
 every sensitive action passes an allow, deny or approve gate before it touches a resource. Agents
 propose, humans approve: a gated action parks until someone runs `insta approvals approve`, and an
 agent that ignores its instructions still cannot get past it. Every action lands in the
-`insta events` audit timeline.
+`insta agent events` audit timeline.
 
 ## How it works
 
@@ -242,7 +242,7 @@ Locally: `npm run build:ui` once, then open http://127.0.0.1:8080. UI developmen
 `.claude/skills/` for Claude Code, `.agents/skills/` for Codex), so a coding agent opened in the
 repo already knows the workflow: one task, one branch, deploy, verify, delete. You keep the
 approval power, by setting an action to `approve` under Settings > Agent Governance in the dashboard or through
-`PUT /projects/:id/policy/:action`, and the audit trail (`insta events`). The insta-mcp server is a
+`PUT /projects/:id/policy/:action`, and the audit trail (`insta agent events`). The insta-mcp server is a
 thin client over the same endpoints; point it at the daemon with
 `PLATFORM_API_URL=https://api.<domain>` and an `insta_` token.
 

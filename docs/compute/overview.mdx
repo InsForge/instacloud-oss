@@ -42,7 +42,7 @@ insta compute stop
 insta compute suspend
 ```
 
-`insta compute always-on on|off` overrides that on any branch, and `--no-always-on` at creation starts a service scale-to-zero. Billing is actual usage either way, so an always-on machine bills continuously while a sleeping one costs almost nothing. Scale-to-zero also stops any background work running in the container, which [limitations](/limitations/overview) covers. Machine counts and specs move with `insta services scale` and `insta services upgrade` on paid plans. Custom domains attach per branch with `insta compute set-domain`.
+`insta compute always-on on|off` overrides that on any branch, and `--no-always-on` at creation starts a service scale-to-zero. Billing is actual usage either way, so an always-on machine bills continuously while a sleeping one costs almost nothing. Scale-to-zero also stops any background work running in the container, which [limitations](/limitations/overview) covers. Machine counts and specs move with `insta services scale` and `insta services upgrade` on paid plans. Custom domains attach per branch with `insta domain attach`.
 
 <Note>
 On self-hosted InstaCloud OSS, `services scale`/`upgrade` are cloud-only, while `--always-on` and custom domains work as they do here. `insta secrets bind` answers `501`: every compute container already receives each service's credentials under their own names, so read those (`insta secrets list` names them) or set your own with `insta secrets set`. The command-by-command list is in [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md).

@@ -12,29 +12,29 @@ insta services add postgres db
 ## What you get
 
 - **Isolation.** Your own Postgres instance per project, and another per branch. Connection limits, extensions, and load are yours alone.
-- **Scale to zero.** By default an idle instance suspends and the first connection cold-starts it — a suspended database bills only for the data it stores. Keep it warm with `insta db always-on on`.
+- **Scale to zero.** By default an idle instance suspends and the first connection cold-starts it — a suspended database bills only for the data it stores. Keep it warm with `insta postgres always-on on`.
 - **Branching.** `insta branch create` clones the database copy-on-write with the parent's data. See [branching](/postgres/branching).
-- **A standard connection string.** `insta db url` prints the DSN (bare on stdout, so `psql "$(insta db url)"` works); bind it into a service with `insta secrets bind DATABASE_URL postgres/db --to compute/app`.
+- **A standard connection string.** `insta postgres url` prints the DSN (bare on stdout, so `psql "$(insta postgres url)"` works); bind it into a service with `insta secrets bind DATABASE_URL postgres/db --to compute/app`.
 - **Named credentials.** Every postgres service mints `DATABASE_URL_<NAME>` (`DATABASE_URL_ANALYTICS`), and the oldest service of the type also holds the unsuffixed `DATABASE_URL`. Storage and the managed databases follow the same rule (`BUCKET_NAME_ASSETS`, `REDIS_URL_CACHE`). Remove the oldest service and the unsuffixed keys move to the next one, so `insta secrets` always has a `DATABASE_URL` while any postgres service exists.
 
 Day-to-day commands:
 
 ```bash
-insta db connect     # interactive psql; a suspended instance wakes on connect
-insta db stats       # connections vs max, cache hit rate, database size
-insta db url         # print the DSN
+insta postgres connect     # interactive psql; a suspended instance wakes on connect
+insta postgres stats       # connections vs max, cache hit rate, database size
+insta postgres url         # print the DSN
 ```
 
-`insta db stats` answers without waking a suspended instance, so it's safe to poll.
+`insta postgres stats` answers without waking a suspended instance, so it's safe to poll.
 
 ## How it is built
 
 It is standard Postgres — no custom storage engine, no protocol proxy rewriting your queries. Each instance runs with its own provisioned volume:
 
-- `insta db volume` shows the provisioned size and your plan's cap on any plan; `--size` grows it (paid plans; grow-only). Billing is actual data stored — the size is a cap, not a price.
-- `insta db limits` shows or sets the instance's resource ceiling (paid plans). Unlike `insta services upgrade`, which is up-only, limits move both directions.
+- `insta postgres volume` shows the provisioned size and your plan's cap on any plan; `--size` grows it (paid plans; grow-only). Billing is actual data stored — the size is a cap, not a price.
+- `insta postgres limits` shows or sets the instance's resource ceiling (paid plans). Unlike `insta services upgrade`, which is up-only, limits move both directions.
 - Backups and restore are managed.
 
 ## Cloud versus self-hosted
 
-On self-hosted InstaCloud OSS the database is a Postgres container per branch. On a reflink-capable filesystem a branch forks a sleeping database with a reflink copy of its data directory, in about a second at any size; in the default `auto` mode an awake database, a filesystem without reflinks, or `INSTA_OSS_FORK=basebackup` streams it with `pg_basebackup` instead, in time proportional to its size (`INSTA_OSS_FORK=reflink` refuses the fork instead). See [branching](/self-hosting/branching). `insta db volume` accepts and persists the same grow-only sizes, but locally the size is advisory — the container's disk is not actually bounded. Scale to zero, CPU and memory are real settings on that container, and Postgres scales to zero by default. `insta secrets bind` answers `501`: every compute container already receives each service's credentials under their own names, so read those (`insta secrets list` names them) or set your own with `insta secrets set`. The command-by-command list is in [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md).
+On self-hosted InstaCloud OSS the database is a Postgres container per branch. On a reflink-capable filesystem a branch forks a sleeping database with a reflink copy of its data directory, in about a second at any size; in the default `auto` mode an awake database, a filesystem without reflinks, or `INSTA_OSS_FORK=basebackup` streams it with `pg_basebackup` instead, in time proportional to its size (`INSTA_OSS_FORK=reflink` refuses the fork instead). See [branching](/self-hosting/branching). `insta postgres volume` accepts and persists the same grow-only sizes, but locally the size is advisory — the container's disk is not actually bounded. Scale to zero, CPU and memory are real settings on that container, and Postgres scales to zero by default. `insta secrets bind` answers `501`: every compute container already receives each service's credentials under their own names, so read those (`insta secrets list` names them) or set your own with `insta secrets set`. The command-by-command list is in [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md).

@@ -18,23 +18,22 @@ Typical uses: **routing tickets, classifying email, scoring urgency, gating an L
 
 1. Pick a **username** and **password**. That is the only input; there is no API key and nothing to download.
 2. Click Deploy. The service is live in about **2 minutes**.
-3. That two minutes is mostly the model loading. `/decide` answers 503 until it finishes.
+3. Most of that is the model loading. `/decide` answers 503 until it finishes, and `/healthz` says when.
 
 ## Use it
 
 1. Open your service URL. The browser asks for the credentials you set, then shows the API docs.
-2. Send a decision:
+2. Expand `POST /decide`, click **Try it out**, and paste:
 
-```bash
-curl -u admin:$PASSWORD -X POST https://<your-url>/decide \
-  -H 'content-type: application/json' \
-  -d '{
-    "state": "We were billed twice for March. Refund it today or we cancel.",
-    "questions": [
-      {"type": "choice", "instructions": "Which department?", "options": ["billing", "technical", "sales"]},
-      {"type": "noul", "instructions": "Does the user threaten to cancel?"}
-    ]
-  }'
+```json
+{
+  "state": "We were billed twice for March. Refund it today or we cancel.",
+  "questions": [
+    {"type": "choice", "instructions": "Which department?", "options": ["billing", "technical", "sales"]},
+    {"type": "score", "instructions": "How urgent?", "options": ["not urgent", "soon", "blocking"]},
+    {"type": "noul", "instructions": "Does the user threaten to cancel?"}
+  ]
+}
 ```
 
 3. Read the answers. Each carries its probabilities and a `confidence`; the response carries `latency_ms`.
@@ -42,8 +41,9 @@ curl -u admin:$PASSWORD -X POST https://<your-url>/decide \
 ```json
 {"answers": [
   {"type": "choice", "choice": "billing", "probabilities": {"billing": 0.86, "technical": 0.06, "sales": 0.08}},
+  {"type": "score", "score": 1.73, "legend": {"0": "not urgent", "1": "soon", "2": "blocking"}},
   {"type": "noul", "noul": 0.76}
-], "latency_ms": 212.3}
+], "latency_ms": 321.9}
 ```
 
 4. Act on the numbers in your own code. The thresholds are yours, not the model's.
@@ -65,9 +65,9 @@ Everything else is set for you.
 |---|---|
 | One question, warm | **72 ms** |
 | Three questions, warm | **320 ms** |
-| First call after the machine has idled | **about 30 s**, while the model loads |
+| First call after a restart | **about 45 s**, while the model loads |
 | Memory | 2.2 GB |
-| Billing | per running minute; the machine stops when idle and wakes on the next request |
+| Billing | **continuous.** The machine is always on, so it is charged from deploy until you delete the service |
 
 Latency grows with the length of the state, roughly 1.1 ms per input token.
 
@@ -84,7 +84,7 @@ Latency grows with the length of the state, roughly 1.1 ms per input token.
 No. Same three primitives, different wire format. Not affiliated with or endorsed by TypeSafe.
 
 **Why is the first call slow?**
-The 842 MB checkpoint loads into memory on boot. It is baked into the image, so nothing is downloaded; the wait is the load itself. The machine stops when idle, so the next request after a quiet period pays it again.
+The 842 MB checkpoint loads into memory on boot. It is baked into the image, so nothing is downloaded; the wait is the load itself. It happens once per boot, so a restart or a redeploy pays it again.
 
 **Why are the credentials not generated for me?**
 A generated value would be stored write-only and you could never read it back. The deploy form starts them empty on purpose.

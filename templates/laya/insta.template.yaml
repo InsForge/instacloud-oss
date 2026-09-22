@@ -1,5 +1,5 @@
 code: laya
-version: 0.1.2
+version: 0.1.1
 maintainer: official
 sourceRepo: InsForge/instacloud-oss
 
@@ -15,19 +15,13 @@ upstream:
 services:
   laya:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/laya:0.1.2   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/laya:0.1.1   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
     # Upstream's own liveness route. There is no route at `/` in deploy/app.py, so the gate would
     # read a 404 there; this template's serve.py adds a redirect at `/` for humans and leaves the
     # gate pointed here. /healthz answers 200 the moment uvicorn binds, before the checkpoint has
     # finished loading, and reports `model_loaded` and `load_seconds` in its body.
     healthcheck: /healthz
-    # Declared, because the platform's default is on and this service has no reason to be: it
-    # answers requests and holds nothing between them, and an inbound request is what wakes the
-    # machine. Left off, a free-tier deployment spends its whole monthly credit in about 60 hours
-    # sitting idle. The cost is the checkpoint load on the first request after a quiet period,
-    # which the README states and /healthz reports.
-    alwaysOn: false
     # No volume on purpose. The 842 MB checkpoint is baked into the image and HF_HUB_OFFLINE keeps
     # the container from reaching the Hub at all, so there is nothing per-deployment to persist:
     # state in, decision out, nothing written. A disk here would only hold a second copy.

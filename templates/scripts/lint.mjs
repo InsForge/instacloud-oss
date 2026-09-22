@@ -150,6 +150,10 @@ for (const dir of dirs) {
     }
     // A managed service is the platform's: it owns the image, port, sizing and credentials.
     if (MANAGED_TYPES.includes(svc.type)) {
+      // redis, mysql and mongodb are cloud-only: the self-hosted runtime here only parses postgres.
+      if (svc.type !== "postgres") {
+        console.warn(`~ ${dir}: ${name} declares a ${svc.type} service, cloud-only today: the self-hosted runtime only parses web, worker and postgres and skips this template until it gains support`);
+      }
       // spec is not in this list: the shared check above already refuses it on every service type,
       // so it can never reach this loop first, and repeating it here would just double the message
       // for one violation.

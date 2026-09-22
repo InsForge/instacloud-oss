@@ -77,6 +77,10 @@ IS the template code. Copying the closest existing template is the fastest way t
    `${{services.<name>.<KEY>}}`, never through `${services.<name>.url}`, which is refused. Each
    managed datastore is born with its own data volume at the deployer's plan cap, so a template that
    declares two of them costs two volumes. `npm run lint` warns above two.
+   Declaring `redis`, `mysql` or `mongodb` makes a template cloud-only today. This repository's own
+   self-hosted runtime (`src/`) still parses only `web`, `worker` and `postgres`, so it skips a
+   template that declares one of the other three, logging a warning, until it gains support for
+   them. `npm run lint` warns on this too and never fails the run over it.
 
 ## Architectures
 

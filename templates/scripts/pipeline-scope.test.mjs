@@ -220,6 +220,9 @@ describe('lint: a managed datastore is declared bare, the shape the platform own
     expect(r.code, r.out).toBe(1);
     expect(r.out).toContain("the platform's to choose");
     expect(r.out).toContain('a redis service is platform-managed and carries no volume');
+    // Count lines, not just substrings: a merged single message would still contain both.
+    const diagnosticLines = r.out.split('\n').filter((line) => line.startsWith('✗ ') && line.includes('store:'));
+    expect(diagnosticLines, r.out).toHaveLength(2);
   });
 
   it('reports spec on a managed type once, from the shared check alone', () => {

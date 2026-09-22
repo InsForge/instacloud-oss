@@ -68,20 +68,6 @@ Act on the numbers in your own code. The thresholds are yours, not the model's.
 
 Everything else is set for you.
 
-## Speed and cost
-
-| | |
-|---|---|
-| One question, warm | **72 ms** |
-| Three questions, warm | **320 ms** |
-| First call after a restart | **about 45 s**, while the model loads |
-| Memory | 2.2 GB |
-| Billing | **continuous.** The service is always on, charged from deploy until you delete it |
-
-Latency grows with the length of the state, roughly 1.1 ms per input token.
-
-The service is not idle-stopped, so budget for it running around the clock.
-
 ## Limits
 
 - **Input past ~1K tokens is silently truncated.** Keep states short.

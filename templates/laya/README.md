@@ -6,7 +6,7 @@ An open-source alternative to Jev: typed decisions with calibrated probabilities
 
 ## What it does
 
-[Laya](https://github.com/tonychang04/laya-template) is a non-autoregressive decision engine. You POST a piece of state — an email, a ticket, a support message, a JSON object — together with typed questions, and it answers each one in a single forward pass.
+[Laya](https://github.com/NandhaKishorM/laya) is a non-autoregressive decision engine. You POST a piece of state — an email, a ticket, a support message, a JSON object — together with typed questions, and it answers each one in a single forward pass.
 
 - `choice` — picks one of your options, with a probability for each
 - `score` — an expected value over an ordered scale
@@ -114,8 +114,8 @@ Nothing is written between requests. A request carries the state it asks about.
 ## Links
 
 - Original project: [Laya](https://github.com/NandhaKishorM/laya) by **Convai Innovations**, who
-  built and trained the model - GitHub <https://github.com/NandhaKishorM/laya>, Hugging Face
-  <https://huggingface.co/convaiinnovations/laya>
+  built and trained the model; model card on
+  [Hugging Face](https://huggingface.co/convaiinnovations/laya)
 - Deployment source: <https://github.com/tonychang04/laya-template>, pinned to `c9dcaab` (packages
-  the original project's model and deploy directory for this template)
+  the original project's model behind a deploy directory of its own)
 - License: Apache-2.0

@@ -19,8 +19,9 @@ import type { Engine } from '../src/engine'
 let imagesRepo = ''   // the repo `docker images <repo>` must be called with to get the fixture
 let imagesFixture = ''
 let buildGate: Promise<void> | null = null // when set, a stubbed `docker build` blocks on it (in-flight)
-let buildGateResolve: (() => void) | null = null // resolves the gate (a test's release, or kill())
-const gateBuild = (): void => { buildGate = new Promise<void>((r) => { buildGateResolve = r }) }
+let buildGateResolve: (() => void) | null = null // a test's explicit release: the build "succeeds"
+let buildGateReject: ((e: Error) => void) | null = null // kill(): mirrors a real SIGKILL -> done rejects
+const gateBuild = (): void => { buildGate = new Promise<void>((res, rej) => { buildGateResolve = res; buildGateReject = rej }) }
 const rmiCalls: string[] = []
 function fakeDocker(args: string[]): Promise<Buffer> {
   if (args[0] === 'rm') for (const a of args.slice(1)) if (!a.startsWith('-')) runtime.drop(a)
@@ -37,9 +38,9 @@ vi.mock('../src/docker', async (importOriginal) => {
     docker: (args: string[], opts?: { input?: Buffer; mergeStderr?: boolean }) =>
       ['rm', 'ps', 'build', 'images', 'rmi', 'builder'].includes(args[0]) ? fakeDocker(args) : orig.docker(args, opts),
     dockerCall: (args: string[], opts?: { env?: Record<string, string> }) =>
-      // kill() settles the gate too, so a shutdown that kills the child lets `done` resolve (mirrors a
-      // real SIGKILL making dockerCall.done reject/settle) instead of hanging the drain.
-      args[0] === 'build' ? { done: (buildGate ?? Promise.resolve()).then(() => Buffer.from('')), kill: () => buildGateResolve?.() } : orig.dockerCall(args, opts),
+      // kill() REJECTS the gate, mirroring a real SIGKILL: docker.ts rejects dockerCall.done on a
+      // non-zero exit, so a shutdown-killed build must reach doGitDeploy's catch path, never deploy.
+      args[0] === 'build' ? { done: (buildGate ?? Promise.resolve()).then(() => Buffer.from('')), kill: () => buildGateReject?.(new Error('killed')) } : orig.dockerCall(args, opts),
   }
 })
 
@@ -63,6 +64,7 @@ beforeEach(async () => {
   imagesFixture = ''
   buildGate = null
   buildGateResolve = null
+  buildGateReject = null
   rmiCalls.length = 0
   cfg = testConfig()
   engine = makeEngine(cfg)
@@ -235,9 +237,10 @@ test('shutdown drains the in-flight build and never starts a queued one', async 
   // child (which settles A's gate), and awaits the runner. It must return, not hang.
   const closed = await Promise.race([app.close().then(() => 'closed'), new Promise((r) => setTimeout(() => r('hung'), 2000))])
   expect(closed).toBe('closed')
-  // At most ONE deploy (build A, if its kill let it complete); the queued B must never have deployed.
-  expect(calls.filter((c) => c.includes(':bbbb') || c.includes('b'.repeat(12))).length).toBe(0)
-  expect(loadState().gitBindings?.[id]?.binding.lastDeployedSha).not.toBe('b'.repeat(40))
+  // The killed build A rejects (SIGKILL semantics), so it never deploys; the coalesced B never starts.
+  // ZERO deploys after shutdown — neither the drained build nor the queued one reaches the adapter.
+  expect(calls.some((c) => c.startsWith('deploy:'))).toBe(false)
+  expect(loadState().gitBindings?.[id]?.binding.lastDeployedSha).toBeUndefined()
 })
 
 test('connect → GET → DELETE happy path over the HTTP routes', async () => {

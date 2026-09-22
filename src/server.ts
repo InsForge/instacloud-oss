@@ -1316,8 +1316,11 @@ export function buildServer(
     const release = await acquireBuildSlot()
     try {
       // A runner blocked on the semaphore and woken by shutdown (a killed build freed a slot) must not
-      // spawn a new child after the close hook's one kill pass.
-      if (gitShuttingDown) return
+      // spawn a new child after the close hook's one kill pass. THROW, never return: a resolved
+      // runBuild is indistinguishable from a completed build, and doGitDeploy would then "deploy" a tag
+      // that was never built and persist it as deployed. Throwing lands in doGitDeploy's catch, which
+      // emits git.deploy.failed and rmis the (nonexistent) tag — the correct disposition.
+      if (gitShuttingDown) throw new Error('daemon shutting down; build not started')
       const call = dockerCall(spec.args, { env: spec.env })
       activeGitBuilds.add(call)
       let timedOut = false

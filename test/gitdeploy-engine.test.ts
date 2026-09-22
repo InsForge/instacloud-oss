@@ -50,10 +50,10 @@ let projectId: string
 let branchId: string
 
 /** Seed a git binding for group `web` on the default branch and return its id. */
-function seedBinding(): string {
+function seedBinding(group = 'web'): string {
   const b = newBinding('owner', 'repo', 'main', 'ghp_tok', Date.now())
   mutate((s) => {
-    s.gitBindings = { ...(s.gitBindings ?? {}), [b.id]: { binding: b, projectId, branchId, branchName: 'main', group: 'web' } }
+    s.gitBindings = { ...(s.gitBindings ?? {}), [b.id]: { binding: b, projectId, branchId, branchName: 'main', group } }
   })
   return b.id
 }
@@ -130,8 +130,8 @@ test('a redeploy for a binding that no longer exists is a no-op', async () => {
 // ---- ordering: driven through the signed webhook + the real Engine, reading the fake's deploy lines
 // and the persisted lastDeployedAt (r2d2's measured cases). ----
 const deploys = (): number => calls.filter((c) => c.startsWith('deploy:')).length
-const seedWebhookBinding = (): { id: string; secret: string } => {
-  const id = seedBinding()
+const seedWebhookBinding = (group = 'web'): { id: string; secret: string } => {
+  const id = seedBinding(group)
   return { id, secret: loadState().gitBindings![id].binding.webhookSecret }
 }
 const sendPush = (app: ReturnType<typeof buildServer>, id: string, secret: string, sha: string, tsMs?: number): ReturnType<typeof app.inject> => {
@@ -241,6 +241,26 @@ test('shutdown drains the in-flight build and never starts a queued one', async 
   // ZERO deploys after shutdown — neither the drained build nor the queued one reaches the adapter.
   expect(calls.some((c) => c.startsWith('deploy:'))).toBe(false)
   expect(loadState().gitBindings?.[id]?.binding.lastDeployedSha).toBeUndefined()
+})
+
+test('shutdown: a build parked on the concurrency cap is never deployed as if it had built', async () => {
+  // r2d2's scenario: cap is 2, so with 3 gated builds the third parks on the semaphore. On close the
+  // hook wakes it; runBuild must THROW (not return), or doGitDeploy would deploy a tag never built.
+  const app = buildServer(engine, cfg)
+  await engine.deploy(projectId, 'main', { image: 'app:1', port: 30_002, group: 'w2' })
+  await engine.deploy(projectId, 'main', { image: 'app:1', port: 30_003, group: 'w3' })
+  const b1 = seedWebhookBinding('web'); const b2 = seedWebhookBinding('w2'); const b3 = seedWebhookBinding('w3')
+  gateBuild()
+  calls.length = 0
+  await sendPush(app, b1.id, b1.secret, 'a'.repeat(40), 1_000_000)
+  await sendPush(app, b2.id, b2.secret, 'b'.repeat(40), 1_000_000)
+  await sendPush(app, b3.id, b3.secret, 'c'.repeat(40), 1_000_000) // parks on the semaphore (cap 2)
+  await new Promise((r) => setTimeout(r, 40)) // let two builds take slots and the third park
+  const closed = await Promise.race([app.close().then(() => 'closed'), new Promise((r) => setTimeout(() => r('hung'), 3000))])
+  expect(closed).toBe('closed')
+  // The parked third build must NOT have deployed a never-built image, nor recorded it as deployed.
+  expect(calls.some((c) => c.startsWith('deploy:'))).toBe(false)
+  expect(loadState().gitBindings?.[b3.id]?.binding.lastDeployedSha).toBeUndefined()
 })
 
 test('connect → GET → DELETE happy path over the HTTP routes', async () => {

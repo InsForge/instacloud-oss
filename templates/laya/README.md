@@ -65,9 +65,9 @@ Everything else is set for you.
 |---|---|
 | One question, warm | **72 ms** |
 | Three questions, warm | **320 ms** |
-| First call after a restart | **about 45 s**, while the model loads |
+| First call after the machine has idled | **about 30 s**, while the model loads |
 | Memory | 2.2 GB |
-| Billing | **continuous.** The machine is always on, so it is charged from deploy until you delete the service |
+| Billing | per running minute; the machine stops when idle and wakes on the next request |
 
 Latency grows with the length of the state, roughly 1.1 ms per input token.
 
@@ -84,7 +84,7 @@ Latency grows with the length of the state, roughly 1.1 ms per input token.
 No. Same three primitives, different wire format. Not affiliated with or endorsed by TypeSafe.
 
 **Why is the first call slow?**
-The 842 MB checkpoint loads into memory on boot. It is baked into the image, so nothing is downloaded; the wait is the load itself. It happens once per boot, so a restart or a redeploy pays it again.
+The 842 MB checkpoint loads into memory on boot. It is baked into the image, so nothing is downloaded; the wait is the load itself. The machine stops when idle, so the next request after a quiet period pays it again.
 
 **Why are the credentials not generated for me?**
 A generated value would be stored write-only and you could never read it back. The deploy form starts them empty on purpose.

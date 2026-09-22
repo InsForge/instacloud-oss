@@ -75,8 +75,10 @@ Latency grows with the length of the state, roughly 1.1 ms per input token.
 
 - **Input past ~1K tokens is silently truncated.** Keep states short.
 - **English only.** Upstream's multilingual checkpoint is not in this template.
-- **`confidence` is miscalibrated.** Rank by it; do not read it as a probability of being right.
+- **`confidence` is miscalibrated**, by upstream's own ECE numbers. Rank by it; do not read it as a probability of being right.
 - **amd64 only.**
+
+The first and third are upstream's own findings, in its `BENCHMARKS.md` and `deploy/DEPLOY-CLOUD.md`.
 
 ## FAQ
 

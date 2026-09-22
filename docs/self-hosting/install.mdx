@@ -395,8 +395,8 @@ What you take on:
 
   The `certificate` object is absent in the other TLS modes, and absent if the file cannot be
   read, which is worth alerting on too.
-- **A custom domain outside your wildcard has no certificate.** `insta compute set-domain` still
-  attaches the hostname and routes it, and `insta compute check-domain` reports it as `pending`
+- **A custom domain outside your wildcard has no certificate.** `insta domain attach` still
+  attaches the hostname and routes it, and `insta domain check` reports it as `pending`
   rather than `ready` because the certificate does not cover it. Add it as a SAN to the
   certificate you supply, or keep that name on `--tls acme`.
 - **Issuance for the wildcard itself is not automated here.** A DNS-01 wildcard order needs a

@@ -8,13 +8,13 @@ Agent setup is one command. It installs the CLI if it's missing, teaches every c
 ## One-line install
 
 ```bash
-npx insta@latest setup agent
+npx insta@latest agent setup
 ```
 
 Also available as a shell installer (`curl -fsSL https://agents.instacloud.com | sh`, macOS/Linux). Already have the CLI? Run the setup step directly:
 
 ```bash
-insta setup agent
+insta agent setup
 ```
 
 ## What gets installed
@@ -24,7 +24,7 @@ insta setup agent
 
 By default the MCP connection authenticates with OAuth in the agent's own flow, so no credential is written to disk.
 
-## `insta setup agent`
+## `insta agent setup`
 
 Flags:
 
@@ -33,12 +33,12 @@ Flags:
 - `--mcp-token` — Claude Code only: mint a durable API token (named `mcp-<hostname>`) and register the MCP server with it as a Bearer header instead of OAuth, for headless machines and CI. Other agents are always registered as OAuth entries
 - `--env <prod|staging>` — deployment to set this machine up for
 
-## `insta mcp install`
+## `insta config install-mcp`
 
 To add the MCP server to one specific agent without rerunning full setup:
 
 ```bash
-insta mcp install --agent claude-code
+insta config install-mcp --agent claude-code
 ```
 
 Valid agents: `claude-code`, `cursor`, `codex`, `opencode`, `copilot`, `factory-droid`. `--mcp-token` applies to `claude-code` only; the config-file agents authenticate with OAuth.

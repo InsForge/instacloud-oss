@@ -32,7 +32,7 @@ insta secrets
 
 ## Branch URLs and credentials
 
-Each branch's compute services get their own URLs, printed on deploy and listed by `insta manifest`. Credentials are per-branch: `insta db url` prints the branch's connection string, and the branch's copied bindings point at the branch's own services, so work done on a branch stays on that branch. Commands that accept `--branch` (`secrets`, `deploy`, `storage delete`, and others) can still reach another branch when you tell them to.
+Each branch's compute services get their own URLs, printed on deploy and listed by `insta agent manifest`. Credentials are per-branch: `insta postgres url` prints the branch's connection string, and the branch's copied bindings point at the branch's own services, so work done on a branch stays on that branch. Commands that accept `--branch` (`secrets`, `deploy`, `storage delete`, and others) can still reach another branch when you tell them to.
 
 ## Merging
 

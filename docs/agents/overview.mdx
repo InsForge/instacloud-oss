@@ -5,9 +5,9 @@ description: "How agents connect: the `insta` skill and the MCP server."
 
 InstaCloud is agent-native: the stack is designed so that everything you can do in the console, an agent can do through the `insta` CLI or an MCP tool call. These are the pieces that make it true:
 
-- **[Agent setup](/agents/setup).** One command, `insta setup agent`, installs the skill and registers the MCP server for the agents on your machine.
+- **[Agent setup](/agents/setup).** One command, `insta agent setup`, installs the skill and registers the MCP server for the agents on your machine.
 - **[The `insta` skill](/agents/skills).** Teaches terminal agents (Claude Code, Cursor, Codex, and others) the workflow: check `insta status`, work on a branch, pull secrets through the seam, deploy.
 - **[MCP server](/agents/mcp-server).** `https://mcp.instacloud.com/mcp` exposes the `insta_*` toolset ([reference](/reference/mcp-tools)) over streamable HTTP, authenticated with OAuth or an `insta_` API token. Explicit `projectId` and `branch` arguments let an agent operate on any project its token can see, no linked directory required.
 - **[One branch per task](/agents/branch-per-task).** An agent task gets its own branch: its own database with real data, its own storage, its own compute URL. Mistakes stay on the branch and get deleted with it.
 
-Run `insta setup agent` once, and any operation on your projects, from provisioning a database to deploying compute, is one your agents can run. Mix CLI and MCP freely; both hit the same API.
+Run `insta agent setup` once, and any operation on your projects, from provisioning a database to deploying compute, is one your agents can run. Mix CLI and MCP freely; both hit the same API.

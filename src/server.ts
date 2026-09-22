@@ -1274,7 +1274,13 @@ export function buildServer(
   // order GitHub delivers pushes in. A job carries its commit `sha`/`ts`; `webhook` distinguishes a
   // push (governed, staleness-checked) from the already-authorized initial connect build.
   type GitJob = { sha?: string; ts?: number; webhook: boolean }
-  const gitBuilds = new Map<string, { running: boolean; next: GitJob | null }>()
+  // `done` is the promise of the in-flight runner (all coalesced jobs), so unbind/rebind can wait for
+  // a build to finish before removing the binding — see settleGit.
+  const gitBuilds = new Map<string, { running: boolean; next: GitJob | null; done: Promise<void> | null }>()
+
+  /** Resolve once the binding has no build in flight. Unbind/rebind await this so a DELETE (or a
+   *  replacement) cannot return while a webhook build it already validated is still deploying. */
+  const settleGit = async (bindingId: string): Promise<void> => { await gitBuilds.get(bindingId)?.done }
 
   // A hung `docker build` must not wedge its binding forever (the per-binding queue would never
   // drain), and a burst of pushes across many bindings must not fork-bomb the box with concurrent
@@ -1381,19 +1387,24 @@ export function buildServer(
 
   /** Kick off (or coalesce into) a build for a binding. Detached, so the webhook answers fast. */
   const runGitDeploy = (bindingId: string, job: GitJob): void => {
-    const q = gitBuilds.get(bindingId) ?? { running: false, next: null }
+    const q = gitBuilds.get(bindingId) ?? { running: false, next: null, done: null }
     gitBuilds.set(bindingId, q)
     // Coalesce by commit time, not arrival order: keep the pending job with the newest ts, so a
     // delayed older push does not become the one that runs after the current build finishes.
     if (q.running) { if (!q.next || (job.ts ?? 0) >= (q.next.ts ?? 0)) q.next = job; return }
     q.running = true
-    void (async () => {
-      let cur: GitJob | null = job
-      while (cur) { await doGitDeploy(bindingId, cur); cur = q.next; q.next = null }
-      q.running = false
-      // Drop the idle queue so repeated bind/delete/rebind cannot leak Map entries; the get, the
-      // !next check and the delete all run synchronously here, so nothing can re-arm q in between.
-      if (gitBuilds.get(bindingId) === q && !q.next) gitBuilds.delete(bindingId)
+    // try/finally guards the loop: doGitDeploy has its own build/deploy try, but a throw from a state
+    // read or an emit BEFORE it would otherwise leave q.running true and wedge the binding forever.
+    q.done = (async () => {
+      try {
+        let cur: GitJob | null = job
+        while (cur) { await doGitDeploy(bindingId, cur); cur = q.next; q.next = null }
+      } finally {
+        q.running = false
+        // Drop the idle queue so repeated bind/delete/rebind cannot leak Map entries; the get, the
+        // !next check and the delete all run synchronously here, so nothing can re-arm q in between.
+        if (gitBuilds.get(bindingId) === q && !q.next) gitBuilds.delete(bindingId)
+      }
     })()
   }
 
@@ -1411,11 +1422,15 @@ export function buildServer(
     catch (e) { return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) }) }
     const token = typeof body.token === 'string' ? body.token.trim() : ''
     const rec: GitBindingRecord = { binding: newBinding(owner, repoName, ref, token, Date.now()), projectId: id, branchId: t.branch.id, branchName: t.branch.name, group: t.group }
+    // Any binding this replaces: remove it, then wait for its in-flight build to settle before the new
+    // one starts, so the old repository cannot deploy over the new binding after it is exposed.
+    const replaced: string[] = []
     mutate((s) => {
       s.gitBindings ??= {}
-      for (const [k, v] of Object.entries(s.gitBindings)) if (v.projectId === id && v.branchId === t.branch.id && v.group === t.group) delete s.gitBindings[k]
+      for (const [k, v] of Object.entries(s.gitBindings)) if (v.projectId === id && v.branchId === t.branch.id && v.group === t.group) { replaced.push(k); delete s.gitBindings[k] }
       s.gitBindings[rec.binding.id] = rec
     })
+    await Promise.all(replaced.map(settleGit))
     runGitDeploy(rec.binding.id, { webhook: false }) // the initial build; already authorized by the gate above
     const webhookUrl = `${cfg.apiUrl.replace(/\/+$/, '')}/webhooks/git/${rec.binding.id}`
     return reply.code(202).send({
@@ -1440,7 +1455,12 @@ export function buildServer(
     const t = gitTarget(req)
     const rec = t ? findBinding(id, t.branch.id, t.group) : undefined
     if (!rec) return reply.code(404).send({ error: 'no repo connected to this service' })
+    // Remove the binding first (so no NEW build can start), then wait for any in-flight build to
+    // finish: a webhook cannot deploy after this route returns, and its own validated build has
+    // drained. deployFromGit re-checks the binding under the lock, so a build that has not yet
+    // reached that check simply skips.
     mutate((s) => { if (s.gitBindings) delete s.gitBindings[rec.binding.id] })
+    await settleGit(rec.binding.id)
     // Reclaim this binding's build images. The service keeps running after unbind, so its live image
     // is in use and rmi skips it; only the superseded tags are removed.
     await pruneBuildImages(imageTag(rec.binding.id).split(':')[0], null)

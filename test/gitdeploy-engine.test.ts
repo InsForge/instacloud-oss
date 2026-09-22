@@ -16,11 +16,15 @@ import type { Engine } from '../src/engine'
 // `dockerCall` (timeout support), stubbed here so no real git fetch/build happens; image pruning uses
 // `docker images`/`rmi`, faked so it records `rmi` targets and returns a settable listing. Deploy uses
 // the fake compute adapter, not docker.
+let imagesRepo = ''   // the repo `docker images <repo>` must be called with to get the fixture
 let imagesFixture = ''
+let buildGate: Promise<void> | null = null // when set, a stubbed `docker build` blocks on it (in-flight)
 const rmiCalls: string[] = []
 function fakeDocker(args: string[]): Promise<Buffer> {
   if (args[0] === 'rm') for (const a of args.slice(1)) if (!a.startsWith('-')) runtime.drop(a)
-  if (args[0] === 'images') return Promise.resolve(Buffer.from(imagesFixture))
+  // Honour the repo filter: the fixture is returned ONLY for the expected repo, so a prune that lists
+  // the wrong repository (or none) gets an empty listing and the test fails instead of being masked.
+  if (args[0] === 'images') return Promise.resolve(Buffer.from(args[1] === imagesRepo ? imagesFixture : ''))
   if (args[0] === 'rmi') { for (const a of args.slice(1)) if (!a.startsWith('-')) rmiCalls.push(a) }
   return Promise.resolve(Buffer.from(''))
 }
@@ -31,7 +35,7 @@ vi.mock('../src/docker', async (importOriginal) => {
     docker: (args: string[], opts?: { input?: Buffer; mergeStderr?: boolean }) =>
       ['rm', 'ps', 'build', 'images', 'rmi'].includes(args[0]) ? fakeDocker(args) : orig.docker(args, opts),
     dockerCall: (args: string[], opts?: { env?: Record<string, string> }) =>
-      args[0] === 'build' ? { done: Promise.resolve(Buffer.from('')), kill: () => {} } : orig.dockerCall(args, opts),
+      args[0] === 'build' ? { done: (buildGate ?? Promise.resolve()).then(() => Buffer.from('')), kill: () => {} } : orig.dockerCall(args, opts),
   }
 })
 
@@ -51,7 +55,9 @@ function seedBinding(): string {
 
 beforeEach(async () => {
   resetFakes()
+  imagesRepo = ''
   imagesFixture = ''
+  buildGate = null
   rmiCalls.length = 0
   cfg = testConfig()
   engine = makeEngine(cfg)
@@ -186,12 +192,32 @@ test('webhook: after a successful deploy, superseded build images are reclaimed 
   const repo = imageTag(id).split(':')[0]        // io-git-<8of id>
   const current = imageTag(id, sha)              // the tag this push deploys
   const stale = `${repo}:oldsha000000`           // a previous build's tag, still on disk
+  imagesRepo = repo                              // the fixture is returned ONLY for this exact repo
   imagesFixture = `${stale}\n${current}\n`       // `docker images <repo>` returns both
   calls.length = 0
   await sendPush(app, id, secret, sha, 7_000_000)
   await vi.waitFor(() => expect(lastAt(id)).toBe(7_000_000)) // deployed
   await vi.waitFor(() => expect(rmiCalls).toContain(stale))  // the old tag is reclaimed
   expect(rmiCalls).not.toContain(current)                    // the tag just deployed is kept
+})
+
+test('DELETE waits for an in-flight build and the deploy it drains is skipped (no deploy after unbind)', async () => {
+  const app = buildServer(engine, cfg)
+  const { id, secret } = seedWebhookBinding()
+  let release!: () => void
+  buildGate = new Promise<void>((r) => { release = r })
+  calls.length = 0
+  await sendPush(app, id, secret, 'a'.repeat(40), 8_000_000) // build starts and hangs on the gate
+  // The webhook handler set q.running synchronously, so the binding's build is in flight now.
+  const del = app.inject({ method: 'DELETE', url: `/projects/${projectId}/services/cp-web/git` })
+  // DELETE removes the binding, then awaits the in-flight build; it must not resolve while gated.
+  const raced = await Promise.race([del.then(() => 'done'), new Promise((r) => setTimeout(() => r('pending'), 60))])
+  expect(raced).toBe('pending')
+  release() // the build finishes; deployFromGit now sees the binding gone and skips
+  const res = await del
+  expect(res.statusCode).toBe(200)
+  expect(loadState().gitBindings?.[id]).toBeUndefined()
+  expect(calls.some((c) => c.startsWith('deploy:'))).toBe(false) // the drained build did not deploy after unbind
 })
 
 test('connect → GET → DELETE happy path over the HTTP routes', async () => {

@@ -9,6 +9,7 @@ import { loadConfig, type Config } from './config'
 import { dataLayout, ensureDirSync, lazyDataDirOps, probedCapabilities } from './datadir'
 import { migrateLegacyData } from './datadir-migrate'
 import { docker } from './docker'
+import { imageTag } from './gitdeploy'
 import { BRANCH_NAME_RE, SERVICE_NAME_RE } from './names'
 import { MANAGED_DB, CANONICAL_MANAGED_KEYS, CANONICAL_KEYS, GARAGE_CONTAINER, suffixBundle, envSuffix, laneBundle, managedServiceId, managedContainerName, isManagedDbType, parseKeyspaceInfo, parseRedisInfo, parseServiceId, pgContainerName, pgServiceId, scanPageMembers, scanPageToHash, storageServiceId, bucketName, appContainerName, dataPaths } from './manageddb'
 import * as observe from './observe'
@@ -237,6 +238,23 @@ async function countFailure(t: Teardown, what: string, fn: () => Promise<unknown
   }
 }
 // ---- end region WP5 ----
+
+/** Best-effort removal of a git push-to-deploy binding's build images when the binding is pruned by a
+ *  lifecycle teardown (service/branch/project delete), so those tagged `io-git-*` images are not left
+ *  orphaned on disk. `docker rmi` refuses an image a running container still uses, so nothing live is
+ *  removed; failures (in use, already gone, docker unreachable) are swallowed. */
+async function reclaimGitImages(bindingIds: readonly string[]): Promise<void> {
+  for (const id of bindingIds) {
+    const repo = imageTag(id).split(':')[0] // io-git-<8 of binding id>
+    try {
+      const out = (await docker(['images', repo, '--format', '{{.Repository}}:{{.Tag}}'])).toString()
+      for (const tag of out.split('\n').map((s) => s.trim())) {
+        if (!tag || tag.endsWith(':<none>')) continue
+        try { await docker(['rmi', tag]) } catch { /* in use, or already gone */ }
+      }
+    } catch { /* listing failed; skip */ }
+  }
+}
 
 /** The registration surface the engine drives on every provision, teardown and rename. WP3 replaced
  *  the scaffold's no-op stub with the real `Scheduler` (region WP3 below), which satisfies this. */
@@ -2271,13 +2289,15 @@ export class Engine {
           await count(t, () => this.data.remove(dir), `remove the /data directory ${dir}`)
           if (t.failed !== beforeBytes) return t
         }
+        const reclaimed: string[] = []
         mutate((st) => {
           delete st.branches[branch.id].apps[name]
           st.branches[branch.id].bindings = (st.branches[branch.id].bindings ?? []).filter((x) => x.target !== `compute/${name}`)
           // Drop any git push-to-deploy binding for this compute group: its target is gone, so a
           // later webhook must not resolve to a same-named service redeployed after this removal.
-          if (st.gitBindings) for (const [k, r] of Object.entries(st.gitBindings)) if (r.projectId === projectId && r.branchId === branch.id && r.group === name) delete st.gitBindings[k]
+          if (st.gitBindings) for (const [k, r] of Object.entries(st.gitBindings)) if (r.projectId === projectId && r.branchId === branch.id && r.group === name) { reclaimed.push(k); delete st.gitBindings[k] }
         })
+        await reclaimGitImages(reclaimed) // best-effort: reclaim the removed bindings' build images
         this.scheduler.forget([this.serviceKey(branch, sid)])                                        // WP3
       } else {
         // Nothing else may run: the domains, the secrets and the registration all still describe
@@ -3027,12 +3047,14 @@ export class Engine {
       // since round nine; a deliberate `branch delete` owes the same, and `insta branch delete`
       // run again retries exactly this demolition.
       if (t.failed === 0) {
+        const reclaimed: string[] = []
         mutate((s) => {
           delete s.branches[branchId]
           // Prune any git push-to-deploy bindings on this branch: their compute target is gone, so
           // a lingering webhook must not resolve to a recreated branch/service with the same name.
-          if (s.gitBindings) for (const [k, r] of Object.entries(s.gitBindings)) if (r.projectId === projectId && r.branchId === branchId) delete s.gitBindings[k]
+          if (s.gitBindings) for (const [k, r] of Object.entries(s.gitBindings)) if (r.projectId === projectId && r.branchId === branchId) { reclaimed.push(k); delete s.gitBindings[k] }
         })
+        await reclaimGitImages(reclaimed) // best-effort: reclaim the removed bindings' build images
         this.emit(projectId, row.name, 'resource', 'branch.deleted', { teardown: t })
       } else {
         mutate((s) => { if (s.branches[branchId]) s.branches[branchId].status = CLEANUP_FAILED })
@@ -3078,6 +3100,7 @@ export class Engine {
         if (!needed.every((k) => settled.has(k))) return { union: [...new Set([...settled, ...needed])] }
         const t = newTeardown()
         let kept = false
+        const reclaimedGit: string[] = [] // git bindings pruned across all branches + the project row
         for (const b of live) {
           const mark = teardownMark(t)
           await this.teardownBranch(project, b, t)
@@ -3089,7 +3112,7 @@ export class Engine {
             // Prune this branch's git bindings here, in the per-branch success path: on a mixed
             // teardown the project row is kept, so the final delete-branches prune never runs for
             // the branches that DID tear down cleanly.
-            if (s.gitBindings) for (const [k, r] of Object.entries(s.gitBindings)) if (r.projectId === projectId && r.branchId === b.id) delete s.gitBindings[k]
+            if (s.gitBindings) for (const [k, r] of Object.entries(s.gitBindings)) if (r.projectId === projectId && r.branchId === b.id) { reclaimedGit.push(k); delete s.gitBindings[k] }
           })
           else {
             kept = true
@@ -3103,9 +3126,10 @@ export class Engine {
         // would point at a project that is gone, which is the orphan this all exists to prevent.
         if (!kept) mutate((s) => {
           delete s.projects[projectId]
-          if (s.gitBindings) for (const [k, r] of Object.entries(s.gitBindings)) if (r.projectId === projectId) delete s.gitBindings[k]
+          if (s.gitBindings) for (const [k, r] of Object.entries(s.gitBindings)) if (r.projectId === projectId) { reclaimedGit.push(k); delete s.gitBindings[k] }
         })
         else mutate((s) => { if (s.projects[projectId]) s.projects[projectId].status = CLEANUP_FAILED })
+        await reclaimGitImages(reclaimedGit) // best-effort: reclaim removed bindings' build images
         this.router.invalidate()
         return { teardown: t }
       })

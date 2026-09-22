@@ -92,6 +92,12 @@ describe('pushRef', () => {
     expect(pushRef('push', { ref: 'refs/heads/main', deleted: true, after: 'a'.repeat(40) })).toBeNull()
     expect(pushRef('push', { ref: 'refs/heads/main', after: '0'.repeat(40) })).toBeNull()
   })
+  it('rejects an `after` that is not a full commit id', () => {
+    for (const bad of ['abc123', 'a'.repeat(39), 'a'.repeat(41), 'z'.repeat(40), 'g'.repeat(64), '']) {
+      expect(pushRef('push', { ref: 'refs/heads/main', after: bad })).toBeNull()
+    }
+    expect(pushRef('push', { ref: 'refs/heads/main', after: 'a'.repeat(64) })!.sha).toBe('a'.repeat(64)) // sha256 repos
+  })
 })
 
 describe('newBinding', () => {

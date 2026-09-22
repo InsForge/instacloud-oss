@@ -6,17 +6,22 @@ import { test, expect, beforeEach, vi } from 'vitest'
 import { createHmac } from 'node:crypto'
 import { calls, makeEngine, resetFakes, runtime, testConfig } from './fakes'
 import { loadState, mutate } from '../src/state'
-import { newBinding } from '../src/gitdeploy'
+import { imageTag, newBinding } from '../src/gitdeploy'
 import { buildServer } from '../src/server'
 import type { Engine } from '../src/engine'
 
 // Service removal runs `docker rm`, then proves the container gone before it drops the row (same
 // pattern as metrics-incarnation.test.ts): a faked `docker rm` really removes it from FakeRuntime,
-// and `docker ps` answers an empty listing so the proof sees it gone. `docker build` is also stubbed
-// (the connect route fires an initial build) so no real git fetch/build is attempted. Deploy uses the
-// fake compute adapter, not docker.
+// and `docker ps` answers an empty listing so the proof sees it gone. The build runs through
+// `dockerCall` (timeout support), stubbed here so no real git fetch/build happens; image pruning uses
+// `docker images`/`rmi`, faked so it records `rmi` targets and returns a settable listing. Deploy uses
+// the fake compute adapter, not docker.
+let imagesFixture = ''
+const rmiCalls: string[] = []
 function fakeDocker(args: string[]): Promise<Buffer> {
   if (args[0] === 'rm') for (const a of args.slice(1)) if (!a.startsWith('-')) runtime.drop(a)
+  if (args[0] === 'images') return Promise.resolve(Buffer.from(imagesFixture))
+  if (args[0] === 'rmi') { for (const a of args.slice(1)) if (!a.startsWith('-')) rmiCalls.push(a) }
   return Promise.resolve(Buffer.from(''))
 }
 vi.mock('../src/docker', async (importOriginal) => {
@@ -24,7 +29,9 @@ vi.mock('../src/docker', async (importOriginal) => {
   return {
     ...orig,
     docker: (args: string[], opts?: { input?: Buffer; mergeStderr?: boolean }) =>
-      args[0] === 'rm' || args[0] === 'ps' || args[0] === 'build' ? fakeDocker(args) : orig.docker(args, opts),
+      ['rm', 'ps', 'build', 'images', 'rmi'].includes(args[0]) ? fakeDocker(args) : orig.docker(args, opts),
+    dockerCall: (args: string[], opts?: { env?: Record<string, string> }) =>
+      args[0] === 'build' ? { done: Promise.resolve(Buffer.from('')), kill: () => {} } : orig.dockerCall(args, opts),
   }
 })
 
@@ -44,6 +51,8 @@ function seedBinding(): string {
 
 beforeEach(async () => {
   resetFakes()
+  imagesFixture = ''
+  rmiCalls.length = 0
   cfg = testConfig()
   engine = makeEngine(cfg)
   // A project name unique to this file: engine tests create a REAL docker network io-<ref>-main, and
@@ -168,6 +177,21 @@ test('webhook ordering: a future-dated commit is clamped and never permanently w
   // …so an honest later push still deploys — the binding is not bricked.
   await sendPush(app, id, secret, 'b'.repeat(40)) // no timestamp -> receipt time (now), which is newer
   await vi.waitFor(() => expect(deploys()).toBe(2))
+})
+
+test('webhook: after a successful deploy, superseded build images are reclaimed and the live one is kept', async () => {
+  const app = buildServer(engine, cfg)
+  const { id, secret } = seedWebhookBinding()
+  const sha = 'a'.repeat(40)
+  const repo = imageTag(id).split(':')[0]        // io-git-<8of id>
+  const current = imageTag(id, sha)              // the tag this push deploys
+  const stale = `${repo}:oldsha000000`           // a previous build's tag, still on disk
+  imagesFixture = `${stale}\n${current}\n`       // `docker images <repo>` returns both
+  calls.length = 0
+  await sendPush(app, id, secret, sha, 7_000_000)
+  await vi.waitFor(() => expect(lastAt(id)).toBe(7_000_000)) // deployed
+  await vi.waitFor(() => expect(rmiCalls).toContain(stale))  // the old tag is reclaimed
+  expect(rmiCalls).not.toContain(current)                    // the tag just deployed is kept
 })
 
 test('connect → GET → DELETE happy path over the HTTP routes', async () => {

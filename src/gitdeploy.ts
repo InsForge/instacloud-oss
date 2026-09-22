@@ -131,7 +131,9 @@ export function pushRef(event: unknown, body: unknown, now: number = Date.now())
   const b = (body ?? {}) as { ref?: unknown; after?: unknown; deleted?: unknown; head_commit?: { timestamp?: unknown } }
   if (b.deleted === true) return null
   if (typeof b.ref !== 'string' || !b.ref.startsWith('refs/heads/')) return null
-  if (typeof b.after !== 'string' || /^0+$/.test(b.after)) return null
+  // `after` must be a real full commit id (40-hex sha1 or 64-hex sha256), never the all-zero
+  // branch-delete sentinel or any other shape, before it becomes a git fragment and an image tag.
+  if (typeof b.after !== 'string' || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(b.after) || /^0+$/.test(b.after)) return null
   const raw = b.head_commit?.timestamp
   const parsed = typeof raw === 'string' ? Date.parse(raw) : NaN
   return { branch: b.ref.slice('refs/heads/'.length), sha: b.after, ts: Math.min(Number.isFinite(parsed) ? parsed : now, now) }

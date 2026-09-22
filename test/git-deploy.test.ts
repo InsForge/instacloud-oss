@@ -8,15 +8,15 @@ import { test, expect, beforeEach, vi } from 'vitest'
 import { createHmac } from 'node:crypto'
 
 vi.mock('../src/docker', () => ({
-  docker: vi.fn(async () => Buffer.from('')),
-  dockerCall: () => ({ done: Promise.resolve(Buffer.from('')), kill: () => {} }),
+  docker: vi.fn(async () => Buffer.from('')), // images/rmi (prune) go here; returns an empty listing
+  dockerCall: vi.fn(() => ({ done: Promise.resolve(Buffer.from('')), kill: () => {} })), // the build runs through here
   redactDockerArgs: (a: string[]) => a.join(' '),
 }))
 
 import { buildServer } from '../src/server'
 import { loadState, mutate } from '../src/state'
 import type { Config } from '../src/config'
-import { docker } from '../src/docker'
+import { docker, dockerCall } from '../src/docker'
 import * as govern from '../src/govern'
 import { newBinding, type GitBindingRecord } from '../src/gitdeploy'
 import { makeEngine, serverConfig } from './fakes'
@@ -26,11 +26,16 @@ const PASSWORD = 'hunter2hunter2'
 let cfg: Config
 let app: ReturnType<typeof buildServer>
 const dockerMock = vi.mocked(docker)
+const dockerCallMock = vi.mocked(dockerCall)
+/** Did a `docker build` get dispatched? Builds run through dockerCall now (timeout support). */
+const builtArgs = (): string[] | undefined => dockerCallMock.mock.calls.map((c) => c[0] as string[]).find((a) => a[0] === 'build')
+const buildHappened = (): boolean => builtArgs() !== undefined
 
 beforeEach(() => {
   cfg = serverConfig()
   app = buildServer(makeEngine(cfg), cfg)
   dockerMock.mockClear()
+  dockerCallMock.mockClear()
 })
 
 /** Seed a compute branch straight into state so `doGitDeploy`'s revalidation resolves a live target
@@ -130,8 +135,8 @@ test('webhook: the build is pinned to the pushed commit sha, not the branch ref'
   expect(r.statusCode).toBe(202)
   // The build runs detached; wait for it, then assert the git context URL checks out the SHA (so an
   // image tagged for this commit can never contain a later one), never the mutable "main" ref.
-  await vi.waitFor(() => expect(dockerMock).toHaveBeenCalled())
-  const buildCall = dockerMock.mock.calls.find((c) => (c[0] as string[])[0] === 'build')!
+  await vi.waitFor(() => expect(buildHappened()).toBe(true))
+  const buildCall = dockerCallMock.mock.calls.find((c) => (c[0] as string[])[0] === 'build')!
   const buildArgs = buildCall[0] as string[]
   const buildEnv = (buildCall[1] as { env?: Record<string, string> } | undefined)?.env ?? {}
   expect(buildArgs.some((a) => a.endsWith(`.git#${sha}`))).toBe(true)
@@ -155,7 +160,7 @@ test('webhook: a push to an untracked branch never triggers a build', async () =
   // going to happen the mock would already record it by the time the response resolves. Assert now —
   // no wall-clock wait, so the negative is deterministic. A microtask flush guards a future refactor.
   await Promise.resolve()
-  expect(dockerMock.mock.calls.some((c) => (c[0] as string[])[0] === 'build')).toBe(false)
+  expect(buildHappened()).toBe(false)
 })
 
 test('webhook: a push is held (not built) when the deploy policy is not "allow"', async () => {
@@ -168,7 +173,7 @@ test('webhook: a push is held (not built) when the deploy policy is not "allow"'
   })
   expect(r.statusCode).toBe(202)
   await Promise.resolve() // the policy check precedes any build and is synchronous
-  expect(dockerMock.mock.calls.some((c) => (c[0] as string[])[0] === 'build')).toBe(false)
+  expect(buildHappened()).toBe(false)
   // No pending approval is created either — a webhook could never resume one.
   expect(loadState().approvals?.length ?? 0).toBe(0)
 })
@@ -185,7 +190,7 @@ test('webhook: an approval-required deploy policy also holds the push, and creat
   })
   expect(r.statusCode).toBe(202)
   await Promise.resolve()
-  expect(dockerMock.mock.calls.some((c) => (c[0] as string[])[0] === 'build')).toBe(false)
+  expect(buildHappened()).toBe(false)
   expect(loadState().approvals?.length ?? 0).toBe(0)
 })
 
@@ -202,7 +207,7 @@ test('webhook: a redelivered or out-of-order older push is skipped, never rebuil
   const older = push('b'.repeat(40), 500_000)
   await send('POST', `/webhooks/git/${rec.binding.id}`, { headers: { 'content-type': 'application/json', 'x-github-event': 'push', 'x-hub-signature-256': older.sig }, payload: older.payload })
   await Promise.resolve()
-  expect(dockerMock.mock.calls.some((c) => (c[0] as string[])[0] === 'build')).toBe(false)
+  expect(buildHappened()).toBe(false)
 })
 
 test('the binding never leaks its token or webhook secret through what a route echoes', async () => {

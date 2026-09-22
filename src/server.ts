@@ -18,7 +18,7 @@ import { metricsWindow } from './metrics-history'
 import { GateRefused, TemplateError } from './templates/executor'
 import { ManifestError, MissingTemplateVariablesError } from './templates/manifest'
 import { loadState, mutate } from './state'
-import { docker } from './docker'
+import { docker, dockerCall } from './docker'
 import { bindingOut, dockerBuildSpec, imageTag, newBinding, normalizeRef, parseRepo, pushRef, verifySignature, type GitBindingRecord } from './gitdeploy'
 import { isGatedAction, type Approval, type AuditEvent, type Branch, type GatedAction } from './types'
 
@@ -1276,6 +1276,44 @@ export function buildServer(
   type GitJob = { sha?: string; ts?: number; webhook: boolean }
   const gitBuilds = new Map<string, { running: boolean; next: GitJob | null }>()
 
+  // A hung `docker build` must not wedge its binding forever (the per-binding queue would never
+  // drain), and a burst of pushes across many bindings must not fork-bomb the box with concurrent
+  // builds. So a build has a hard timeout and all builds share a small daemon-wide semaphore. The
+  // per-binding serialization + coalescing above still stands; this only bounds the heavy step.
+  const GIT_BUILD_TIMEOUT_MS = 20 * 60_000
+  const GIT_BUILD_CONCURRENCY = 2
+  let gitBuildSlots = GIT_BUILD_CONCURRENCY
+  const gitBuildWaiters: Array<() => void> = []
+  const acquireBuildSlot = async (): Promise<() => void> => {
+    if (gitBuildSlots <= 0) await new Promise<void>((resolve) => gitBuildWaiters.push(resolve))
+    gitBuildSlots--
+    let released = false
+    return () => { if (released) return; released = true; gitBuildSlots++; gitBuildWaiters.shift()?.() }
+  }
+  /** Run one build under the global semaphore with a hard timeout; the timeout kills the child so a
+   *  hung fetch/build cannot hold the slot or the binding. */
+  const runBuild = async (spec: { args: string[]; env: Record<string, string> }): Promise<void> => {
+    const release = await acquireBuildSlot()
+    try {
+      const call = dockerCall(spec.args, { env: spec.env })
+      let timedOut = false
+      const timer = setTimeout(() => { timedOut = true; call.kill() }, GIT_BUILD_TIMEOUT_MS)
+      try { await call.done } catch (e) { throw timedOut ? new Error(`build exceeded ${GIT_BUILD_TIMEOUT_MS / 1000}s and was terminated`) : e } finally { clearTimeout(timer) }
+    } finally { release() }
+  }
+  /** Reclaim a binding's superseded build images, keeping `keep` (the tag currently deployed, or null
+   *  to try them all). `docker rmi` refuses an image a running container still uses, so the live one
+   *  is never removed even if two bindings' short tag prefixes collide. Best-effort: never throws. */
+  const pruneBuildImages = async (repo: string, keep: string | null): Promise<void> => {
+    try {
+      const out = (await docker(['images', repo, '--format', '{{.Repository}}:{{.Tag}}'])).toString()
+      for (const t of out.split('\n').map((s) => s.trim())) {
+        if (!t || t === keep || t.endsWith(':<none>')) continue
+        try { await docker(['rmi', t]) } catch { /* in use, or already gone */ }
+      }
+    } catch { /* listing failed; skip */ }
+  }
+
   /** Build the commit and redeploy the group. Governance and staleness are checked for a webhook
    *  push (the connect build is already authorized by its route); the build is re-validated under the
    *  service lock by deployFromGit, so a target removed/renamed mid-build never deploys. Emits git.*
@@ -1317,16 +1355,26 @@ export function buildServer(
       // BuildKit logs the failure reason to stderr, and only when stderr is NOT merged does docker()
       // fold it into the rejection — so a failed build's git.deploy.failed event carries a real reason.
       const spec = dockerBuildSpec(rec.binding, tag, sha ?? rec.binding.ref)
-      await docker(spec.args, { env: spec.env })
+      await runBuild(spec)
       // deployFromGit re-validates the binding + existing group and preserves its configured port,
       // all under the service lock, so a target removed during the build is not re-materialised and a
       // non-8080 service is not reset to 8080. null => the target is gone; do not deploy.
       const res = await engine.deployFromGit(rec.projectId, rec.branchId, rec.group, bindingId, tag)
-      if (!res) { engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.skipped', { group: rec.group, sha: sha ?? null, reason: 'binding or service removed during build' }); return }
+      if (!res) {
+        // The image we just built is not deployed anywhere: drop it so a removed target does not leak one.
+        try { await docker(['rmi', tag]) } catch { /* already gone */ }
+        engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.skipped', { group: rec.group, sha: sha ?? null, reason: 'binding or service removed during build' })
+        return
+      }
       // Record what we deployed AND when: the ordering guard above reads these back.
       if (webhook && sha) mutate((st) => { const r = st.gitBindings?.[bindingId]; if (r) { r.binding.lastDeployedSha = sha; if (ts !== undefined) r.binding.lastDeployedAt = ts } })
       engine.emit(rec.projectId, res.branch, 'resource', 'git.deploy', { group: rec.group, image: tag, sha: sha ?? null, port: res.port })
+      // Reclaim this binding's now-superseded images (keep the one just deployed). Every push mints a
+      // new tag, so without this the daemon's disk grows without bound (a real failure, seen in the wild).
+      await pruneBuildImages(tag.split(':')[0], tag)
     } catch (e) {
+      // A build that produced an image but never deployed leaves an unused tag behind; drop it.
+      try { await docker(['rmi', tag]) } catch { /* build may have failed before any image existed */ }
       engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.failed', { group: rec.group, sha: sha ?? null, error: e instanceof Error ? e.message : String(e) })
     }
   }
@@ -1393,6 +1441,9 @@ export function buildServer(
     const rec = t ? findBinding(id, t.branch.id, t.group) : undefined
     if (!rec) return reply.code(404).send({ error: 'no repo connected to this service' })
     mutate((s) => { if (s.gitBindings) delete s.gitBindings[rec.binding.id] })
+    // Reclaim this binding's build images. The service keeps running after unbind, so its live image
+    // is in use and rmi skips it; only the superseded tags are removed.
+    await pruneBuildImages(imageTag(rec.binding.id).split(':')[0], null)
     return { ok: true }
   })
 

@@ -1,6 +1,6 @@
 {
   "name": "@insforge/instacloud-oss",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Self-hostable runtime for branchable, agent-native environments: per-project database, object storage, and app containers; every branch is a disposable isolated clone. Driven by the standard insta CLI.",
   "type": "module",
   "bin": {

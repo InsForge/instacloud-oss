@@ -6,7 +6,7 @@ An open-source alternative to Jev: typed decisions with calibrated probabilities
 
 ## What it does
 
-[Laya](https://github.com/tonychang04/laya-template) is a non-autoregressive decision engine. You POST a piece of state — an email, a ticket, a support message, a JSON object — together with typed questions, and it answers each one in a single forward pass.
+[Laya](https://github.com/NandhaKishorM/laya) is a non-autoregressive decision engine. You POST a piece of state — an email, a ticket, a support message, a JSON object — together with typed questions, and it answers each one in a single forward pass.
 
 - `choice` — picks one of your options, with a probability for each
 - `score` — an expected value over an ordered scale
@@ -85,11 +85,11 @@ The service is not idle-stopped, so budget for it running around the clock.
 ## Limits
 
 - **Input past ~1K tokens is silently truncated.** Keep states short.
-- **English only.** Upstream's multilingual checkpoint is not in this template.
-- **`confidence` is miscalibrated**, by upstream's own ECE numbers. Rank by it; do not read it as a probability of being right.
+- **English only.** The original project's multilingual checkpoint is not in this template.
+- **`confidence` is miscalibrated**, by the original authors' own ECE numbers. Rank by it; do not read it as a probability of being right.
 - **amd64 only.**
 
-The first and third are upstream's own findings, in its `BENCHMARKS.md` and `deploy/DEPLOY-CLOUD.md`.
+The first is the deployment fork's measured finding (`deploy/DEPLOY-CLOUD.md`); the third is the original authors' (`BENCHMARKS.md`).
 
 ## FAQ
 
@@ -109,10 +109,13 @@ A generated value would be stored write-only and you could never read it back. T
 Nothing is written between requests. A request carries the state it asks about.
 
 **Which checkpoint is this?**
-`typed-decisions`, ModernBERT-large, 421M parameters, 1024-token context. The one upstream's own deploy directory ships.
+`typed-decisions`, ModernBERT-large, 421M parameters, 1024-token context - built by Convai Innovations, the original Laya authors. The one the deployment fork's `deploy/` directory ships.
 
 ## Links
 
-- Upstream: <https://github.com/tonychang04/laya-template>, pinned to `c9dcaab`
-- Model: <https://huggingface.co/convaiinnovations/laya>
+- Original project: [Laya](https://github.com/NandhaKishorM/laya) by **Convai Innovations**, who
+  built and trained the model; model card on
+  [Hugging Face](https://huggingface.co/convaiinnovations/laya)
+- Deployment source: <https://github.com/tonychang04/laya-template>, pinned to `c9dcaab` (packages
+  the original project's model behind a deploy directory of its own)
 - License: Apache-2.0

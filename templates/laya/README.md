@@ -6,13 +6,15 @@ An open-source alternative to Jev: typed decisions with calibrated probabilities
 
 ## What it does
 
-Laya is a non-autoregressive decision engine. You POST a piece of state — an email, a ticket, a support message, a JSON object — together with typed questions, and it answers each one in a single forward pass.
+[Laya](https://github.com/tonychang04/laya-template) is a non-autoregressive decision engine. You POST a piece of state — an email, a ticket, a support message, a JSON object — together with typed questions, and it answers each one in a single forward pass.
 
 - `choice` — picks one of your options, with a probability for each
 - `score` — an expected value over an ordered scale
 - `noul` — the probability that something is true
 
 **No text is generated**, so there is nothing to parse and no format to repair. Typical uses: routing tickets, classifying email, scoring urgency, gating an LLM call.
+
+Jev is TypeSafe AI's proprietary decision model. Laya gives you the same three primitives with an open Apache-2.0 model, on hardware you control. Different wire format, and not affiliated with or endorsed by TypeSafe.
 
 ## Why run it yourself
 

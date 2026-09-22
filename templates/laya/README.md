@@ -1,6 +1,6 @@
 # Laya
 
-An open-source alternative to Jev. If you do not want a proprietary decision model, self-host this one and call the API: typed yes/no, choice and score decisions with probabilities, on CPU, in your own project.
+An open-source alternative to Jev. If you do not want a closed, vendor-hosted model, self-host this one and call the API: typed yes/no, choice and score decisions with probabilities, on CPU, in your own project.
 
 [![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/laya)
 
@@ -83,7 +83,7 @@ The first is the deployment fork's measured finding (`deploy/DEPLOY-CLOUD.md`); 
 No. Same three primitives, different wire format. Not affiliated with or endorsed by TypeSafe.
 
 **Why is the first call slow?**
-The 842 MB checkpoint loads into memory on boot. It is baked into the image, so nothing is downloaded; the wait is the load itself. It happens once per boot, so only a restart or a redeploy pays it again.
+The 842 MB checkpoint loads into memory on boot, which takes about 45 seconds. It is baked into the image, so nothing is downloaded; the wait is the load itself. It happens once per boot, so only a restart or a redeploy pays it again.
 
 **Does it stop when nobody is using it?**
 No. It stays up, so a request never waits for a boot. That also means it is charged the whole time; delete the service when you are done with it.

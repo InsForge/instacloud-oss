@@ -96,11 +96,15 @@ export function dockerBuildSpec(b: Pick<GitBinding, 'owner' | 'repo' | 'token'>,
   return { args: ['build', '--pull', ...secret, '-t', tag, buildContextUrl(b, fragment)], env }
 }
 
-/** The image tag a build produces: `io-git-<8 of binding id>-<8 of sha>` (or `-manual` with no sha). */
+/** The image tag a build produces: `io-git-<full binding id, hyphens stripped>:<12 of sha>` (or
+ *  `:manual` with no sha). The repo name uses the WHOLE binding id, not a prefix: image cleanup lists
+ *  by `io-git-<id>`, so a shared prefix would let one binding's prune remove a peer binding's image
+ *  (docker rmi refuses a RUNNING container's image, but not a stopped/asleep one). A full 32-hex id
+ *  gives every binding its own image namespace. */
 export function imageTag(bindingId: string, sha?: string): string {
   const clean = typeof sha === 'string' ? sha.replace(/[^a-f0-9]/gi, '').slice(0, 12) : ''
   const short = clean || 'manual'
-  return `io-git-${bindingId.replace(/-/g, '').slice(0, 8)}:${short}`
+  return `io-git-${bindingId.replace(/-/g, '')}:${short}`
 }
 
 /** Constant-time check of GitHub's `X-Hub-Signature-256: sha256=<hex>` over the RAW request body.

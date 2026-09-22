@@ -51,8 +51,9 @@ describe('dockerBuildSpec', () => {
 
 describe('imageTag', () => {
   it('derives a stable, docker-safe tag from binding id + sha', () => {
-    expect(imageTag('11112222-3333-4444-5555-666677778888', 'abcdef1234567890')).toBe('io-git-11112222:abcdef123456')
-    expect(imageTag('11112222-3333-4444-5555-666677778888')).toBe('io-git-11112222:manual')
+    // The repo uses the FULL binding id (hyphens stripped), so two bindings never share an image namespace.
+    expect(imageTag('11112222-3333-4444-5555-666677778888', 'abcdef1234567890')).toBe('io-git-11112222333344445555666677778888:abcdef123456')
+    expect(imageTag('11112222-3333-4444-5555-666677778888')).toBe('io-git-11112222333344445555666677778888:manual')
   })
 })
 

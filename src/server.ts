@@ -1393,12 +1393,17 @@ export function buildServer(
     // delayed older push does not become the one that runs after the current build finishes.
     if (q.running) { if (!q.next || (job.ts ?? 0) >= (q.next.ts ?? 0)) q.next = job; return }
     q.running = true
-    // try/finally guards the loop: doGitDeploy has its own build/deploy try, but a throw from a state
-    // read or an emit BEFORE it would otherwise leave q.running true and wedge the binding forever.
+    // The runner NEVER rejects: settleGit awaits q.done from DELETE/rebind, so a rejection would turn
+    // an unexpected build error into a 500 (or an unhandled rejection). doGitDeploy has its own
+    // build/deploy try; catch here covers a throw from a state read/emit BEFORE it, clears the pending
+    // job, and lets finally drain the queue so the binding is never wedged.
     q.done = (async () => {
       try {
         let cur: GitJob | null = job
         while (cur) { await doGitDeploy(bindingId, cur); cur = q.next; q.next = null }
+      } catch (e) {
+        q.next = null
+        console.warn(`git build runner for ${bindingId} failed: ${e instanceof Error ? e.message : String(e)}`)
       } finally {
         q.running = false
         // Drop the idle queue so repeated bind/delete/rebind cannot leak Map entries; the get, the

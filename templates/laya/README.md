@@ -1,6 +1,6 @@
 # Laya
 
-An open-source alternative to Jev: typed decisions with calibrated probabilities, on CPU, in your own project.
+An open-source alternative to Jev. If you do not want a proprietary decision model, self-host this one and call the API: typed yes/no, choice and score decisions with probabilities, on CPU, in your own project.
 
 [![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/laya)
 

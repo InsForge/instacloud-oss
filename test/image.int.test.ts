@@ -47,6 +47,13 @@ test('docker build produces the image with the expected baked configuration', ()
   expect(labels['org.opencontainers.image.version']).toBe('test')
   expect(labels['org.opencontainers.image.source']).toBe('https://github.com/InsForge/instacloud-oss')
   expect(docker(['image', 'inspect', IMAGE, '--format', '{{json .Config.Healthcheck.Test}}'])).toContain('/healthz')
+  // The buildx plugin must ship in the image: git push-to-deploy builds the pushed repo with BuildKit
+  // (--secret + git context), which the legacy builder cannot do. v0.4.0 shipped WITHOUT it, so every
+  // push-to-deploy build failed on the box, and the dev host's own buildx masked the gap in every
+  // other test. `buildx version` needs no daemon, so this runs against the image alone.
+  const bx = spawnSync('docker', ['run', '--rm', '--entrypoint', 'docker', IMAGE, 'buildx', 'version'], { encoding: 'utf8' })
+  expect(bx.status, `docker buildx missing from the image:\n${bx.stdout}\n${bx.stderr}`).toBe(0)
+  expect(bx.stdout).toMatch(/buildx/)
 }, 900_000)
 
 test('the image boots in local mode: /healthz, docker CLI over the socket, dashboard and templates on disk, the SPA shell', async () => {

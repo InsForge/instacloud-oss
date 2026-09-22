@@ -1,4 +1,4 @@
-"""HTTP basic auth in front of the repository's own deploy/app.py, and a landing route.
+"""API-key auth in front of the repository's own deploy/app.py, and a landing route.
 
 Everything about the decision contract (`POST /decide`, the question types, the background
 checkpoint load, `GET /healthz`) is upstream's and is imported unmodified. This file adds the two
@@ -27,17 +27,15 @@ from fastapi.responses import JSONResponse, RedirectResponse
 sys.path.insert(0, "/opt/laya-src/deploy")
 from app import app  # noqa: E402
 
-# No fallbacks. The manifest declares both required with neither a default nor a generator, so the
-# platform always supplies them; a missing one means the image was started some other way, and
+# No fallback. The manifest declares it required with neither a default nor a generator, so the
+# platform always supplies it; a missing one means the image was started some other way, and
 # inventing a value would put an open inference endpoint on a public URL.
-USERNAME = os.environ["ADMIN_USERNAME"]
-PASSWORD = os.environ["ADMIN_PASSWORD"]
+API_KEY = os.environ["API_KEY"]
 
-if ":" in USERNAME:
-    # RFC 7617 joins the pair with a colon and the server splits on the FIRST one, so a username
-    # containing one can never be typed back correctly. Stop here rather than ship a service whose
-    # own operator is locked out with a 401 and nothing in the logs.
-    raise SystemExit("ADMIN_USERNAME must not contain a colon: HTTP basic auth splits on it")
+# The fixed basic-auth username. Not configurable: it carries no secret, so asking operators to
+# pick one added a form field with no decision behind it. Clients that prefer plain API-key style
+# skip basic auth entirely and send `Authorization: Bearer <key>`.
+USERNAME = "api"
 
 # Fetched by the platform's health gate, which has no credential and would otherwise read the 401
 # as a failed deploy.
@@ -56,7 +54,11 @@ def _unauthorized() -> JSONResponse:
 
 def _authorized(header: str) -> bool:
     scheme, _, encoded = header.partition(" ")
-    if scheme.lower() != "basic":
+    scheme = scheme.lower()
+    if scheme == "bearer":
+        # The API-key form. Same secret as the basic-auth password below; constant-time compare.
+        return secrets.compare_digest(encoded.strip().encode("utf-8"), API_KEY.encode("utf-8"))
+    if scheme != "basic":
         return False
     try:
         supplied = base64.b64decode(encoded, validate=True).decode("utf-8")
@@ -70,12 +72,12 @@ def _authorized(header: str) -> bool:
     # bytes form: compare_digest on str raises TypeError for non-ASCII, turning any
     # non-ASCII credential (sent or configured) into a 500 instead of a 401.
     ok_user = secrets.compare_digest(user.encode("utf-8"), USERNAME.encode("utf-8"))
-    ok_password = secrets.compare_digest(password.encode("utf-8"), PASSWORD.encode("utf-8"))
+    ok_password = secrets.compare_digest(password.encode("utf-8"), API_KEY.encode("utf-8"))
     return ok_user & ok_password
 
 
 @app.middleware("http")
-async def basic_auth(request, call_next):
+async def api_key_auth(request, call_next):
     if request.url.path in OPEN_PATHS:
         return await call_next(request)
     if _authorized(request.headers.get("authorization", "")):

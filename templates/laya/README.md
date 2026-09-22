@@ -16,27 +16,28 @@ Typical uses: **routing tickets, classifying email, scoring urgency, gating an L
 
 ## Deploy
 
-1. Pick a **username** and **password**. That is the only input; there is no API key and nothing to download.
+1. Paste an **API key** of your choosing. That is the only input; nothing to download.
 2. Click Deploy. The service is live in about **2 minutes**.
 3. Most of that is the model loading. `/decide` answers 503 until it finishes, and `/healthz` says when.
 
 ## Use it
 
-1. Open your service URL. The browser asks for the credentials you set, then shows the API docs.
-2. Expand `POST /decide`, click **Try it out**, and paste:
-
-```json
-{
+```bash
+curl -X POST https://YOUR-SERVICE-URL/decide \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" -d '{
   "state": "We were billed twice for March. Refund it today or we cancel.",
   "questions": [
     {"type": "choice", "instructions": "Which department?", "options": ["billing", "technical", "sales"]},
     {"type": "score", "instructions": "How urgent?", "options": ["not urgent", "soon", "blocking"]},
     {"type": "noul", "instructions": "Does the user threaten to cancel?"}
-  ]
-}
+  ]}'
 ```
 
-3. Read the answers. Each carries its probabilities and a `confidence`; the response carries `latency_ms`.
+Each answer carries its probabilities and a `confidence`; the response carries `latency_ms`.
+Basic auth sends the same secret in RFC 7617 form: `curl -u api:YOUR_API_KEY ...` (the username is
+always `api`). Prefer a browser? Open the service URL, sign in as `api` with your key, and the
+interactive docs let you run the same request from **Try it out**.
 
 ```json
 {"answers": [

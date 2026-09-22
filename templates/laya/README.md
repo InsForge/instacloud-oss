@@ -6,13 +6,20 @@ An open-source alternative to Jev: typed decisions with calibrated probabilities
 
 ## What it does
 
-You POST a piece of state and a list of typed questions. You get one answer per question, in one forward pass. No text is generated, so there is nothing to parse.
+Laya is a non-autoregressive decision engine. You POST a piece of state — an email, a ticket, a support message, a JSON object — together with typed questions, and it answers each one in a single forward pass.
 
 - `choice` — picks one of your options, with a probability for each
 - `score` — an expected value over an ordered scale
 - `noul` — the probability that something is true
 
-Typical uses: **routing tickets, classifying email, scoring urgency, gating an LLM call**.
+**No text is generated**, so there is nothing to parse and no format to repair. Typical uses: routing tickets, classifying email, scoring urgency, gating an LLM call.
+
+## Why run it yourself
+
+- **Your data stays in your project.** Tickets, emails and documents are scored on your own machine, not posted to a model vendor.
+- **No per-token bill.** You pay for a running container, which is the difference that matters when the job is "label every inbound message".
+- **Nothing is downloaded at runtime.** The 842 MB checkpoint is baked into the image and the container never reaches the Hugging Face Hub, so what you deploy is what was built and tested.
+- **Interactive docs at `/docs`**, where you can compose a request and send it without writing a client.
 
 ## Deploy
 
@@ -65,11 +72,13 @@ Everything else is set for you.
 |---|---|
 | One question, warm | **72 ms** |
 | Three questions, warm | **320 ms** |
-| First call after the machine has idled | **about 30 s**, while the model loads |
+| First call after a restart | **about 45 s**, while the model loads |
 | Memory | 2.2 GB |
-| Billing | per running minute; the machine stops when idle and wakes on the next request |
+| Billing | **continuous.** The service is always on, charged from deploy until you delete it |
 
 Latency grows with the length of the state, roughly 1.1 ms per input token.
+
+The service is not idle-stopped, so budget for it running around the clock.
 
 ## Limits
 
@@ -86,7 +95,10 @@ The first and third are upstream's own findings, in its `BENCHMARKS.md` and `dep
 No. Same three primitives, different wire format. Not affiliated with or endorsed by TypeSafe.
 
 **Why is the first call slow?**
-The 842 MB checkpoint loads into memory on boot. It is baked into the image, so nothing is downloaded; the wait is the load itself. The machine stops when idle, so the next request after a quiet period pays it again.
+The 842 MB checkpoint loads into memory on boot. It is baked into the image, so nothing is downloaded; the wait is the load itself. It happens once per boot, so only a restart or a redeploy pays it again.
+
+**Does it stop when nobody is using it?**
+No. It stays up, so a request never waits for a boot. That also means it is charged the whole time; delete the service when you are done with it.
 
 **Why are the credentials not generated for me?**
 A generated value would be stored write-only and you could never read it back. The deploy form starts them empty on purpose.

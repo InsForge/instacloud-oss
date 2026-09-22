@@ -112,20 +112,24 @@ Full details, including firewalls, reflinks and your own domain:
 
 Server-mode boxes can auto-deploy on `git push`. Deploy a compute service once, bind it to a repo,
 add the webhook the daemon returns, and every push to the tracked branch rebuilds and redeploys that
-service. The daemon builds the pushed commit itself with BuildKit (no remote build gateway); a
-private repo authenticates with a GitHub Personal Access Token, a public one needs none. Wired via
-the API today:
+service. The daemon builds the pushed commit itself with BuildKit (no remote build gateway), so the
+repo must carry a `Dockerfile` at its root (a custom Dockerfile path and build args are not exposed
+yet). A public repo needs no credentials; a private one needs a GitHub Personal Access Token with
+`contents: read` scope (fine-grained) or `repo` (classic). Wired via the API today:
 
 ```bash
-# tokens in env vars, never inline, and fed to curl off the command line (via a header file and
-# stdin below), so neither the API token nor the PAT lands in shell history or a process listing
-export INSTA_API_TOKEN=insta_...        # from `insta login` / Account > API Tokens
+# both tokens are fed to curl OFF its command line below (auth header from a process-substitution
+# fd, body from stdin), so neither reaches argv / a process listing. Prefix these `export` lines
+# with a space (with HISTCONTROL=ignorespace), or source them from a 0600 file, to keep them out of
+# shell history too.
+export INSTA_API_TOKEN=insta_...        # create one in the console: Account > API Tokens
 export GITHUB_PAT=...                    # only for a private repo; leave empty for a public one
 
-# 1. deploy the service once. This creates the compute group and FIXES its port, so set the port
-#    your repo's app listens on (the demo repo below serves 3000). The image here is a throwaway
+# 1. deploy the service once to create the compute group. Set --port to the port your repo's app
+#    listens on: push-to-deploy reuses whatever port the group is currently configured with (a later
+#    `insta deploy` on the group with no --port resets it to 8080). The image is a throwaway
 #    placeholder; the first build from your repo replaces it.
-insta deploy --image nginx:alpine --port 3000 --group web
+insta deploy --image nginx:alpine --port 3000 --group web   # 3000 is an example; use your app's port
 
 # 2. bind it to a repo. The response carries a webhook URL and its SECRET (needed in step 3).
 #    The auth header is read from a process-substitution file and the body (with the PAT) from

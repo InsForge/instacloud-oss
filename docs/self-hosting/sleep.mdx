@@ -23,7 +23,8 @@ Only real traffic:
 - any byte read on a database lane, in either direction
 - coming up after a deploy or a wake
 
-Nothing else. Health probes do not count, `insta metrics` and `insta logs` do not count, and the
+Nothing else. Health probes do not count, `metrics` and `logs` polling (`insta compute metrics`,
+`insta compute logs`, and their `postgres`/`redis`/`mysql`/`mongodb` equivalents) do not count, and the
 dashboard polling its own pages does not count. If it did, an open browser tab would keep an entire
 box awake.
 
@@ -139,7 +140,7 @@ For anything that has to keep running with no inbound traffic, a queue worker or
 ```bash
 insta compute always-on on web
 insta services add compute worker --always-on
-insta db always-on on
+insta postgres always-on on
 ```
 
 Templates can declare it themselves, and the bundled hermes, n8n and openclaw manifests do.
@@ -190,7 +191,7 @@ An idle window of 0 turns sleeping off for that kind of service without turning 
 ```bash
 insta services list          # runtime column shows asleep
 insta compute status web     # desired=running live=suspended
-insta events                 # service.sleep and service.wake entries
+insta agent events                 # service.sleep and service.wake entries
 ```
 
 The dashboard shows the same thing as **Sleeping**, with a Wake button.
@@ -230,9 +231,9 @@ ONE wildcard certificate for `*.<domain>` so that deploying a service publishes 
 - **The auto sslip.io domain is the case that bites.** It exists to let you try the product in one
   command, and it puts every hostname you deploy into a public log. Do not size a box, or judge
   scale-to-zero, on that configuration.
-- To see what woke something, read `insta events --json`. Every `service.wake` carries the door it
+- To see what woke something, read `insta agent events --json`. Every `service.wake` carries the door it
   came in on, `traffic`, `api` or `deploy`, so a run of `traffic` wakes with no deploy near them is
-  the scanners. The event does not record who sent the request; `insta logs` on the service does.
+  the scanners. The event does not record who sent the request; `insta compute logs` on the service does.
 
 ## The edge to know about
 

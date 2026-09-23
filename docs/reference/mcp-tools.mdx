@@ -3,7 +3,7 @@ title: "MCP tools"
 description: "The insta_* tools the hosted MCP server exposes, grouped by area."
 ---
 
-The InstaCloud MCP server at `https://mcp.instacloud.com/mcp` (streamable HTTP) exposes the tools below. Authenticate with OAuth or an `insta_` API token; register it with `insta mcp install` or as part of [`insta setup agent`](/agents/setup).
+The InstaCloud MCP server at `https://mcp.instacloud.com/mcp` (streamable HTTP) exposes the tools below. Authenticate with OAuth or an `insta_` API token; register it with `insta config install-mcp` or as part of [`insta agent setup`](/agents/setup).
 
 <Note>
 The CLI's linked directory does not carry over: project-scoped tools take an explicit `projectId`, and branch-scoped tools take `branch` as well. Agents discover project IDs with `insta_org_list` → `insta_project_list`. The set below grows regularly; the server's own tool listing is always current.

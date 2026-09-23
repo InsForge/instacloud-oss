@@ -1,5 +1,5 @@
-// The daemon's own CPU, memory and network history, so the dashboard charts 1h / 6h / 24h / 3d the way
-// the cloud console does. The cloud reads metrics its provider already retains; a self-hosted box has
+// The daemon's own CPU, memory and network history, so the dashboard charts 1h / 6h / 24h / 3d / 7d the
+// way the cloud console does. The cloud reads metrics its provider already retains; a self-hosted box has
 // only `docker stats`, which is a reading of NOW, so the daemon samples it on a timer
 // (metrics-sampler.ts) and answers range queries from the samples kept here.
 //
@@ -9,8 +9,11 @@
 
 import { parseSize, type MetricSeries } from './observe'
 
-/** Samples older than this are dropped: the longest range the console offers is 3d. */
-export const RETENTION_SEC = 3 * 86_400 + 3_600
+/** Samples older than this are dropped: the widest quick range the dashboard offers is 7 day.
+ *  (The console goes to 30 day; serving that at 30 s samples without downsampling would grow the
+ *  store 10x, so 30 day waits for a thin-with-age design that keeps the network-rate differencing
+ *  (MAX_RATE_GAP_SEC) working across thinned spans.) */
+export const RETENTION_SEC = 7 * 86_400 + 3_600
 /** The cloud's implicit window when a request names none: the last hour, one point a minute. */
 export const DEFAULT_WINDOW_SEC = 3_600
 export const DEFAULT_STEP_SEC = 60

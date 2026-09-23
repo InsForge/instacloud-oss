@@ -10,7 +10,7 @@ import type { Config } from './config'
 import { isApiPath } from './server'
 import { acquireLock, initStatePath, loadState, mutate, releaseLock, type State } from './state'
 import {
-  AdminExists, DUMMY_HASH, HttpError, SignInLimiter, apiTokenOut, betterAuthUser, checkPassword, clearCookieHeader, clock,
+  AdminExists, DeviceCodeStore, DUMMY_HASH, HttpError, SignInLimiter, apiTokenOut, betterAuthUser, checkPassword, clearCookieHeader, clock,
   createAdmin, findSession, hashPassword, mintSession, mintToken, normalizeEmail, publicUser, readSessionCookie, revokeSession,
   revokeToken, sessionOut, setCookieHeader, verifyPassword, verifyToken, type AdminRow, type SessionRow,
 } from './identity'
@@ -29,6 +29,10 @@ export function isPublicPath(method: string, path: string): boolean {
   if (path === '/healthz') return true
   if (path.startsWith('/api/auth/')) return true
   if (path.startsWith('/auth/')) return true
+  // Git push-to-deploy webhooks authenticate with a per-binding HMAC over the body, not the guard.
+  // Exactly one path segment after /webhooks/git/ (the binding id), so a future nested route under
+  // this prefix cannot become public by accident.
+  if (method === 'POST' && /^\/webhooks\/git\/[^/]+$/.test(path)) return true
   if (method === 'GET' && (path === '/templates' || path.startsWith('/templates/'))) return true
   if (method === 'GET' && !isApiPath(path)) return true
   return false
@@ -143,6 +147,7 @@ export function registerAuth(app: FastifyInstance, cfg: Config): void {
 
   app.decorateRequest('actor', null)
   const limiter = new SignInLimiter()
+  const devices = new DeviceCodeStore()
 
   // ---- guard (plan 01 section 3) ----
   app.addHook('onRequest', async (req, reply) => {
@@ -224,8 +229,41 @@ export function registerAuth(app: FastifyInstance, cfg: Config): void {
     return { success: true }
   })
 
-  app.post('/api/auth/device/code', async (_req, reply) =>
-    reply.code(501).send({ error: 'device and OAuth login are cloud-only; use insta login --api-key or --email' }))
+  // ---- device authorization (RFC 8628): `insta login --device` against a self-hosted box ----
+  // The daemon has no cloud IdP, so the second factor is the console: the admin is already signed in
+  // there, and approving the short user code mints an `insta_` key for the CLI. Both endpoints are
+  // under /api/auth/ (public allowlist) because a login flow is by definition pre-auth; the approval
+  // step (POST /device/approve) is a separate, guarded route.
+  app.post('/api/auth/device/code', async (req, reply) => {
+    // Bounded and per-IP capped: this endpoint is unauthenticated, so a null means a flood cap was hit.
+    const d = devices.start(req.ip)
+    if (!d) return reply.code(429).send({ error: 'too many device logins in progress; try again shortly' })
+    const verificationUri = `${cfg.consoleUrl}/device`
+    return reply.header('cache-control', 'no-store').send({
+      device_code: d.deviceCode,
+      user_code: d.userCode,
+      verification_uri: verificationUri,
+      verification_uri_complete: `${verificationUri}?code=${encodeURIComponent(d.userCode)}`,
+      expires_in: d.expiresIn,
+      interval: d.interval,
+    })
+  })
+
+  // The CLI polls this with its device_code. RFC 8628 semantics: pending/expired/denied ride on a 400
+  // body `{error}`; success is 200 `{access_token, token_type}`. The `insta_` key is minted HERE, when
+  // an approved code is collected, so an approval the CLI abandons leaves no orphan key behind.
+  app.post('/api/auth/device/token', async (req, reply) => {
+    const b = body(req)
+    const deviceCode = typeof b.device_code === 'string' ? b.device_code : ''
+    const r = devices.poll(deviceCode)
+    if (r.status === 'approved') {
+      const name = `CLI device login (${new Date(clock.now()).toISOString().slice(0, 10)})`
+      const key = mutate((s) => mintToken(s, { name }).key)
+      return reply.header('cache-control', 'no-store').header('pragma', 'no-cache').send({ access_token: key, token_type: 'Bearer' })
+    }
+    const error = r.status === 'pending' ? 'authorization_pending' : r.status === 'denied' ? 'access_denied' : 'expired_token'
+    return reply.code(400).send({ error })
+  })
 
   // ---- the cloud's /auth wrappers (the CLI's `insta login --email`) ----
   app.post('/auth/login', async (req, reply) => {
@@ -295,6 +333,27 @@ export function registerAuth(app: FastifyInstance, cfg: Config): void {
     const live = loadState().identity?.tokens.some((r) => r.id === tokenId && !r.revokedAt) ?? false
     if (!live || !mutate((s) => revokeToken(s, tokenId))) return reply.code(404).send({ error: 'token not found' })
     return { ok: true }
+  })
+
+  // ---- device approval (the console page the admin opens to finish `insta login --device`) ----
+  // Gated: /device is NOT in the public allowlist, so the onRequest hook has already established that
+  // this is the signed-in admin. Approving marks the pending code; the `insta_` key is minted when the
+  // CLI collects it at /api/auth/device/token, and then shows up under Account > API Tokens, revocable.
+  const deviceUserCode = (req: FastifyRequest): string => {
+    const b = body(req)
+    return typeof b.user_code === 'string' ? b.user_code : typeof b.userCode === 'string' ? b.userCode : ''
+  }
+  app.post('/device/approve', async (req, reply) => {
+    if (!deviceUserCode(req).trim()) return reply.code(400).send({ error: 'user_code is required' })
+    const outcome = devices.approve(deviceUserCode(req))
+    if (outcome === 'ok') return { ok: true }
+    if (outcome === 'not_found') return reply.code(404).send({ error: 'that code was not found; check it and try again' })
+    if (outcome === 'expired') return reply.code(410).send({ error: 'that code has expired; start the login again' })
+    return reply.code(409).send({ error: 'that code was already used' })
+  })
+  app.post('/device/deny', async (req, reply) => {
+    if (!deviceUserCode(req).trim()) return reply.code(400).send({ error: 'user_code is required' })
+    return devices.deny(deviceUserCode(req)) ? { ok: true } : reply.code(404).send({ error: 'that code was not found' })
   })
 }
 

@@ -81,6 +81,22 @@ const indexOfMatch = (calls: string[][], needle: string): number => line(calls).
 
 // ---- the replication line (host replication all all scram-sha-256) ------------------------------
 
+test('query({sqlOnly}) refuses psql meta-commands at the transport, before any exec', async () => {
+  const { calls, exec } = stubDocker({ running: ['c1'] })
+  const { data } = stubData()
+  const pg = new LocalPostgres({ cfg: cfgWith(), data, docker: exec })
+
+  // The bots' bypass was calling the adapter directly; the transport now refuses regardless of
+  // caller, and nothing is exec'd. A backslash inside a literal is data and runs.
+  for (const bad of ['select 1 \\! id', 'select 1 \\g select 2', 'select 1 \\gexec', 'select 1 \\watch 1']) {
+    calls.length = 0
+    await expect(pg.query('c1', bad, { sqlOnly: true })).rejects.toThrow(/meta-commands/)
+    expect(calls).toEqual([])
+  }
+  // Without sqlOnly (trusted management SQL) the flag does not apply; with it, a literal backslash is fine.
+  await expect(pg.query('c1', "select 'a\\b' as v", { sqlOnly: true })).resolves.toBeDefined()
+})
+
 test('a plain provision never writes the replication line into pg_hba.conf', async () => {
   const { calls, exec } = stubDocker()
   const { data } = stubData()
@@ -203,7 +219,8 @@ test('readiness needs the row a live server sends: an empty answer is not ready'
     on: (args) => (args.includes('select 1') ? (answers++ < 2 ? '' : '1') : undefined),
   })
   await pgWaitReady('io-demo-main-pg-db', 10_000, exec)
-  expect(answers).toBe(3)
+  // 4 total: two empty (not ready), one '1' (first ready, triggers settle), one '1' (settle confirms).
+  expect(answers).toBe(4)
   // Each not-ready round re-checks that the container is still alive before it sleeps.
   expect(calls.filter((a) => a[0] === 'inspect').length).toBe(2)
 })

@@ -261,6 +261,97 @@ export function revokeToken(s: State, id: string): boolean {
   return true
 }
 
+// ---- device authorization (RFC 8628, `insta login --device`) ----
+
+/** The human-typed user code alphabet: no 0/O/1/I/L, so a code read off one screen and typed on
+ *  another is unambiguous. */
+const USER_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+export const DEVICE_CODE_TTL_SEC = 15 * 60
+export const DEVICE_POLL_INTERVAL_SEC = 5
+/** A hard ceiling on live codes: the issue endpoint is unauthenticated, so without a bound a flood
+ *  could grow memory without limit. It also bounds the issuance-time gc scan to O(this). */
+const DEVICE_MAX_CODES = 2000
+/** Per-IP ceiling on live codes, so one source cannot fill the store or spam issuance. */
+const DEVICE_MAX_PER_IP = 20
+
+type DeviceRecord = { userCode: string; ip: string; status: 'pending' | 'approved' | 'denied'; expiresAt: number }
+/** null when a store or per-IP cap is hit (the route answers 429). */
+export type DeviceStart = { deviceCode: string; userCode: string; expiresIn: number; interval: number } | null
+export type DevicePoll = { status: 'approved' | 'pending' | 'denied' | 'expired' | 'unknown' }
+export type DeviceApprove = 'ok' | 'not_found' | 'expired' | 'already'
+
+/** In-memory pending codes for the device-authorization flow. Single-node and short-lived (15 min),
+ *  so it lives in memory like SignInLimiter: a daemon restart just means the user runs `insta login`
+ *  again. Codes are one-time and consumed by the poll that resolves them. No credential is held here:
+ *  approval only marks the record, and the token is minted when the CLI COLLECTS an approved code
+ *  (mint-on-collection), so an abandoned or expired approval never leaves an orphan key. */
+export class DeviceCodeStore {
+  private byDevice = new Map<string, DeviceRecord>()
+  private byUser = new Map<string, string>()
+
+  /** Fold the console's grouped, lower/upper input (e.g. "abcd-efgh") to the stored key form. */
+  private normalize(userCode: string): string { return userCode.toUpperCase().replace(/[^A-Z0-9]/g, '') }
+
+  /** Drop expired records. Called only at issuance, so the O(n) scan stays off the poll hot path and
+   *  is bounded by DEVICE_MAX_CODES; poll/approve/deny check the one record's own expiry inline. */
+  private gc(): void {
+    const now = clock.now()
+    for (const [dc, r] of this.byDevice) if (r.expiresAt <= now) { this.byDevice.delete(dc); this.byUser.delete(r.userCode) }
+  }
+
+  private consume(deviceCode: string, rec: DeviceRecord): void { this.byDevice.delete(deviceCode); this.byUser.delete(rec.userCode) }
+
+  private find(userCode: string): DeviceRecord | undefined {
+    const dc = this.byUser.get(this.normalize(userCode))
+    return dc ? this.byDevice.get(dc) : undefined
+  }
+
+  /** Issue a fresh pending pair for `ip`, or null when the store or the per-IP cap is full. The
+   *  device code is opaque (the CLI holds it); the user code is the short one the human approves. */
+  start(ip: string): DeviceStart {
+    this.gc()
+    if (this.byDevice.size >= DEVICE_MAX_CODES) return null
+    let perIp = 0
+    for (const r of this.byDevice.values()) if (r.ip === ip && ++perIp >= DEVICE_MAX_PER_IP) return null
+    const deviceCode = randomAlpha(40, SESSION_ALPHABET)
+    let userCode = randomAlpha(8, USER_CODE_ALPHABET)
+    while (this.byUser.has(userCode)) userCode = randomAlpha(8, USER_CODE_ALPHABET)
+    this.byDevice.set(deviceCode, { userCode, ip, status: 'pending', expiresAt: clock.now() + DEVICE_CODE_TTL_SEC * 1000 })
+    this.byUser.set(userCode, deviceCode)
+    return { deviceCode, userCode: `${userCode.slice(0, 4)}-${userCode.slice(4)}`, expiresIn: DEVICE_CODE_TTL_SEC, interval: DEVICE_POLL_INTERVAL_SEC }
+  }
+
+  /** The console (an authenticated admin) approves a user code. No token is minted here; the record
+   *  is marked, and the token is issued when the CLI collects it (see the route's poll handler). */
+  approve(userCode: string): DeviceApprove {
+    const rec = this.find(userCode)
+    if (!rec) return 'not_found'
+    if (rec.expiresAt <= clock.now()) return 'expired'
+    if (rec.status !== 'pending') return 'already'
+    rec.status = 'approved'
+    return 'ok'
+  }
+
+  /** The console denies a code; the CLI's next poll then stops with access_denied. */
+  deny(userCode: string): boolean {
+    const rec = this.find(userCode)
+    if (!rec || rec.expiresAt <= clock.now() || rec.status !== 'pending') return false
+    rec.status = 'denied'
+    return true
+  }
+
+  /** The CLI polls with its device code; any terminal status consumes the record. `approved` tells
+   *  the route to mint the token now, so an approval the CLI never collects mints no key. */
+  poll(deviceCode: string): DevicePoll {
+    const rec = this.byDevice.get(deviceCode)
+    if (!rec) return { status: 'unknown' }
+    if (rec.expiresAt <= clock.now()) { this.consume(deviceCode, rec); return { status: 'expired' } }
+    if (rec.status === 'approved') { this.consume(deviceCode, rec); return { status: 'approved' } }
+    if (rec.status === 'denied') { this.consume(deviceCode, rec); return { status: 'denied' } }
+    return { status: 'pending' }
+  }
+}
+
 // ---- signed cookie (Better Auth's format: `<token>.<base64 hmac-sha256>`, URL-encoded) ----
 
 const hmacB64 = (secret: string, token: string): string => createHmac('sha256', secret).update(token).digest('base64')

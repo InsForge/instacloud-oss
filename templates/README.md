@@ -58,6 +58,7 @@ Where the record stands, and what each row rests on:
 | `dsh` | yes | yes | Same base. `bubblewrap` is in Debian for arm64, and the `@vscode/ripgrep` the harness bundles resolves its arm64 optional package (the Dockerfile asserts the binary exists) |
 | `herdr` | yes | yes | Same base and ttyd asset as the other terminal templates. Upstream publishes `herdr-linux-aarch64` beside the x86_64 binary, each with its own checksum, and that layer ends in `herdr --version`, so the arm64 leg turns red if the asset does not execute under the build's QEMU. Weaker evidence than the rows around it: this one was never started on an arm64 machine. Only the amd64 image was deployed and exercised |
 | `hermes` | yes | yes | Upstream's `v2026.8.27` index carries both; this image only adds an entrypoint |
+| `laya` | yes | **no** | amd64 only by declaration rather than by upstream limit. The base and the CPU torch wheels both exist for aarch64, but the build bakes an 842 MB checkpoint by running a real prediction, and nobody has yet run that leg under QEMU or on an arm64 machine. Adding the row means doing that, not editing this one |
 | `n8n` | yes | yes | The official `n8nio/n8n:2.36.5` index carries both. Nothing is rebuilt here |
 | `openclaw` | yes | yes | Upstream's index carries both; this image only adds an entrypoint |
 | `pi` | yes | yes | Same base and ttyd asset as the other terminal templates |
@@ -81,6 +82,7 @@ because an RGBA file can still be fully opaque.
 | `dsh` | `logo.svg` 2.0 KB | yes (vector) | fixed `#5786FE` | DeepSeek's mark, on DeepSeek's own project. The same file the delisted `deepseek-hermes` carried, where it was the weaker case: branding someone else's agent. Upstream's `BRAND_GUIDELINES.md` asks projects not to imply endorsement, which naming their own harness does not |
 | `herdr` | `logo.svg` 2.1 KB | **no** | fixed | Upstream's own mark, `assets/logo.svg` at tag `v0.9.1`. A full-bleed `<rect fill="#d9dad8">` sits under the paths, so the file is opaque by construction rather than by colour type, and the card puts it on a neutral tile. Left as upstream ships it: deleting that rect is the hand-cutting the rules above rule out, and upstream's `logo.png` carries the same plate |
 | `n8n` | `logo.svg` 1.6 KB | yes (vector) | fixed `#EA4B71` | n8n's brand mark |
+| `laya` | `logo.svg` 1.3 KB | yes (vector) | fixed `#2a78d6` | Laya's own mark, `assets/logo-mark.svg` in the original repository, NandhaKishorM/laya. Paths and circles, no `<text>`. The repo also ships `logo-mark-mono.svg` and a dark lockup, but no single file that adapts on its own |
 | `openclaw` | `logo.svg` 4.6 KB | yes (vector) | fixed; includes a near-black `#050810` element | OpenClaw's mark |
 | `9router` | `logo.png` 500x500 | yes (corner alpha 0) | fixed orange `#F34E21` | 9router's own mark, taken from the copy at `i.imgur.com/yjb5HvR.png`. Upstream's repo PNG (`images/9router.png`) is a 2940x2594 screenshot of the app, not this mark, so that copy is the only place the asset is available. Please do not "correct" this row to the repo URL |
 

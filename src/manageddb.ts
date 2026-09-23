@@ -100,6 +100,45 @@ export const managedServiceId = (type: ManagedDbType, name: string): string => `
 export const managedContainerName = (ref: string, type: ManagedDbType, name: string): string =>
   `io-${ref}-${MANAGED_DB[type].idPrefix}-${name}`
 
+/** `INFO keyspace` → the logical dbs that hold keys ("db0:keys=3,expires=0,avg_ttl=0"), for the
+ *  console's db chips on the redis key browser. Empty dbs are simply absent from the output. */
+export function parseKeyspaceInfo(text: string): Array<{ db: number; keys: number }> {
+  const out: Array<{ db: number; keys: number }> = []
+  for (const line of text.split('\n')) {
+    const m = /^db(\d+):keys=(\d+)/.exec(line.trim())
+    if (m) out.push({ db: Number(m[1]), keys: Number(m[2]) })
+  }
+  return out
+}
+
+/** A *SCAN page (`[cursor, [f1, v1, …]]`) → at most `maxPairs` field/value pairs as an object.
+ *  The daemon enforces the bound itself: SCAN's COUNT is a hint the server may exceed, so the
+ *  page is hard-sliced here rather than trusted. */
+export function scanPageToHash(page: unknown, maxPairs = 200): Record<string, string> {
+  const flat = Array.isArray(page) && Array.isArray(page[1]) ? (page[1] as unknown[]) : []
+  const out: Record<string, string> = {}
+  for (let i = 0; i + 1 < Math.min(flat.length, maxPairs * 2); i += 2) out[String(flat[i])] = String(flat[i + 1])
+  return out
+}
+
+/** A *SCAN page (`[cursor, [m1, m2, …]]`) → at most `max` members. Same hard slice as above. */
+export function scanPageMembers(page: unknown, max = 200): string[] {
+  const flat = Array.isArray(page) && Array.isArray(page[1]) ? (page[1] as unknown[]) : []
+  return flat.slice(0, max).map(String)
+}
+
+/** `INFO` → its key:value pairs (comment lines dropped), for the redis Stats view. */
+export function parseRedisInfo(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const colon = line.indexOf(':')
+    if (colon > 0) out[line.slice(0, colon)] = line.slice(colon + 1)
+  }
+  return out
+}
+
 // ---- region WP2 (router) ----
 /** Which managed types route by TLS SNI on the shared server-mode lane (redis 6379, mongo 27017).
  *  MySQL greets first and has no SNI, so it gets a plaintext per-service port (decision 38). Kept as

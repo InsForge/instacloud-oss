@@ -174,7 +174,7 @@ insta services list | grep -q 'postgres/' && FAIL "a new project must start with
 insta services add postgres db >/dev/null || FAIL "services add postgres failed"
 insta services add storage store >/dev/null || FAIL "services add storage failed"
 insta services add compute web >/dev/null || FAIL "services add compute failed"
-DBURL=$(insta db url)
+DBURL=$(insta postgres url)
 DBHOST=$(url_host "$DBURL")
 case $DBHOST in
   pg-db-*.$DOMAIN) OK "database host $DBHOST" ;;
@@ -199,7 +199,7 @@ ensure_host "$(url_host "$URL")"
 wait_for 90 curl_ok "$URL/" || FAIL "$URL never answered"
 OK "app answers at $URL"
 insta services add postgres analytics >/dev/null || FAIL "a second postgres must be allowed"
-DBURL2=$(insta db url --group analytics)
+DBURL2=$(insta postgres url analytics)
 [ "$DBURL2" != "$DBURL" ] || FAIL "the two postgres services share a dsn"
 if insta services add postgres db >/dev/null 2>&1; then
   FAIL "a duplicate service name must be refused"
@@ -224,7 +224,7 @@ case $FEAT_IDS in
   *:pg-db*) OK "feat service ids are branch qualified" ;;
   *) FAIL "expected branch-qualified ids on feat, got $FEAT_IDS" ;;
 esac
-FEATURL=$(insta db url --branch feat --group db)
+FEATURL=$(insta postgres url db --branch feat)
 [ "$FEATURL" != "$DBURL" ] || FAIL "feat and main share a dsn"
 FEATHOST=$(url_host "$FEATURL")
 ensure_host "$FEATHOST"
@@ -253,7 +253,7 @@ MAINPG=$(pg_container "$REF" db)
 wait_for 120 sh -c "[ \"\$(docker inspect -f '{{.State.Status}}' $MAINPG)\" = exited ]" \
   || FAIL "main postgres never went idle, state is $(cstate "$MAINPG")"
 measure insta branch create rest --from main >/dev/null || FAIL "branch create from an idle parent failed"
-RESTURL=$(insta db url --branch rest --group db)
+RESTURL=$(insta postgres url db --branch rest)
 ensure_host "$(url_host "$RESTURL")"
 RESTBULK=$(psql "$RESTURL" -v ON_ERROR_STOP=1 -qtAc 'select count(*) from qa_bulk')
 [ "$RESTBULK" = "700000" ] || FAIL "the at-rest fork is torn: $RESTBULK rows of qa_bulk, expected 700000"
@@ -318,19 +318,19 @@ sleep $(( INSTA_OSS_IDLE_COMPUTE_SEC * 2 + INSTA_OSS_SWEEP_SEC + 5 ))
 [ "$(cstate "$WEBC")" = "running" ] || FAIL "an always-on service slept"
 insta compute always-on off web >/dev/null || FAIL "always-on off failed"
 OK "always-on keeps a service up"
-insta events --json | grep -q 'service.sleep' || FAIL "no service.sleep event"
-insta events --json | grep -q 'service.wake' || FAIL "no service.wake event"
+insta agent events --json | grep -q 'service.sleep' || FAIL "no service.sleep event"
+insta agent events --json | grep -q 'service.wake' || FAIL "no service.wake event"
 OK "sleep and wake events recorded"
 
 STEP "8. custom domain"
-SETOUT=$(insta compute set-domain e2e.example.test --group web)
-printf '%s\n' "$SETOUT" | grep -q '501' && FAIL "set-domain still answers 501"
-printf '%s\n' "$SETOUT" | grep -qi 'cname' || FAIL "set-domain printed no CNAME record"
+SETOUT=$(insta domain attach e2e.example.test --group web)
+printf '%s\n' "$SETOUT" | grep -q '501' && FAIL "domain attach still answers 501"
+printf '%s\n' "$SETOUT" | grep -qi 'cname' || FAIL "domain attach printed no CNAME record"
 printf '%s\n' "$SETOUT" | grep -q "api.$DOMAIN" || FAIL "the CNAME target is not api.$DOMAIN"
-CHECK=$(insta compute check-domain e2e.example.test)
-printf '%s\n' "$CHECK" | grep -qi 'pending' || FAIL "check-domain should report the record pending"
-printf '%s\n' "$CHECK" | grep -q 'UNCONFIRMED' && FAIL "check-domain must not print an ssl line"
-insta compute remove-domain e2e.example.test >/dev/null || FAIL "remove-domain failed"
+CHECK=$(insta domain check e2e.example.test)
+printf '%s\n' "$CHECK" | grep -qi 'pending' || FAIL "domain check should report the record pending"
+printf '%s\n' "$CHECK" | grep -q 'UNCONFIRMED' && FAIL "domain check must not print an ssl line"
+insta domain detach e2e.example.test >/dev/null || FAIL "domain detach failed"
 OK "custom domain add, check and remove"
 
 STEP "9. templates over https"

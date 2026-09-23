@@ -49,13 +49,13 @@ curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/instal
 For one app on a host you own, point it at an existing install:
 
 ```bash
-insta compute set-domain shop.example.com --group web
-insta compute check-domain shop.example.com
-insta compute remove-domain shop.example.com
+insta domain attach shop.example.com --group web
+insta domain check shop.example.com
+insta domain detach shop.example.com
 ```
 
-`set-domain` prints the DNS record to create: a `CNAME` to `api.<domain>`, or an A record to the
-address of the box. `check-domain` reports the record and whether the host is being served, and is
+`attach` prints the DNS record to create: a `CNAME` to `api.<domain>`, or an A record to the
+address of the box. `check` reports the record and whether the host is being served, and is
 the command to poll until it prints that it is serving `https://shop.example.com`. Under `acme`
 and `internal` the certificate is issued on the first request that arrives with that name. Under
 `custom` nothing is issued: a name inside your wildcard is served straight away, and one outside
@@ -132,11 +132,11 @@ Postgres is the one that is public. It shares a single port for every database o
 daemon routes by the hostname in the TLS handshake:
 
 ```bash
-psql "$(insta db url)"
-insta db connect
+psql "$(insta postgres url)"
+insta postgres connect
 ```
 
-`insta db url` prints a DSN of the form
+`insta postgres url` prints a DSN of the form
 `postgres://postgres:<password>@pg-db-shop-main.example.com:5432/app?sslmode=require`. Because the
 lane demultiplexes on SNI, the client has to send the hostname in the handshake. Recent clients do:
 libpq 14 or newer, the JDBC driver 42.2.x or newer, node-postgres, psycopg 3. An older client gets

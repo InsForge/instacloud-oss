@@ -59,7 +59,8 @@ function demands(manifest) {
 
 describe('the credentialed templates ship no credential of their own', () => {
   // What this locks down is a security property, not a convenience one. Each of these publishes a
-  // root shell, an agent that runs one, or an agent's control panel over HTTP basic auth, so a
+  // root shell, an agent that runs one, an agent's control panel, or an inference endpoint whose
+  // cheapest request is a few hundred milliseconds of CPU, all over HTTP basic auth. So a
   // `default:` here would be one password shared by every deployment in the world, and a
   // `generate:` would be a password the operator never sees. The manifests declare both variables
   // required with neither, which is what makes the console render two empty fields it will not let
@@ -82,6 +83,16 @@ describe('the credentialed templates ship no credential of their own', () => {
     // deploy form, and dropping one would mean a credential came back from somewhere.
     expect(demands(templates.find((t) => t.dir === dir).manifest))
       .toEqual(['ADMIN_PASSWORD', 'ADMIN_USERNAME']);
+  });
+
+  it('laya makes the operator supply exactly one API key', () => {
+    // laya dropped the ADMIN pair in 0.2.0: it is an API consumed programmatically (Bearer key, or
+    // basic auth with the fixed username `api`), unlike the browser terminals above where a
+    // login prompt fits. The same security property holds: required, no default, no generator.
+    const svc = Object.values(templates.find((t) => t.dir === 'laya').manifest.services)[0];
+    expect(demands(templates.find((t) => t.dir === 'laya').manifest)).toEqual(['API_KEY']);
+    expect(valueSource(svc.env.required.API_KEY, undefined), 'API_KEY must have no fallback').toBeNull();
+    expect(valueSource(svc.env.required.API_KEY, 'typed'), 'API_KEY must accept a value').toBe('provided');
   });
 
   it('no template lets a required variable fall back to anything', () => {
@@ -108,7 +119,7 @@ describe('every variable an entrypoint reads is declared by its manifest', () =>
     // Guards the guard: if entrypoints move or get renamed, the cases below would silently
     // become an empty suite that passes forever. 9router and openclaw ship one while requiring no
     // credential at all, which is the case the per-template check below has to stay honest about.
-    expect(withEntrypoint.map((t) => t.dir).sort()).toEqual(['9router', 'claude-code', 'codex', 'dsh', 'herdr', 'hermes', 'openclaw', 'pi']);
+    expect(withEntrypoint.map((t) => t.dir).sort()).toEqual(['9router', 'claude-code', 'codex', 'dsh', 'herdr', 'hermes', 'laya', 'openclaw', 'pi']);
   });
 
   it.each(withEntrypoint)('$dir', ({ dir, manifest }) => {

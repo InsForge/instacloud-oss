@@ -17,6 +17,7 @@ import { QuickStart } from './pages/QuickStart'
 import { Setup } from './pages/Setup'
 import { Login } from './pages/Login'
 import { Tokens } from './pages/Tokens'
+import { DeviceApprove } from './pages/DeviceApprove'
 
 /** Lands on the first project's default branch (or an empty state if none exist yet). */
 function Home() {
@@ -48,6 +49,16 @@ function ProjectRedirect({ projectId }: { projectId: string }) {
   if (!branches) return null
   const def = branches.find((b) => b.is_default) ?? branches[0]
   return <Navigate to={`/p/${projectId}/${encodeURIComponent(def?.name ?? 'main')}/services`} replace />
+}
+
+/** The console's 404 (Next.js's default not-found page): "404 | This page could not be found." */
+function NotFound() {
+  return (
+    <div className="flex h-screen items-center justify-center bg-background text-foreground">
+      <h1 className="border-r border-border pr-6 text-2xl font-medium">404</h1>
+      <p className="pl-6 text-sm text-muted-foreground">This page could not be found.</p>
+    </div>
+  )
 }
 
 function CenterNote({ title, body }: { title: string; body: string }) {
@@ -89,6 +100,7 @@ export default function App() {
         <Route path="/setup" element={<Setup />} />
         <Route path="/login" element={<Login />} />
         <Route path="/account/tokens" element={<Tokens />} />
+        <Route path="/device" element={<DeviceApprove />} />
         <Route path="/p/:projectId" element={<ProjectIndex />} />
         <Route path="/p/:projectId/:branch" element={<ProjectShell />}>
           <Route index element={<Navigate to="services" replace />} />
@@ -111,7 +123,8 @@ export default function App() {
           {/* Settings is the console's panel over the page (`?panel=settings`); the old page's bookmarks open it. */}
           <Route path="settings" element={<Navigate to="../services?panel=settings" replace />} />
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* The console renders a 404 for unknown paths; redirecting home hid typos in pasted links. */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </AuthGate>
   )

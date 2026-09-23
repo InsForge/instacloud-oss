@@ -19,6 +19,7 @@ import { randomBytes } from 'node:crypto'
 import { docker, destroyContainer, inspectField, UNREADABLE, UnreadableProbeError } from '../docker'
 import { forkMethod, probedCapabilities, sharedDataDir } from '../datadir'
 import { loadConfig } from '../config'
+import { maskSqlText } from '../sqlsurface'
 import { NoReflinkError } from '../types'
 import type { Config } from '../config'
 import type { DataDirOps, DatabaseAdapter, PgTarget, ServiceLimits } from '../types'
@@ -136,12 +137,28 @@ export class LocalPostgres implements DatabaseAdapter {
     return { url: swapHost(src.url, dst.container), method: 'basebackup', ms: Date.now() - t0 }
   }
 
-  async query(container: string, sql: string): Promise<string> {
+  async query(container: string, sql: string, opts: { statementTimeoutMs?: number; sqlOnly?: boolean } = {}): Promise<string> {
     const deadline = Date.now() + QUERY_DEADLINE_MS
+    // A per-statement bound through the server's own option (PGOPTIONS), so an ad-hoc statement
+    // cannot hold the request and the docker child open indefinitely.
+    const timeout = opts.statementTimeoutMs
+      ? ['-e', `PGOPTIONS=-c statement_timeout=${Math.trunc(opts.statementTimeoutMs)}`] : []
+    // The security backstop for UNTRUSTED SQL, at the transport itself so no caller can bypass it:
+    // `-f -` (stdin) processes psql meta-commands (`\!` shells out as this exec's user, `\g`/`\gexec`
+    // run extra buffers, `\watch` outlives the statement timeout). A backslash is never SQL outside
+    // a string/comment, so a single unquoted one — masking the literals first (sqlsurface) so a
+    // backslash IN data is fine — means a meta-command, and it is refused here, not merely at the
+    // engine. The engine still rejects earlier with a friendlier message; this is the layer that
+    // cannot be forgotten.
+    if (opts.sqlOnly && maskSqlText(sql).includes('\\')) {
+      throw new Error('psql meta-commands are not supported: send SQL only')
+    }
     for (;;) {
       try {
-        const out = await this.exec(['exec', '-i', container, 'psql', '-U', 'postgres', '-d', DB,
-          '-v', 'ON_ERROR_STOP=1', '-tAc', sql])
+        // The SQL rides STDIN, not argv: `-tAc <sql>` sat in the host's process listing for the
+        // life of the exec (redaction only covered error MESSAGES). `-X` skips psqlrc.
+        const out = await this.exec(['exec', '-i', ...timeout, container, 'psql', '-X', '-U', 'postgres', '-d', DB,
+          '-v', 'ON_ERROR_STOP=1', '-tA', '-f', '-'], { input: Buffer.from(sql) })
         return out.toString().trim()
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
@@ -356,6 +373,7 @@ export async function pgRun(t: PgTarget, opts: { publishLoopback?: boolean; limi
 export async function pgWaitReady(container: string, timeoutMs = READY_TIMEOUT_MS, exec: DockerExec = docker): Promise<void> {
   const deadline = Date.now() + timeoutMs
   let last = ''
+  let settled = false
   for (;;) {
     try {
       await exec(['exec', container, 'pg_isready', '-h', '127.0.0.1', '-p', '5432', '-U', 'postgres', '-d', DB])
@@ -365,10 +383,22 @@ export async function pgWaitReady(container: string, timeoutMs = READY_TIMEOUT_M
       // exists because the image's initdb phase runs a temporary server on the unix socket while
       // the real one is still starting (#34), and "nothing came back" is exactly what that phase
       // looks like. Tests inject the `exec` seam instead of widening the production check.
-      if (out.split('\n')[0].trim() === '1') return
+      if (out.split('\n')[0].trim() === '1') {
+        // Settling re-verification: a cloned database doing crash recovery can briefly accept TCP
+        // connections then restart (the postgres entrypoint's init-time server, or a recovery redo).
+        // On slow CI runners the window between the first "ready" and the restart is wide enough for
+        // the caller's next query to land in the gap. A short settle catches that: if the server is
+        // still up after 250 ms it is past the restart window. If it dropped, the loop retries.
+        if (settled) return
+        settled = true
+        await sleep(250)
+        continue
+      }
       last = `select 1 answered ${JSON.stringify(out)}`
+      settled = false
     } catch (e) {
       last = firstLine(e)
+      settled = false
     }
     // A container dockerd cannot report on does NOT end the wait: `containerStatus` answers
     // `unreadable` there, which is neither exited nor gone, so the poll keeps going to its

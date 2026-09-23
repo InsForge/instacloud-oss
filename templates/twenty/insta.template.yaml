@@ -76,32 +76,12 @@ services:
       generated:
         APP_SECRET: ${app_secret}
         ENCRYPTION_KEY: ${encryption_key}
-      # The account the entrypoint creates before anyone else can reach the URL. Twenty allows
-      # exactly one on a single-workspace instance (`isSignUpEnabled` is
-      # `IS_MULTIWORKSPACE_ENABLED || workspaceCount === 0`), and it has no environment variable of
-      # its own for it, so without these two the instance belongs to its first visitor and a
-      # deployment anyone else verified is one the operator can never enter.
-      #
-      # Neither carries a `default:` or a `generate:`, for the reason the credentialed templates
-      # here all share: a default would be one password on every deploy in the world, and a
-      # generated one would be written to a store nothing can read back.
-      required:
-        ADMIN_EMAIL:
-          description: Email you sign in with — Twenty authenticates by email, not by username
-        ADMIN_PASSWORD:
-          description: Password for that account, 8 to 50 characters (Twenty's own rule)
-      optional:
-        # Twenty refuses to create a workspace without one ("Workspace name is required"), and its
-        # own welcome page asks for it on the screen after the password. Renamed later in
-        # Settings > General, so it is a convenience rather than a decision.
-        WORKSPACE_NAME: Name for the workspace the deploy creates. Defaults to Twenty
-        # Twenty writes example companies, people, opportunities and a dashboard into every
-        # workspace it activates, with no flag of its own to stop it. Upstream shows them to the
-        # person who just created the workspace; here the deploy creates it, so by default the
-        # entrypoint removes them again and the operator's first login is an empty CRM. Set this
-        # to keep them. See clear-sample-data.sql, which also says why the two prefilled
-        # workflows stay either way.
-        SAMPLE_DATA: Set to true to keep Twenty's example companies and people. Empty workspace otherwise
+      # No `required:` and no `optional:`. The template asks for nothing at the deploy prompt,
+      # because Twenty has no admin-credential variable and this template no longer invents one:
+      # the instance comes up with upstream's own welcome page open (`isSignUpEnabled` is
+      # `IS_MULTIWORKSPACE_ENABLED || workspaceCount === 0`, and there is no workspace yet) and
+      # whoever opens the URL first signs up, names the workspace and becomes its admin. That is
+      # also what closes sign-up, so hand the URL over before you publish it.
 
   # Twenty's BullMQ consumer, the second half of upstream's compose. Every scheduled and queued job
   # runs here: workflow executions, CSV imports, message and calendar sync, outbound email, the

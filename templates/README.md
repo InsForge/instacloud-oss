@@ -61,7 +61,7 @@ Where the record stands, and what each row rests on:
 | `n8n` | yes | yes | The official `n8nio/n8n:2.36.5` index carries both. Nothing is rebuilt here |
 | `openclaw` | yes | yes | Upstream's index carries both; this image only adds an entrypoint |
 | `pi` | yes | yes | Same base and ttyd asset as the other terminal templates |
-| `twenty` | yes | yes | Upstream's `v2.41.0` index carries both; this image only adds an entrypoint and three node scripts, none of it architecture-specific |
+| `twenty` | yes | yes | Upstream's `v2.41.0` index carries both; this image only adds an entrypoint and two node scripts, none of it architecture-specific |
 
 Every row above was checked by building the template for `linux/arm64` on an arm64 machine and
 starting the resulting image until it answered its own manifest healthcheck. Re-check a row the

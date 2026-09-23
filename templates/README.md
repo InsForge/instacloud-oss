@@ -57,10 +57,11 @@ Where the record stands, and what each row rests on:
 | `codex` | yes | yes | Same base, same ttyd asset. `codex --version` answers inside the arm64 image, so the CLI's platform-specific parts resolved |
 | `dsh` | yes | yes | Same base. `bubblewrap` is in Debian for arm64, and the `@vscode/ripgrep` the harness bundles resolves its arm64 optional package (the Dockerfile asserts the binary exists) |
 | `hermes` | yes | yes | Upstream's `v2026.8.27` index carries both; this image only adds an entrypoint |
+| `laya` | yes | **no** | amd64 only by declaration rather than by upstream limit. The base and the CPU torch wheels both exist for aarch64, but the build bakes an 842 MB checkpoint by running a real prediction, and nobody has yet run that leg under QEMU or on an arm64 machine. Adding the row means doing that, not editing this one |
 | `n8n` | yes | yes | The official `n8nio/n8n:2.36.5` index carries both. Nothing is rebuilt here |
 | `openclaw` | yes | yes | Upstream's index carries both; this image only adds an entrypoint |
 | `pi` | yes | yes | Same base and ttyd asset as the other terminal templates |
-| `twenty` | yes | yes | Upstream's `v2.41.0` index carries both; this image only adds alpine's `redis` (8.4.2-r0 on both arches) and an entrypoint |
+| `twenty` | yes | yes | Upstream's `v2.41.0` index carries both; this image only adds an entrypoint and two node scripts, none of it architecture-specific |
 
 Every row above was checked by building the template for `linux/arm64` on an arm64 machine and
 starting the resulting image until it answered its own manifest healthcheck. Re-check a row the
@@ -80,6 +81,7 @@ because an RGBA file can still be fully opaque.
 | `hermes` | `logo.png` 512x512 | yes (corner alpha 0) | fixed light plate | Upstream's own app icon, `apps/desktop/assets/icon.png` at 1024x1024, downscaled. This row used to name the NousResearch GitHub org avatar and claim upstream published no transparent mark; that icon disproves it. No vector option: upstream's only SVG is a bare `⚕` glyph in the default font, which the rules below reject. Stored greyscale+alpha, halving the bytes for a max difference of 3/255 on a single pixel. The white plate is part of the artwork, not a background: the character's face is the plate showing through, so cutting it out would erase the face |
 | `dsh` | `logo.svg` 2.0 KB | yes (vector) | fixed `#5786FE` | DeepSeek's mark, on DeepSeek's own project. The same file the delisted `deepseek-hermes` carried, where it was the weaker case: branding someone else's agent. Upstream's `BRAND_GUIDELINES.md` asks projects not to imply endorsement, which naming their own harness does not |
 | `n8n` | `logo.svg` 1.6 KB | yes (vector) | fixed `#EA4B71` | n8n's brand mark |
+| `laya` | `logo.svg` 1.3 KB | yes (vector) | fixed `#2a78d6` | Laya's own mark, `assets/logo-mark.svg` in the original repository, NandhaKishorM/laya. Paths and circles, no `<text>`. The repo also ships `logo-mark-mono.svg` and a dark lockup, but no single file that adapts on its own |
 | `openclaw` | `logo.svg` 4.6 KB | yes (vector) | fixed; includes a near-black `#050810` element | OpenClaw's mark |
 | `twenty` | `logo.svg` 2.6 KB | yes (corner alpha 0, rounded-rect clip) | fixed black plate | Twenty's own mark, `packages/twenty-website/public/images/core/logo.svg`. The black rounded square is the artwork, not a background: the glyph is white and cutting the plate away would leave nothing. No dark-mode variant is published |
 | `9router` | `logo.png` 500x500 | yes (corner alpha 0) | fixed orange `#F34E21` | 9router's own mark, taken from the copy at `i.imgur.com/yjb5HvR.png`. Upstream's repo PNG (`images/9router.png`) is a 2940x2594 screenshot of the app, not this mark, so that copy is the only place the asset is available. Please do not "correct" this row to the repo URL |

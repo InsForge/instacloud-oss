@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { API_TOKEN_ENV, cliLine, cliSteps } from './quickStart'
+import { cliLine, cliSteps } from './quickStart'
 
 const URL = 'http://127.0.0.1:8081'
 
@@ -11,10 +11,10 @@ describe('cliSteps', () => {
       'insta project link pr_1',
     ])
   })
-  it('signs in with the API token variable in server mode', () => {
+  it('signs in with device login in server mode', () => {
     expect(cliSteps('pr_1', 'server', URL)).toEqual([
       'npm install -g insta',
-      `insta login --api-key "$${API_TOKEN_ENV}" --api-url ${URL}`,
+      `insta login --device --api-url ${URL}`,
       'insta project link pr_1',
     ])
   })

@@ -10,15 +10,15 @@ Open-source CRM for contacts, companies and deals.
 tasks, on customisable record views with a kanban and a table mode, plus workflows, a REST API and
 a GraphQL API. Upstream describes it as the open-source alternative to Salesforce.
 
-This template deploys upstream's own release image against a managed PostgreSQL service. It is the
-upstream application, not a reimplementation: the image is `twentycrm/twenty:v2.41.0` and its own
-entrypoint still creates the schema and runs the migrations.
+This template deploys upstream's own release image against a managed PostgreSQL and a managed Redis.
+It is the upstream application, not a reimplementation: the image is `twentycrm/twenty:v2.41.0` and
+its own entrypoint still creates the schema and runs the migrations.
 
-Upstream's `docker-compose.yml` is four containers. Two of them cannot be expressed in a template
-manifest, which declares only `web` and `postgres` services, so this template's image adds them
-beside the server: **Redis** (Twenty requires `REDIS_URL` for its cache and its BullMQ queues) and
-the **worker** (upstream runs it as a second container off this same image). Both are upstream's
-own components, started by a short entrypoint; see [Scope](#scope) for what that costs you.
+Upstream's `docker-compose.yml` is four containers and this template is four services, one for
+one: the managed `db` and `cache` datastores, the `crm` web service, and the `jobs` worker. The
+worker is the same image as the web service, told which one it is by an environment variable,
+because a manifest has no `command:` key and upstream distinguishes the two only by what the
+container runs.
 
 The entrypoint also creates the first account from the email and password you type at the deploy
 prompt, because Twenty allows exactly one on a self-hosted instance and has no environment
@@ -34,11 +34,14 @@ is built and ready before the URL is handed to you rather than half-made until s
 - A managed PostgreSQL service holding every record, created and wired by the platform. You never
   type a database URL, and the database is backed up and resized by the platform rather than by
   this template.
-- The worker running, so Twenty's background jobs actually run: workflow executions, search index
-  updates, and the message and calendar sync if you connect an account.
-- A persistent volume at `/data` holding uploaded attachments and workspace logos
-  (`STORAGE_LOCAL_PATH=/data/storage`) and Redis's append-only file, so a restart keeps both the
-  files and the queue.
+- A managed Redis for the cache and the BullMQ queues. Twenty hardcodes the BullMQ driver and
+  `REDIS_URL` has no default, so this is required rather than an optimisation.
+- The worker as its own service, so Twenty's background jobs actually run: workflow executions,
+  CSV imports, search index updates, and the message and calendar sync if you connect an account.
+  It has its own machine, so a long job does not compete with the request the person in front of
+  the CRM is waiting on.
+- A persistent volume at `/data` on the web service holding uploaded attachments and workspace
+  logos (`STORAGE_LOCAL_PATH=/data/storage`), so a restart keeps the files.
 - `APP_SECRET` and `ENCRYPTION_KEY` generated for you and stored as managed secrets. Twenty signs
   tokens with the first and encrypts stored third-party credentials with the second.
 - `SERVER_URL` already resolved to the service's own address, so invite links and email links
@@ -62,14 +65,18 @@ is built and ready before the URL is handed to you rather than half-made until s
 | `APP_SECRET` | generated | 64-character key Twenty uses to sign its tokens. You do not set it, and it must stay stable across deploys or every session is invalidated. |
 | `ENCRYPTION_KEY` | generated | 64-character key for at-rest encryption of stored secrets, such as connected-account tokens. Must stay stable across deploys or those become unreadable. |
 | `PG_DATABASE_URL` | platform | Bound to the managed `db` service's `DATABASE_URL`. Not a value you supply or can edit. |
+| `REDIS_URL` | platform | Bound to the managed `cache` service. Same: supplied by the platform. |
 
-Set by the template, not by you: `NODE_PORT=3000`, `SERVER_URL` resolved to the service's own HTTPS
-URL, `REDIS_URL=redis://127.0.0.1:6379` (the in-container Redis), `STORAGE_TYPE=local`,
-`STORAGE_LOCAL_PATH=/data/storage`, and `PG_SSL_ALLOW_SELF_SIGNED=true` for the managed database's
-TLS lane.
+Set by the template, not by you: `NODE_PORT=3000`, `SERVER_URL` resolved to the web service's own
+HTTPS URL, `STORAGE_TYPE=local`, `STORAGE_LOCAL_PATH=/data/storage`,
+`PG_SSL_ALLOW_SELF_SIGNED=true` for the managed database's TLS lane, and `INSTA_TWENTY_ROLE`, which
+is the one thing that differs between the two compute services.
 
-The service is always-on. Twenty registers cron jobs that fire from inside the process, so an idle
-machine would never wake to run them.
+Both compute services are always-on, for different reasons. The worker has no choice: nothing is
+routed to a worker, so no request could ever wake it and a sleeping queue consumer is a queue that
+never drains. The web service could sleep now that the worker owns the background work, and it does
+not because Twenty's cold boot is tens of seconds, which is how long the first request after an
+idle stop would wait.
 
 **Boot times, measured on this template.** The first deploy takes about 40 seconds from container
 start to a healthy `/healthz`, most of it Twenty creating its schema and running every migration
@@ -78,23 +85,28 @@ the version setup last ran for on the volume and goes straight to the server whe
 changed. While either is happening, a small listener holds port 3000 and answers 503, which is what
 stops the deploy's port probe from timing out.
 
-These numbers move with the machine. The same image measured 105 seconds on a slower run, which
-overran the platform's 90-second health gate and reported one of two services unhealthy on a
-deploy that was in fact fine fifteen seconds later. The entrypoint's job is to keep that distance:
-on an empty database it runs the migrations and nothing else, and it starts the worker and the
-cron registration only after the server answers, so neither competes with it for the machine.
+These numbers move with the machine. An earlier build of this template measured 105 seconds on a
+slower run, which overran the platform's 90-second health gate and reported one of two services
+unhealthy on a deploy that was in fact fine fifteen seconds later. The entrypoint's job is to keep
+that distance: on an empty database it runs the migrations and nothing else, and the account seed
+and the cron registration happen only after the server answers, so neither competes with it for
+the machine.
 
 ## Scope
 
-**Redis and the worker share the web container.** Upstream separates them, and this template does
-not, because a manifest cannot declare a managed Redis or a `type: worker` service. The practical
-consequences: the three processes share one machine's CPU and memory, a worker crash takes the
-whole service down and restarts it (the entrypoint exits non-zero on purpose, so nothing is left
-running against a dead worker), and the instance does not scale to more than one worker.
+**Four services, four bills.** The managed PostgreSQL and the managed Redis are each born with
+their own volume, and the web service and the worker each mount one of their own. That is the
+shape upstream's compose has; it is not a small deployment.
 
-**Redis holds queue state on the volume, not in the managed database.** The append-only file under
-`/data/redis` is what survives a restart. It is not backed up by the platform the way the managed
-PostgreSQL is; a lost volume loses in-flight jobs and uploaded attachments, not your records.
+**The two compute services do not share a disk.** Upstream's compose gives the server and the
+worker the same `.local-storage` volume; the platform gives each service its own. Uploads are
+invisible to this, because the web service both receives and serves them, but a job that writes a
+file and expects the server to hand it back would not find it. Setting `STORAGE_TYPE=s3` and the
+`STORAGE_S3_*` variables against a bucket gives both services one store and is the right answer
+for real use.
+
+**Queue state lives in the managed Redis.** That is what survives a restart of either compute
+service, and it is the platform's to size and keep, not this template's.
 
 **There is one account, and the deploy creates it.** Twenty runs in single-workspace mode
 (`IS_MULTIWORKSPACE_ENABLED` is off), where its own gate is `isSignUpEnabled = multiworkspace ||
@@ -103,8 +115,12 @@ setup is disabled"*. Upstream leaves that first slot to whoever loads the URL fi
 fills it with `ADMIN_EMAIL` and `ADMIN_PASSWORD` a second or two after the server starts, so the
 URL is not a race. Everybody else joins by invitation from **Settings > Members**.
 
-**It bills continuously.** `alwaysOn: true` is what keeps the cron jobs and the worker running, but
-it means the service is never idle-stopped and is charged from deploy until you delete it.
+**It bills continuously.** Both compute services are `alwaysOn: true`, so neither is idle-stopped
+and both are charged from deploy until you delete them.
+
+**Self-hosted InstaCloud cannot run this template yet.** It declares a managed `redis` service, and
+the runtime in this repository parses only `web`, `worker` and `postgres`, so it skips the template
+with a warning. It deploys on the hosted platform.
 
 ### An empty workspace
 
@@ -141,7 +157,8 @@ if you do not want them.
 
 Twenty is licensed **AGPL-3.0-only**, with a handful of files marked `/* @license Enterprise */`
 under separate commercial terms. None of those are enabled by this template. The image this
-template builds also carries Alpine's `redis` package, which is AGPL-3.0-only OR SSPL-1.0.
+template builds adds shell and node scripts to upstream's release image and no third-party
+software.
 
 ## Links
 

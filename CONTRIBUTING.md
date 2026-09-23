@@ -120,14 +120,21 @@ container. The engine never talks to Docker for resources except through the ada
 - **Different database/storage/compute backend**: implement the matching interface from
   `types.ts` as a new file in `src/adapters/`, wire it in `main.ts`. Nothing else changes:
   the engine, server, tests, and CLI are provider-agnostic.
-- **New endpoint**: don't. The surface mirrors the standard `insta` CLI
-  (see [COMPATIBILITY.md](COMPATIBILITY.md)); additions belong in the shared
-  CLI/platform contract first.
+- **New endpoint**: don't, with one sanctioned exception. The surface mirrors the standard `insta`
+  CLI (see [COMPATIBILITY.md](COMPATIBILITY.md)); additions belong in the shared CLI/platform
+  contract first. The exception is a capability the cloud architecturally cannot offer but a single
+  self-hosted node genuinely can: such a self-hosted-only endpoint is allowed when it is recorded as a
+  divergence in COMPATIBILITY.md and carries a maintainer sign-off on the PR. The native git
+  push-to-deploy (`/projects/:id/services/:sid/git`, `/webhooks/git/:id`) is the first case: the
+  cloud's builder is a multi-tenant GitHub App the daemon cannot run, so the box builds from its own
+  HMAC-verified webhook instead (see the spec's builder note, updated 2026-09-21).
 
 ## Guidelines
 
 - **Keep CLI parity**: the daemon implements the standard `insta` command surface. Don't add
-  daemon-only commands or endpoints; response shapes must keep the stock CLI working unchanged.
+  daemon-only commands or endpoints, except a capability the cloud architecturally cannot provide
+  (see the "New endpoint" exception above): those are allowed with a COMPATIBILITY.md divergence entry
+  and a maintainer sign-off. Response shapes must keep the stock CLI working unchanged.
 - **Every behavior change needs a test**: contract tests (fake adapters, fast) for API shapes,
   integration tests (real Docker) for anything touching containers or clone isolation.
 - **Never orphan resources**: provisioning failures must compensate (destroy what was created).

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addIntent, API_TOKEN_ENV, cliLine, DOCS_URL, quickStartCards, setupPrompt } from './quickStart'
+import { addIntent, cliLine, DOCS_URL, quickStartCards, setupPrompt } from './quickStart'
 
 const LOCAL = 'http://127.0.0.1:8080'
 const SERVER = 'https://api.example.test'
@@ -13,9 +13,10 @@ describe('cliLine', () => {
     expect(line).not.toContain('insta login')
   })
 
-  it('server mode signs in with an API token against this daemon, then links', () => {
+  it('server mode signs in with device login against this daemon, then links', () => {
     const line = cliLine('pr_1', 'server', SERVER)
-    expect(line).toContain(`insta login --api-key "$${API_TOKEN_ENV}" --api-url ${SERVER}`)
+    expect(line).toContain(`insta login --device --api-url ${SERVER}`)
+    expect(line).not.toContain('--api-key')
     expect(line).toContain('insta project link pr_1')
   })
 
@@ -39,8 +40,11 @@ describe('setupPrompt', () => {
     }
   })
 
-  it('server mode sends the human to create a token on this console', () => {
-    expect(setupPrompt('pr_1', 'server', SERVER, 'https://console.example.test')).toContain('https://console.example.test/account/tokens')
+  it('server mode signs in with device login and points at the console approval page', () => {
+    const prompt = setupPrompt('pr_1', 'server', SERVER, 'https://console.example.test')
+    expect(prompt).toContain(`insta login --device --api-url ${SERVER}`)
+    expect(prompt).toContain('https://console.example.test/device')
+    expect(prompt).not.toContain('--api-key')
   })
 
   it('local mode keeps INSTA_API_URL set rather than logging in', () => {

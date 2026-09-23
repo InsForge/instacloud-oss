@@ -161,10 +161,24 @@ const CLI_VERBS = [
   'POST /tokens',
 ]
 
-// Commands that do not exist. `insta policy` was RETIRED from the CLI (insta-cli's
-// test/retired-policy.test.ts pins "unknown command 'policy'"); opt-in approval is the dashboard's
-// policy matrix or PUT /projects/:id/policy/:action. It was being recommended to operators anyway.
-const INVENTED = ['compute domain add', 'insta compute domain', 'tokens list', 'insta tokens', 'insta policy']
+// Commands that do not exist. `insta policy` and `insta observe` were RETIRED from the CLI
+// (insta-cli's test/retired-policy.test.ts pins "unknown command 'policy'") and replaced by the
+// noun-first `insta agent policy` / `insta agent observe`, which ARE real subcommands (e2e/lib.sh
+// names `insta agent policy` alongside `insta agent approvals` as governance verbs the CLI ships;
+// src/server.ts's `POST /projects/:id/events` route is what the CLI's observe hook uploads to) and
+// must not be pinned here. Only the bare top-level forms are invented. `services scale` /
+// `services upgrade` were renamed to `compute scale` / `compute limits` under the 0.1 noun-first
+// regrouping, so that retired sequence is pinned here alongside the top-level ones.
+const INVENTED = [
+  'compute domain add',
+  'insta compute domain',
+  'tokens list',
+  'insta tokens',
+  'insta policy',
+  'insta observe',
+  'insta services scale',
+  'insta services upgrade',
+]
 
 test('the README and the docs pages name no command that does not exist', () => {
   for (const rel of ['README.md', ...mdxPages()]) {
@@ -176,12 +190,47 @@ test('the README and the docs pages name no command that does not exist', () => 
   }
 })
 
+// `agent policy` and `agent observe` are noun-first command GROUPS: the bare group name performs
+// no operation of its own, so every mention must carry one of the real leaf subcommands
+// (`insta policy get` / `insta observe install` / `insta observe report` before the 0.1
+// noun-first regrouping, per this file's own history). The INVENTED list above only catches exact
+// banned strings, so a doc that drops the leaf verb but keeps a valid top-level noun (`agent
+// policy` standing in for `agent policy get`) slips past it; this test catches that instead.
+const NESTED_COMMANDS: Record<string, string[]> = {
+  'agent policy': ['get'],
+  'agent observe': ['install', 'report'],
+}
+
+test('nested agent command groups are never named without one of their real subcommands', () => {
+  for (const rel of ['README.md', ...mdxPages()]) {
+    const text = readFileSync(join(root, rel), 'utf8')
+    for (const [group, subs] of Object.entries(NESTED_COMMANDS)) {
+      for (const m of text.matchAll(new RegExp(`${group}(?![\\w-])([^\\n\`]*)`, 'g'))) {
+        const rest = m[1].trimStart()
+        const ok = subs.some((s) => rest.startsWith(s))
+        expect(ok, `${rel}: "${group}${m[1]}" is missing one of: ${subs.join(', ')}`).toBe(true)
+      }
+    }
+  }
+})
+
 test('COMPATIBILITY names every new route by its real verb', () => {
   const text = readFileSync(join(root, 'COMPATIBILITY.md'), 'utf8')
   expect(CLI_VERBS.filter((v) => !text.includes(v))).toEqual([])
   expect(INVENTED.filter((v) => text.includes(v))).toEqual([])
   // `insta backup` does not exist, so the only allowed mention is the one that says so.
   expect(text).toMatch(/no `insta backup` command/)
+})
+
+// The README's "Deploy from GitHub" walkthrough is otherwise unguarded: if the connect route or the
+// request-body fields are renamed in code, the snippet rots silently (as the "GitHub deploys = 501"
+// line it replaced did). Anchor it to the real route path and body keys the server accepts.
+test('the README git push-to-deploy walkthrough names the real route and request body', () => {
+  const readme = readFileSync(join(root, 'README.md'), 'utf8')
+  const section = readme.split('## Deploy from GitHub')[1]
+  expect(section, 'README lost its "Deploy from GitHub" section').toBeTruthy()
+  expect(section).toContain('/services/cp-web/git')     // the connect route (matches src/server.ts)
+  for (const field of ['"repo"', '"ref"', '"token"']) expect(section).toContain(field)
 })
 
 // The backup page is the ONLY documented recovery path (the backups API answers 501), so what it

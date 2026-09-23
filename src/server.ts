@@ -4,7 +4,7 @@
 // account system. Cloud-only surfaces (billing, usage, tokens, members) return 501.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyServerFactory } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest, type FastifyServerFactory } from 'fastify'
 import fastifyStatic from '@fastify/static'
 import { registerAuth } from './auth'
 import { loadConfig, type Config } from './config'
@@ -17,8 +17,10 @@ import { isManagedDbType, parseServiceId } from './manageddb'
 import { metricsWindow } from './metrics-history'
 import { GateRefused, TemplateError } from './templates/executor'
 import { ManifestError, MissingTemplateVariablesError } from './templates/manifest'
-import { loadState } from './state'
-import { isGatedAction, type Approval, type AuditEvent, type GatedAction } from './types'
+import { loadState, mutate } from './state'
+import { docker, dockerCall } from './docker'
+import { bindingOut, dockerBuildSpec, imageTag, newBinding, normalizeRef, parseRepo, pushRef, verifySignature, type GitBindingRecord } from './gitdeploy'
+import { isGatedAction, type Approval, type AuditEvent, type Branch, type GatedAction } from './types'
 
 const LOCAL_ORG = { id: 'local', name: 'local', is_personal: true, role: 'owner' }
 
@@ -64,7 +66,10 @@ export function buildServer(
   const app = Fastify({ logger: false, trustProxy: cfg.trustProxy ? 'loopback' : false, forceCloseConnections: 'idle', ...(opts.serverFactory ? { serverFactory: opts.serverFactory } : {}) })
 
   // Tolerate bodyless POSTs sent as application/json (the CLI does this on approve/deny).
-  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    // Keep the raw JSON string on the request: the git webhook verifies GitHub's HMAC over these
+    // exact bytes, which the parsed object cannot reproduce.
+    ;(req as FastifyRequest & { rawBody?: string }).rawBody = body as string
     const s = (body as string).trim()
     if (s === '') return done(null, undefined)
     try { done(null, JSON.parse(s)) } catch (e) { done(e as Error) }
@@ -1240,6 +1245,282 @@ export function buildServer(
     } catch (e) { return reply.code(404).send({ error: e instanceof Error ? e.message : String(e) }) }
   })
   // ---- end region D ----
+
+  // ---- region G (git push-to-deploy): bind a compute group to a GitHub repo; a push to the tracked
+  // branch hits POST /webhooks/git/<id> (HMAC-verified, OUTSIDE the auth guard) and the daemon builds
+  // the repo with `docker build <git-context>` (BuildKit fetches it, no local clone) and redeploys.
+  // Self-hosted equivalent of the cloud's GitHub App flow (which stays 501): the auth model here is a
+  // per-service Personal Access Token, or a public repo (no token).
+  const findBinding = (projectId: string, branchId: string, group: string): GitBindingRecord | undefined =>
+    Object.values(loadState().gitBindings ?? {}).find((r) => r.projectId === projectId && r.branchId === branchId && r.group === group)
+  /** Resolve a service id (bare `cp-web` or branch-qualified `<branchId>:cp-web`) to its branch and
+   *  compute group, using the same convention as every other service route. Null for a bad id, a
+   *  missing branch/service, or a non-compute type. */
+  const gitTarget = (req: FastifyRequest): { id: string; branch: Branch; group: string } | null => {
+    const { id, sid } = req.params as { id: string; sid: string }
+    const q = (req.query ?? {}) as { branch?: string }
+    let resolved: { branch: Branch; serviceId: string }
+    try { resolved = engine.resolveSid(id, sid, typeof q.branch === 'string' ? q.branch : undefined) }
+    catch { return null }
+    const parsed = parseServiceId(resolved.serviceId)
+    if (!parsed || parsed.type !== 'compute') return null
+    return { id, branch: resolved.branch, group: parsed.name }
+  }
+
+  // Per-binding build serialization + NEWEST-COMMIT-wins coalescing: while one build runs, only the
+  // pending job with the newest commit timestamp is kept, and `doGitDeploy` additionally refuses to
+  // deploy a commit that is not strictly newer than the binding's last-deployed one. Together these
+  // mean an out-of-order or redelivered older push can never overwrite a newer deployment, whatever
+  // order GitHub delivers pushes in. A job carries its commit `sha`/`ts`; `webhook` distinguishes a
+  // push (governed, staleness-checked) from the already-authorized initial connect build.
+  type GitJob = { sha?: string; ts?: number; webhook: boolean }
+  // `done` is the promise of the in-flight runner (all coalesced jobs), so unbind/rebind can wait for
+  // a build to finish before removing the binding — see settleGit.
+  const gitBuilds = new Map<string, { running: boolean; next: GitJob | null; done: Promise<void> | null }>()
+
+  /** Resolve once the binding has no build in flight. Unbind/rebind await this so a DELETE (or a
+   *  replacement) cannot return while a webhook build it already validated is still deploying. */
+  const settleGit = async (bindingId: string): Promise<void> => { await gitBuilds.get(bindingId)?.done }
+
+  // A hung `docker build` must not wedge its binding forever (the per-binding queue would never
+  // drain), and a burst of pushes across many bindings must not fork-bomb the box with concurrent
+  // builds. So a build has a hard timeout and all builds share a small daemon-wide semaphore. The
+  // per-binding serialization + coalescing above still stands; this only bounds the heavy step.
+  const GIT_BUILD_TIMEOUT_MS = 20 * 60_000
+  const GIT_BUILD_CONCURRENCY = 2
+  let gitBuildSlots = GIT_BUILD_CONCURRENCY
+  const gitBuildWaiters: Array<() => void> = []
+  // In-flight build children, so daemon shutdown can kill them and await the runners rather than
+  // stranding a `docker build` past app.close() (which would reset the concurrency limit on restart).
+  const activeGitBuilds = new Set<{ kill: () => void }>()
+  let gitShuttingDown = false
+  app.addHook('onClose', async () => {
+    // Order matters: flip the flag FIRST so runners stop consuming queued/coalesced jobs, then kill
+    // the active children and release any semaphore waiters so a blocked runner unblocks and exits
+    // without starting a new build. Only then await the runners to finish.
+    gitShuttingDown = true
+    for (const q of gitBuilds.values()) q.next = null
+    for (const b of activeGitBuilds) b.kill()
+    while (gitBuildWaiters.length) gitBuildWaiters.shift()?.()
+    await Promise.allSettled([...gitBuilds.values()].map((q) => q.done ?? Promise.resolve()))
+  })
+  const acquireBuildSlot = async (): Promise<() => void> => {
+    if (gitBuildSlots <= 0) await new Promise<void>((resolve) => gitBuildWaiters.push(resolve))
+    gitBuildSlots--
+    let released = false
+    return () => { if (released) return; released = true; gitBuildSlots++; gitBuildWaiters.shift()?.() }
+  }
+  /** Run one build under the global semaphore with a hard timeout; the timeout kills the child so a
+   *  hung fetch/build cannot hold the slot or the binding. */
+  const runBuild = async (spec: { args: string[]; env: Record<string, string> }): Promise<void> => {
+    const release = await acquireBuildSlot()
+    try {
+      // A runner blocked on the semaphore and woken by shutdown (a killed build freed a slot) must not
+      // spawn a new child after the close hook's one kill pass. THROW, never return: a resolved
+      // runBuild is indistinguishable from a completed build, and doGitDeploy would then "deploy" a tag
+      // that was never built and persist it as deployed. Throwing lands in doGitDeploy's catch, which
+      // emits git.deploy.failed and rmis the (nonexistent) tag — the correct disposition.
+      if (gitShuttingDown) throw new Error('daemon shutting down; build not started')
+      const call = dockerCall(spec.args, { env: spec.env })
+      activeGitBuilds.add(call)
+      let timedOut = false
+      const timer = setTimeout(() => { timedOut = true; call.kill() }, GIT_BUILD_TIMEOUT_MS)
+      try { await call.done } catch (e) { throw timedOut ? new Error(`build exceeded ${GIT_BUILD_TIMEOUT_MS / 1000}s and was terminated`) : e } finally { clearTimeout(timer); activeGitBuilds.delete(call) }
+    } finally { release() }
+  }
+  /** Reclaim a binding's superseded build images, keeping `keep` (the tag currently deployed, or null
+   *  to try them all). `docker rmi` refuses an image a running container still uses, so the live one
+   *  is never removed even if two bindings' short tag prefixes collide. Best-effort: never throws. */
+  const pruneBuildImages = async (repo: string, keep: string | null): Promise<void> => {
+    try {
+      const out = (await docker(['images', repo, '--format', '{{.Repository}}:{{.Tag}}'])).toString()
+      for (const t of out.split('\n').map((s) => s.trim())) {
+        if (!t || t === keep || t.endsWith(':<none>')) continue
+        try { await docker(['rmi', t]) } catch { /* in use, or already gone */ }
+      }
+    } catch { /* listing failed; skip */ }
+  }
+
+  /** Build the commit and redeploy the group. Governance and staleness are checked for a webhook
+   *  push (the connect build is already authorized by its route); the build is re-validated under the
+   *  service lock by deployFromGit, so a target removed/renamed mid-build never deploys. Emits git.*
+   *  events (visible in `insta events`) and never throws. */
+  const doGitDeploy = async (bindingId: string, job: GitJob): Promise<void> => {
+    const { sha, ts, webhook } = job
+    const st0 = loadState()
+    const rec = st0.gitBindings?.[bindingId]
+    if (!rec) return
+    const branch0 = Object.values(st0.branches).find((b) => b.id === rec.branchId)
+    if (!branch0 || !branch0.apps?.[rec.group]) return
+    const branchName = branch0.name
+    if (webhook) {
+      // A push auto-deploys only when the project's deploy policy is `allow`. A webhook cannot take
+      // part in an interactive approval, so `approval_required` (and `deny`) hold the push instead of
+      // deploying — recorded as an event; the operator deploys the commit manually or sets the policy
+      // to `allow`. effectivePolicy is a pure read: it never creates a pending approval (which a
+      // webhook could never resume), so there is no lost-work or double-approval hazard.
+      const policy = govern.effectivePolicy(rec.projectId).deploy
+      if (policy !== 'allow') {
+        engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.blocked', { group: rec.group, sha: sha ?? null, reason: policy === 'deny' ? 'deploy denied by policy' : 'push-to-deploy needs an "allow" deploy policy; deploy this commit manually or change the policy' })
+        return
+      }
+      // Reject a redelivered or out-of-order push: the same commit already deployed, or a commit whose
+      // (clamped) ordering key is not newer than the last one deployed. `<=`, not `<`: two commits that
+      // share a one-second timestamp must not both win, and `ts` is already clamped to arrival time so
+      // a future/missing timestamp can never appear "newest" and wedge the binding.
+      const last = rec.binding
+      if ((sha && last.lastDeployedSha === sha) || (ts !== undefined && last.lastDeployedAt !== undefined && ts <= last.lastDeployedAt)) {
+        engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.skipped', { group: rec.group, sha: sha ?? null, reason: 'stale push (already deployed or not newer than the current deployment)' })
+        return
+      }
+    }
+    if (gitShuttingDown) return // the daemon is closing; don't start a new build the shutdown can't drain
+    const tag = imageTag(bindingId, sha)
+    engine.emit(rec.projectId, branchName, 'resource', 'git.build', { repo: `${rec.binding.owner}/${rec.binding.repo}`, group: rec.group, sha: sha ?? null })
+    try {
+      // Pin the checkout to the pushed commit SHA (webhook) or the ref (initial connect). The PAT is
+      // handed to BuildKit as the GIT_AUTH_TOKEN env-secret, never on the command line. No mergeStderr:
+      // BuildKit logs the failure reason to stderr, and only when stderr is NOT merged does docker()
+      // fold it into the rejection — so a failed build's git.deploy.failed event carries a real reason.
+      const spec = dockerBuildSpec(rec.binding, tag, sha ?? rec.binding.ref)
+      await runBuild(spec)
+      // deployFromGit re-validates the binding + existing group and preserves its configured port,
+      // all under the service lock, so a target removed during the build is not re-materialised and a
+      // non-8080 service is not reset to 8080. null => the target is gone; do not deploy.
+      const res = await engine.deployFromGit(rec.projectId, rec.branchId, rec.group, bindingId, tag)
+      if (!res) {
+        // The image we just built is not deployed anywhere: drop it so a removed target does not leak one.
+        try { await docker(['rmi', tag]) } catch { /* already gone */ }
+        engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.skipped', { group: rec.group, sha: sha ?? null, reason: 'binding or service removed during build' })
+        return
+      }
+      // Record what we deployed AND when: the ordering guard above reads these back.
+      if (webhook && sha) mutate((st) => { const r = st.gitBindings?.[bindingId]; if (r) { r.binding.lastDeployedSha = sha; if (ts !== undefined) r.binding.lastDeployedAt = ts } })
+      engine.emit(rec.projectId, res.branch, 'resource', 'git.deploy', { group: rec.group, image: tag, sha: sha ?? null, port: res.port })
+      // Reclaim this binding's now-superseded images (keep the one just deployed). Every push mints a
+      // new tag, so without this the daemon's disk grows without bound (a real failure, seen in the wild).
+      // BuildKit's build CACHE (git sources + layers) is separate and NOT reclaimed here: a coarse
+      // prune of the default builder would evict unrelated workloads' cache, so a dedicated builder
+      // with its own GC policy is tracked as a follow-up (#166); operators can `docker builder prune`.
+      await pruneBuildImages(tag.split(':')[0], tag)
+    } catch (e) {
+      // A build that produced an image but never deployed leaves an unused tag behind; drop it.
+      try { await docker(['rmi', tag]) } catch { /* build may have failed before any image existed */ }
+      engine.emit(rec.projectId, branchName, 'resource', 'git.deploy.failed', { group: rec.group, sha: sha ?? null, error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
+  /** Kick off (or coalesce into) a build for a binding. Detached, so the webhook answers fast. */
+  const runGitDeploy = (bindingId: string, job: GitJob): void => {
+    if (gitShuttingDown) return // no new dispatch once the daemon is closing
+    const q = gitBuilds.get(bindingId) ?? { running: false, next: null, done: null }
+    gitBuilds.set(bindingId, q)
+    // Coalesce by commit time, not arrival order: keep the pending job with the newest ts, so a
+    // delayed older push does not become the one that runs after the current build finishes.
+    if (q.running) { if (!q.next || (job.ts ?? 0) >= (q.next.ts ?? 0)) q.next = job; return }
+    q.running = true
+    // The runner NEVER rejects: settleGit awaits q.done from DELETE/rebind, so a rejection would turn
+    // an unexpected build error into a 500 (or an unhandled rejection). doGitDeploy has its own
+    // build/deploy try; catch here covers a throw from a state read/emit BEFORE it, clears the pending
+    // job, and lets finally drain the queue so the binding is never wedged.
+    q.done = (async () => {
+      try {
+        let cur: GitJob | null = job
+        // Stop consuming jobs once shutdown starts, so app.close() cannot leave a new build running
+        // past the daemon restart.
+        while (cur && !gitShuttingDown) { await doGitDeploy(bindingId, cur); cur = gitShuttingDown ? null : q.next; q.next = null }
+      } catch (e) {
+        q.next = null
+        console.warn(`git build runner for ${bindingId} failed: ${e instanceof Error ? e.message : String(e)}`)
+      } finally {
+        q.running = false
+        // Drop the idle queue so repeated bind/delete/rebind cannot leak Map entries; the get, the
+        // !next check and the delete all run synchronously here, so nothing can re-arm q in between.
+        if (gitBuilds.get(bindingId) === q && !q.next) gitBuilds.delete(bindingId)
+      }
+    })()
+  }
+
+  app.post('/projects/:id/services/:sid/git', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    if (!gated(id, 'deploy', reply)) return reply
+    const t = gitTarget(req)
+    if (!t) return reply.code(404).send({ error: 'no such compute service on that branch' })
+    // Attach to an existing compute group so the redeploy reuses its port (deploy it once first).
+    if (!t.branch.apps?.[t.group]) return reply.code(400).send({ error: `no compute service "${t.group}" on ${t.branch.name}; deploy it once first, then connect the repo` })
+    const body = (req.body ?? {}) as { repo?: unknown; ref?: unknown; token?: unknown }
+    let owner: string, repoName: string, ref: string
+    try { const p = parseRepo(body.repo); owner = p.owner; repoName = p.repo; ref = normalizeRef(body.ref) }
+    catch (e) { return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) }) }
+    const token = typeof body.token === 'string' ? body.token.trim() : ''
+    const rec: GitBindingRecord = { binding: newBinding(owner, repoName, ref, token, Date.now()), projectId: id, branchId: t.branch.id, branchName: t.branch.name, group: t.group }
+    // Any binding this replaces: remove it, then wait for its in-flight build to settle before the new
+    // one starts, so the old repository cannot deploy over the new binding after it is exposed.
+    const replaced: string[] = []
+    mutate((s) => {
+      s.gitBindings ??= {}
+      for (const [k, v] of Object.entries(s.gitBindings)) if (v.projectId === id && v.branchId === t.branch.id && v.group === t.group) { replaced.push(k); delete s.gitBindings[k] }
+      s.gitBindings[rec.binding.id] = rec
+    })
+    await Promise.all(replaced.map(settleGit))
+    runGitDeploy(rec.binding.id, { webhook: false }) // the initial build; already authorized by the gate above
+    const webhookUrl = `${cfg.apiUrl.replace(/\/+$/, '')}/webhooks/git/${rec.binding.id}`
+    return reply.code(202).send({
+      ok: true, binding: bindingOut(rec),
+      webhook: { url: webhookUrl, secret: rec.binding.webhookSecret, contentType: 'application/json', events: ['push'] },
+      note: `add this webhook to the repo (Settings > Webhooks, content type application/json); a push to ${ref} rebuilds and redeploys. The first build is running now.`,
+    })
+  })
+
+  app.get('/projects/:id/services/:sid/git', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    const t = gitTarget(req)
+    const rec = t ? findBinding(id, t.branch.id, t.group) : undefined
+    return rec ? { binding: bindingOut(rec) } : reply.code(404).send({ error: 'no repo connected to this service' })
+  })
+
+  app.delete('/projects/:id/services/:sid/git', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    if (!engine.getProject(id)) return reply.code(404).send({ error: 'project not found' })
+    if (!gated(id, 'deploy', reply)) return reply
+    const t = gitTarget(req)
+    const rec = t ? findBinding(id, t.branch.id, t.group) : undefined
+    if (!rec) return reply.code(404).send({ error: 'no repo connected to this service' })
+    // Remove the binding first (so no NEW build can start), then wait for any in-flight build to
+    // finish: a webhook cannot deploy after this route returns, and its own validated build has
+    // drained. deployFromGit re-checks the binding under the lock, so a build that has not yet
+    // reached that check simply skips.
+    mutate((s) => { if (s.gitBindings) delete s.gitBindings[rec.binding.id] })
+    await settleGit(rec.binding.id)
+    // Reclaim this binding's build images. The service keeps running after unbind, so its live image
+    // is in use and rmi skips it; only the superseded tags are removed.
+    await pruneBuildImages(imageTag(rec.binding.id).split(':')[0], null)
+    return { ok: true }
+  })
+
+  // The push webhook: OUTSIDE the auth guard (GitHub cannot present a token), verified by the
+  // per-binding HMAC over the raw body. Answers 202 at once and builds detached (GitHub's 10 s budget).
+  // A raised bodyLimit (default 1 MB) so a large-but-valid push is not 413'd before HMAC/branch
+  // filtering; kept modest because the raw body is buffered before the signature is checked.
+  app.post('/webhooks/git/:bindingId', { bodyLimit: 5 * 1024 * 1024 }, async (req, reply) => {
+    const { bindingId } = req.params as { bindingId: string }
+    const rec = loadState().gitBindings?.[bindingId]
+    if (!rec) return reply.code(404).send({ error: 'unknown webhook' })
+    const raw = (req as FastifyRequest & { rawBody?: string }).rawBody ?? ''
+    if (!verifySignature(rec.binding.webhookSecret, Buffer.from(raw, 'utf8'), req.headers['x-hub-signature-256'])) {
+      return reply.code(401).send({ error: 'signature mismatch' })
+    }
+    const event = req.headers['x-github-event']
+    if (event === 'ping') return { ok: true, pong: true }
+    const push = pushRef(event, req.body)
+    if (!push) return { ok: true, ignored: 'not a push to a branch' }
+    if (push.branch !== rec.binding.ref) return { ok: true, ignored: `push to ${push.branch}, tracking ${rec.binding.ref}` }
+    runGitDeploy(bindingId, { sha: push.sha, ts: push.ts, webhook: true })
+    return reply.code(202).send({ ok: true, building: push.sha })
+  })
+  // ---- end region G ----
 
   // ---- local dashboard: serve ui/dist when built (same origin as the API — localhost trust,
   // no CORS, no auth). API routes above always win; unknown non-API GETs fall back to the SPA.

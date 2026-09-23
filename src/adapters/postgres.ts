@@ -373,6 +373,7 @@ export async function pgRun(t: PgTarget, opts: { publishLoopback?: boolean; limi
 export async function pgWaitReady(container: string, timeoutMs = READY_TIMEOUT_MS, exec: DockerExec = docker): Promise<void> {
   const deadline = Date.now() + timeoutMs
   let last = ''
+  let settled = false
   for (;;) {
     try {
       await exec(['exec', container, 'pg_isready', '-h', '127.0.0.1', '-p', '5432', '-U', 'postgres', '-d', DB])
@@ -382,10 +383,22 @@ export async function pgWaitReady(container: string, timeoutMs = READY_TIMEOUT_M
       // exists because the image's initdb phase runs a temporary server on the unix socket while
       // the real one is still starting (#34), and "nothing came back" is exactly what that phase
       // looks like. Tests inject the `exec` seam instead of widening the production check.
-      if (out.split('\n')[0].trim() === '1') return
+      if (out.split('\n')[0].trim() === '1') {
+        // Settling re-verification: a cloned database doing crash recovery can briefly accept TCP
+        // connections then restart (the postgres entrypoint's init-time server, or a recovery redo).
+        // On slow CI runners the window between the first "ready" and the restart is wide enough for
+        // the caller's next query to land in the gap. A short settle catches that: if the server is
+        // still up after 250 ms it is past the restart window. If it dropped, the loop retries.
+        if (settled) return
+        settled = true
+        await sleep(250)
+        continue
+      }
       last = `select 1 answered ${JSON.stringify(out)}`
+      settled = false
     } catch (e) {
       last = firstLine(e)
+      settled = false
     }
     // A container dockerd cannot report on does NOT end the wait: `containerStatus` answers
     // `unreadable` there, which is neither exited nor gone, so the poll keeps going to its

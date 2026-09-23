@@ -17,6 +17,7 @@ import { QuickStart } from './pages/QuickStart'
 import { Setup } from './pages/Setup'
 import { Login } from './pages/Login'
 import { Tokens } from './pages/Tokens'
+import { DeviceApprove } from './pages/DeviceApprove'
 
 /** Lands on the first project's default branch (or an empty state if none exist yet). */
 function Home() {
@@ -99,6 +100,7 @@ export default function App() {
         <Route path="/setup" element={<Setup />} />
         <Route path="/login" element={<Login />} />
         <Route path="/account/tokens" element={<Tokens />} />
+        <Route path="/device" element={<DeviceApprove />} />
         <Route path="/p/:projectId" element={<ProjectIndex />} />
         <Route path="/p/:projectId/:branch" element={<ProjectShell />}>
           <Route index element={<Navigate to="services" replace />} />

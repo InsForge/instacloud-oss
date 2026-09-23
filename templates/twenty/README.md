@@ -89,12 +89,21 @@ never drains. The web service could sleep now that the worker owns the backgroun
 not because Twenty's cold boot is tens of seconds, which is how long the first request after an
 idle stop would wait.
 
+**Boot order.** The worker does not start until the web service passes the health check the
+manifest declares, which is upstream's `depends_on: server: service_healthy` and the only signal
+that the migrations and the workspace upgrades have finished. Until then it waits and logs; after
+ten minutes it exits so the machine restarts and waits again, because a worker consuming jobs
+against a half-migrated schema is worse than a late worker. The web service records the version
+setup last **completed** for, on its volume, and only after every step of that setup succeeded: a
+partial upgrade leaves no marker, so the next boot runs it again rather than skipping it forever.
+Cron registration runs on every boot, after the server answers, because it is idempotent and that
+is what makes it recover from a failed attempt or a Redis that lost the repeatables.
+
 **Boot times, measured on this template.** The first deploy takes about 40 seconds from container
 start to a healthy `/healthz`, most of it Twenty creating its schema and running every migration
-before the server can listen. A restart is about the same, minus the migrations: the image records
-the version setup last ran for on the volume and goes straight to the server when nothing has
-changed. While either is happening, a small listener holds port 3000 and answers 503, which is what
-stops the deploy's port probe from timing out.
+before the server can listen. A restart is about the same, minus the migrations, because the
+marker sends it straight to the server. While either is happening, a small listener holds port
+3000 and answers 503, which is what stops the deploy's port probe from timing out.
 
 These numbers move with the machine. An earlier build of this template measured 105 seconds on a
 slower run, which overran the platform's 90-second health gate and reported one of two services

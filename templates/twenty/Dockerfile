@@ -17,8 +17,11 @@
 # and clearing Twenty's example records used to be here too; both are gone, and the instance now
 # comes up the way upstream ships it, with sign-up open and the examples in place.
 #
-# No part of Twenty is rebuilt or repackaged: the upstream release tag is the base and
-# entrypoint.sh calls upstream's own /app/entrypoint.sh for setup and migrations.
+# No part of Twenty is rebuilt or repackaged: the upstream release tag is the base, and setup is
+# upstream's own `database:init:prod`, `upgrade`, `cache:flush` and `cron:register:all`, run by
+# entrypoint.sh in upstream's order. It runs them directly rather than through
+# /app/entrypoint.sh, which swallows their failures and exits 0, so a partial upgrade cannot be
+# told from a clean one. See the setup block there.
 
 # Declared before FROM so the tag is written once. Repeated after it because a build stage does
 # not inherit the pre-FROM ARG scope.

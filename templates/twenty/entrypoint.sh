@@ -13,38 +13,40 @@ twenty_version="$(cat /insta-twenty-version)"
 
 # ---------------------------------------------------------------------------------------------
 # The worker role. Nothing is routed to it and its health verdict is the machine's state, so the
-# only thing it has to get right is not dying before the server has made the schema.
+# only thing it has to get right is not consuming jobs before the server has finished the schema.
 # ---------------------------------------------------------------------------------------------
 if [ "${INSTA_TWENTY_ROLE}" = worker ]; then
-  # Both services are created at once and neither waits for the other, so on a first deploy this
-  # one would boot against a database with no `core` schema. Twenty reads its own configuration
-  # out of that schema (IS_CONFIG_VARIABLES_IN_DB_ENABLED defaults to true), so the process exits,
-  # the machine restarts it, and a crash loop through the first two minutes is a failed deploy of
-  # a template that is otherwise fine. Upstream's compose says the same thing as
-  # `depends_on: server: service_healthy`, which a manifest has no way to express.
+  # Upstream's compose starts its worker on `depends_on: server: service_healthy`, which a
+  # manifest has no way to express, so the wait is here. It polls the server's own health path,
+  # the same one the manifest declares, because that is the only signal that setup, the
+  # migrations and the workspace upgrades are all finished: the port is answered by a 503 holder
+  # until `node dist/main` takes it over, and `node dist/main` starts below the setup block.
   #
-  # `core.workspace` rather than the schema alone: the schema appears at the start of the
-  # migrations and this table is written by them, so it is the closer barrier. A DB probe rather
-  # than a request to SERVER_URL so the wait does not depend on the edge being reachable from
-  # here. Not under `set -e`, since a database still accepting no connections makes psql exit
-  # non-zero and that is a reason to wait rather than to die.
+  # A database probe is not enough, and probing `core.workspace` is what this used to do. That
+  # table exists on every boot after the first, so on an upgrade the wait returned at once and
+  # this worker consumed jobs against a schema the server was still migrating.
+  # A wall-clock deadline rather than an attempt count, because an attempt is a refused
+  # connection in milliseconds or a request that burns the whole --max-time, and counting turns
+  # would make the bound anything between ten minutes and half an hour.
+  deadline=$(($(date +%s) + 600))
   attempt=0
-  until [ "$(psql -tAc "SELECT to_regclass('core.workspace') IS NOT NULL" \
-        "${PG_DATABASE_URL}" 2>/dev/null)" = t ]; do
+  until curl -fs -o /dev/null --max-time 10 "${SERVER_URL}/healthz"; do
+    # Ten minutes, then exit rather than start anyway. The restart policy brings the container
+    # back and it waits again, so a migration slower than this costs a restart instead of a
+    # worker on a half-migrated schema, and a server that never becomes healthy shows up as a
+    # crash loop rather than as a worker that silently never started.
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      echo "worker: the server has not passed its health check in 10 minutes, restarting to wait again" >&2
+      exit 1
+    fi
+    # Every sixth turn, so roughly half a minute of waiting is one line rather than six.
+    if [ "$((attempt % 6))" -eq 0 ]; then
+      echo "worker: waiting for the twenty ${twenty_version} server to pass its health check"
+    fi
     attempt=$((attempt + 1))
-    # Ten minutes, as a backstop rather than a tuning knob. Past it the interesting error is the
-    # application's own, with its own message, rather than this script's silence.
-    if [ "$attempt" -ge 120 ]; then
-      echo "worker: no core schema after 10 minutes, starting anyway so the failure is twenty's own" >&2
-      break
-    fi
-    # Every sixth turn, so half a minute of waiting is one line rather than six.
-    if [ "$((attempt % 6))" -eq 1 ]; then
-      echo "worker: waiting for the server to create the schema for twenty ${twenty_version}"
-    fi
     sleep 5
   done
-  echo "worker: starting twenty ${twenty_version}'s queue worker"
+  echo "worker: the server is healthy, starting twenty ${twenty_version}'s queue worker"
   # The same two flags upstream's compose passes its worker, and the manifest sets them too. Kept
   # here as well so the image is correct whatever env it is handed.
   export DISABLE_DB_MIGRATIONS=true DISABLE_CRON_JOBS_REGISTRATION=true
@@ -63,16 +65,13 @@ holder_pid=$!
 # Everything between here and `node dist/main` is on the deploy's 90-second health gate, because
 # Twenty does not listen until its schema exists. Three cases, doing as little as each one allows:
 #
-#   marker present   nothing. The marker records the version setup last ran for, read from the
-#                    file the Dockerfile writes out of its own FROM tag so a base-image bump
+#   marker present   nothing. The marker records the version setup last COMPLETED for, read from
+#                    the file the Dockerfile writes out of its own FROM tag so a base-image bump
 #                    cannot forget to invalidate it. It lives on the volume beside the uploads,
 #                    and losing the volume costs one idempotent re-run.
 #   no core schema   the migrations only. See the branch.
-#   otherwise        upstream's own entrypoint, which is the path its extra steps exist for: a
-#                    schema written by an older image. `true` is the argument it execs, because
-#                    this script starts the server itself.
+#   otherwise        the upgrade upstream runs on a schema an older image wrote. See the branch.
 setup_marker="/data/.twenty-setup-${twenty_version}"
-register_cron=no
 
 if [ -f "$setup_marker" ]; then
   echo "entrypoint: database already set up for twenty ${twenty_version}, going straight to the server"
@@ -80,22 +79,37 @@ elif [ "$(psql -tAc \
       "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'core')" \
       "${PG_DATABASE_URL}")" = f ]; then
   # A database with no `core` schema at all: the migrations below create it AT THIS IMAGE'S
-  # VERSION, so the three steps upstream's entrypoint runs after them have nothing to find. The
-  # upgrade command walks workspaces and there are none, and the two cache flushes clear a redis
-  # nothing has written to yet. They are not free: each is a whole Nest context, 18 of the 105
-  # seconds a first boot measured, against a 90-second health gate. The full upstream path still
-  # runs below whenever there IS a schema, which is the case those three steps exist for.
+  # VERSION, so the three steps in the other branch have nothing to find. The upgrade command
+  # walks workspaces and there are none, and the two cache flushes clear a redis nothing has
+  # written to yet. They are not free: each is a whole Nest context, 18 of the 105 seconds a
+  # first boot measured, against a 90-second health gate.
+  #
+  # `set -e` is what guards the marker here: a failed init kills this script before the touch.
   echo "entrypoint: empty database, creating the schema for twenty ${twenty_version}"
   yarn database:init:prod
   touch "$setup_marker"
-  register_cron=yes
 else
-  echo "entrypoint: running upstream setup and migrations for twenty ${twenty_version}"
-  # Cron registration is upstream's last setup step and the slowest thing standing between here
-  # and a listening server, so it is deferred to below where it happens after the server is up.
-  DISABLE_CRON_JOBS_REGISTRATION=true /app/entrypoint.sh true
-  touch "$setup_marker"
-  register_cron=yes
+  # The three steps upstream's own entrypoint runs on an existing schema, run here rather than by
+  # calling /app/entrypoint.sh, because that wrapper turns each of their failures into a warning
+  # and still exits 0. Staying up after a partial upgrade is upstream's call and it is kept: the
+  # server still starts, and a CRM that serves most of its workspaces beats one that will not
+  # boot. What cannot be kept is recording that as done. The marker is written only when all
+  # three succeeded, so a transient failure is retried on the next boot instead of being skipped
+  # for the life of this image.
+  #
+  # `node dist/command/command` is exactly what `yarn command:prod` runs, without the extra yarn
+  # process. Cron registration is upstream's next step and the slowest thing standing between
+  # here and a listening server, so it is not here: post_boot runs it after the server answers.
+  echo "entrypoint: upgrading an existing schema to twenty ${twenty_version}"
+  setup_ok=yes
+  node dist/command/command cache:flush || setup_ok=no
+  node dist/command/command upgrade     || setup_ok=no
+  node dist/command/command cache:flush || setup_ok=no
+  if [ "$setup_ok" = yes ]; then
+    touch "$setup_marker"
+  else
+    echo "entrypoint: the upgrade did not finish cleanly, so the next boot runs it again" >&2
+  fi
 fi
 
 # Hand the port over. The real server needs a few seconds to bind after this, and a refused
@@ -115,15 +129,16 @@ server_pid=$!
 # booting is time the health gate is counting. It is not what the gate probes, so it waits for the
 # server to answer first.
 post_boot() {
-  until curl -fsS -o /dev/null "http://127.0.0.1:${NODE_PORT}/healthz"; do sleep 1; done
-  # Deferred from the setup block. The jobs are BullMQ repeatables in the managed redis, which
-  # outlives both compute services, so this only has to run when setup did. The `jobs` worker is
-  # what executes them. Non-fatal: a failure costs the periodic syncs, not the CRM, and upstream's
-  # own entrypoint treats it the same way.
-  if [ "$register_cron" = yes ]; then
-    node dist/command/command cron:register:all \
-      || echo "entrypoint: cron registration failed, sync jobs will not run until the next boot" >&2
-  fi
+  until curl -fs -o /dev/null "http://127.0.0.1:${NODE_PORT}/healthz"; do sleep 1; done
+  # Every boot, which is what upstream's entrypoint does too, and not only the boots that ran
+  # setup. The jobs are BullMQ repeatables in the managed redis and registering them is
+  # idempotent, so a boot after a failed registration, or after the redis lost them, puts them
+  # back; keying it on "setup ran" is what made the old failure message untrue, because the
+  # marker was already written and the next boot skipped registration for good. The `jobs` worker
+  # is what executes them. Non-fatal: a failure costs the periodic syncs, not the CRM, and
+  # upstream's own entrypoint treats it the same way.
+  node dist/command/command cron:register:all \
+    || echo "entrypoint: cron registration failed, the next boot will try again" >&2
   # Says which of the two states the instance came up in, because they look identical from the
   # outside and only one of them still has an account to claim. Read rather than assumed: a
   # restart of a CRM in use must not print an invitation that is no longer true.

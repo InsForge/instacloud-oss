@@ -43,9 +43,9 @@ export GITEA__service__REQUIRE_SIGNIN_VIEW="${REQUIRE_SIGNIN_VIEW:-true}"
 # /data/gitea is the image's GITEA_CUSTOM; spelled out because the manifest does not declare it.
 mkdir -p /data/gitea/conf /data/gitea/log /data/git
 cd /app/gitea
-# Sourced with -e and -u OFF, which is how upstream's own s6 run script invokes it. It reads a
-# bare $INSTALL_LOCK with no default, unbound here because this template fixes that setting
-# through the GITEA__ form instead, and -u would abort on it; and its `chown -R` over the whole
+# Sourced with -e and -u OFF, which is how upstream's own s6 run script invokes it. It reads
+# INSTALL_LOCK with no default, unbound here because this template fixes that setting through
+# the GITEA__ form instead, and -u would abort on it; and its `chown -R` over the whole
 # volume is allowed to report a straggler on a later boot without taking the container down.
 # What the script had to achieve is asserted straight afterwards instead.
 set +eu

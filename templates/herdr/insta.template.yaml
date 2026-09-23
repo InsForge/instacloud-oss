@@ -18,11 +18,16 @@ services:
     # ttyd's own port and path. herdr speaks no HTTP at all: its API is a unix socket and its
     # interface is a TUI, so ttyd is what answers this gate and what the browser reaches.
     healthcheck: /
-    # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works (hermes and n8n
-    # cannot). Costs a ~25s cold boot, and a box left running with no browser is stopped.
-    # Consequence worth knowing, and it is upstream's own model too: panes keep running while the
-    # machine is up, and an idle stop ends the processes. herdr restores the saved layout on the
-    # next attach; the processes that were in it do not come back (herdr.dev/docs/session-state).
+    # Stated, not left out. Omitting alwaysOn does not mean scale-to-zero: a deploy of this
+    # template with the key absent came back `always_on: true` and billed around the clock. The
+    # browser reaches this service INBOUND, so wake-on-request genuinely works here and the field
+    # is a real choice rather than a formality.
+    # What false costs: a cold boot on the first request after an idle stop, and the panes that
+    # were running do not come back. herdr restores the saved layout on the next attach; the
+    # processes that were in it do not (herdr.dev/docs/session-state). An agent left working in a
+    # detached pane therefore survives a closed tab but not an idle stop. Set this to true for a
+    # box that is meant to keep working while nobody is watching.
+    alwaysOn: false
     volume: true  # mounts at /data
     env:
       fixed:

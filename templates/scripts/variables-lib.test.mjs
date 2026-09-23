@@ -119,7 +119,7 @@ describe('every variable an entrypoint reads is declared by its manifest', () =>
     // Guards the guard: if entrypoints move or get renamed, the cases below would silently
     // become an empty suite that passes forever. 9router and openclaw ship one while requiring no
     // credential at all, which is the case the per-template check below has to stay honest about.
-    expect(withEntrypoint.map((t) => t.dir).sort()).toEqual(['9router', 'claude-code', 'codex', 'dsh', 'hermes', 'laya', 'openclaw', 'pi']);
+    expect(withEntrypoint.map((t) => t.dir).sort()).toEqual(['9router', 'claude-code', 'codex', 'dsh', 'hermes', 'laya', 'openclaw', 'pi', 'twenty']);
   });
 
   it.each(withEntrypoint)('$dir', ({ dir, manifest }) => {

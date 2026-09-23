@@ -99,7 +99,9 @@ test('GET /templates lists the bundled non-draft codes with every list field typ
   expect(r.statusCode).toBe(200)
   expect(r.headers['cache-control']).toBe('public, max-age=300')
   const { templates, hostArchitecture } = r.json()
-  // openclaw declares meta.draft, so it is not in the listing.
+  // openclaw declares meta.draft, so it is not in the listing. twenty is absent for a different
+  // reason: it declares a managed `redis` service, which this runtime's manifest parser does not
+  // know yet, so the catalog warns and skips it. Cloud-only until src/ learns the type.
   expect(templates.map((t: { code: string }) => t.code)).toEqual(['9router', 'claude-code', 'codex', 'dsh', 'hermes', 'laya', 'n8n', 'pi'])
   const n8n = templates.find((t: { code: string }) => t.code === 'n8n')
   expect(n8n).toMatchObject({

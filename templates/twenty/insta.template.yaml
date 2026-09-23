@@ -1,0 +1,134 @@
+code: twenty
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+upstream:
+  repo: twentyhq/twenty
+  image: docker.io/twentycrm/twenty
+  pinned: v2.41.0
+  # AGPL-3.0-only for the codebase this image is built from. A handful of files carry an
+  # `@license Enterprise` header and a separate commercial license; none of them are enabled here
+  # (IS_BILLING_ENABLED is off and no enterprise key is set).
+  license: AGPL-3.0-only
+
+# Both are env-only on Twenty's side and neither has any reason to be read back: APP_SECRET signs
+# tokens and ENCRYPTION_KEY encrypts stored third-party credentials. A `required:` variable would
+# be stored write-only and lost, which is the trap n8n's encryption key documents. Declared once
+# here so the server and the worker are handed the SAME values: a row one of them encrypts is a
+# row the other has to be able to read.
+generated:
+  app_secret: secret:64
+  encryption_key: secret:64
+
+services:
+  # Both bare on purpose: the platform owns a managed datastore's image, port, version, sizing and
+  # credentials. Two of them, so a deploy of this template costs two platform volumes on top of
+  # the two the compute services below mount.
+  db:
+    type: postgres
+
+  # Twenty hardcodes the BullMQ queue driver (message-queue.module-factory.ts sets it with no
+  # config variable in front of it) and REDIS_URL carries no default, so this is not optional and
+  # not swappable for postgres-backed queues.
+  cache:
+    type: redis
+
+  crm:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/twenty:1.0.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 3000
+    healthcheck: /healthz     # Twenty's own liveness route, the one upstream's compose probes
+    # Not about background work any more: the `jobs` worker below owns every scheduled and queued
+    # job, so nothing in this process needs to be awake with nobody watching. It is about the cold
+    # boot. Twenty takes tens of seconds to build its Nest context before it answers at all, so
+    # the first request to a machine that has been idle-stopped waits that long. Cost against
+    # first-request latency, and the README says so.
+    alwaysOn: true
+    # Uploaded attachments and workspace logos (STORAGE_LOCAL_PATH). The records themselves are in
+    # the managed postgres and the queues are in the managed redis.
+    volume: true
+    env:
+      fixed:
+        # One image, two roles. A manifest cannot set a container command and upstream ships the
+        # server and the worker as the same image started differently, so entrypoint.sh branches
+        # on this. See the Dockerfile.
+        INSTA_TWENTY_ROLE: server
+        NODE_PORT: "3000"
+        # The managed redis lane picks the database out of the TLS handshake's server name, and
+        # neither redis client Twenty builds sends one: both are constructed from REDIS_URL alone
+        # and expose no TLS option. Without this the connection is opened and silently dropped,
+        # with no error on either side, and the first migration waits on it forever. See sni.cjs,
+        # which fills the name in and does nothing else.
+        NODE_OPTIONS: --require /insta-sni.cjs
+        # Twenty builds invite links, email links and its own CORS origin from this, so it has to
+        # be the public URL rather than localhost.
+        SERVER_URL: ${services.crm.url}
+        STORAGE_TYPE: local
+        STORAGE_LOCAL_PATH: /data/storage
+        # The managed postgres lane terminates TLS with the platform's own certificate, which the
+        # node pg client will not chain by default; without this the first connection fails
+        # `self-signed certificate in certificate chain` and the deploy looks like a crash loop.
+        PG_SSL_ALLOW_SELF_SIGNED: "true"
+      platform:
+        PG_DATABASE_URL: ${{services.db.DATABASE_URL}}
+        REDIS_URL: ${{services.cache.REDIS_URL}}
+      generated:
+        APP_SECRET: ${app_secret}
+        ENCRYPTION_KEY: ${encryption_key}
+      # No `required:` and no `optional:`. The template asks for nothing at the deploy prompt,
+      # because Twenty has no admin-credential variable and this template no longer invents one:
+      # the instance comes up with upstream's own welcome page open (`isSignUpEnabled` is
+      # `IS_MULTIWORKSPACE_ENABLED || workspaceCount === 0`, and there is no workspace yet) and
+      # whoever opens the URL first signs up, names the workspace and becomes its admin. That is
+      # also what closes sign-up, so hand the URL over before you publish it.
+
+  # Twenty's BullMQ consumer, the second half of upstream's compose. Every scheduled and queued job
+  # runs here: workflow executions, CSV imports, message and calendar sync, outbound email, the
+  # cron jobs the server registers. Without it they are enqueued into the managed redis and never
+  # picked up, which looks like a CRM where automations silently do nothing.
+  jobs:
+    type: worker
+    # The same overlay image as the web service, told to be the worker by INSTA_TWENTY_ROLE.
+    image: ghcr.io/insforge/insta-oss/templates/twenty:1.0.0
+    # Not a choice: a worker is portless, so nothing is routed to it and no request could ever
+    # wake it. A sleeping queue consumer is a queue that never drains.
+    alwaysOn: true
+    # Jobs that stage files (CSV import, attachment processing) write under STORAGE_LOCAL_PATH.
+    # This is NOT the web service's disk, see the README's Scope for what that costs and how S3
+    # fixes it.
+    volume: true
+    env:
+      fixed:
+        INSTA_TWENTY_ROLE: worker
+        # Same reason as the web service above, and more load-bearing here: a queue consumer that
+        # cannot reach redis is a worker that looks healthy and drains nothing.
+        NODE_OPTIONS: --require /insta-sni.cjs
+        SERVER_URL: ${services.crm.url}
+        STORAGE_TYPE: local
+        STORAGE_LOCAL_PATH: /data/storage
+        PG_SSL_ALLOW_SELF_SIGNED: "true"
+        # Both already happen on the web service, and two processes migrating one database at the
+        # same time is how the metadata cache ends up half written. Upstream's compose passes the
+        # same two to its worker for the same reason.
+        DISABLE_DB_MIGRATIONS: "true"
+        DISABLE_CRON_JOBS_REGISTRATION: "true"
+      platform:
+        PG_DATABASE_URL: ${{services.db.DATABASE_URL}}
+        REDIS_URL: ${{services.cache.REDIS_URL}}
+      generated:
+        APP_SECRET: ${app_secret}
+        ENCRYPTION_KEY: ${encryption_key}
+
+meta:
+  name: Twenty
+  tagline: Open-source CRM for contacts, companies and deals
+  category: crm
+  tags: [crm, business]
+  # The upstream index for v2.41.0 carries both, and this image only adds shell and node scripts
+  # on top of it.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/twentyhq/twenty
+    documentation: https://twenty.com/developers/section/self-hosting

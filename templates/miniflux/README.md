@@ -49,8 +49,9 @@ terminated at the edge, so saying so is what marks the session cookie `Secure`),
 service's own URL, used for the absolute links the app generates) and `LISTEN_ADDR`.
 
 The service listens on port 8080 and is health-checked on `/healthcheck`, which is the app's own
-readiness probe: 200 once it can reach the database, 503 while it cannot. `/` is a 302 to the login
-page and would never satisfy the gate.
+readiness probe: 200 once it can reach the database, 503 while it cannot. `/` is not used for this.
+It renders the login page and answers 200 whether or not the database is reachable, so it would
+report healthy on a deploy that cannot serve a single feed.
 
 It is declared `alwaysOn: true`. The feed scheduler fires from inside the process, so a machine
 that had scaled to zero would never wake to refresh a feed. That bills continuously.

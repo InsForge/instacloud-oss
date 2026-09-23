@@ -21,8 +21,10 @@ services:
     type: web
     image: docker.io/miniflux/miniflux:2.3.3
     port: 8080
-    # `/` answers 302 to /login and never satisfies the deploy health gate. /healthcheck is the
-    # app's own readiness probe: 200 once it can ping the database, 503 while it cannot.
+    # Not `/`: that renders the login page and answers 200 whether or not the database is
+    # reachable, so it would report healthy on a deploy that cannot serve a single feed.
+    # /healthcheck is the app's own readiness probe and pings the database: 200 when it answers,
+    # 503 when it does not.
     healthcheck: /healthcheck
     # The feed scheduler fires from inside the process on POLLING_FREQUENCY, so an idle machine
     # would never wake to refresh a feed. Same case as n8n's schedule triggers.

@@ -15,7 +15,10 @@ multi-step tasks in the same session.
 The image is built from the Dockerfile in this directory: `node:24-bookworm-slim` (pinned by
 digest) plus [ttyd](https://github.com/tsl0922/ttyd) 1.7.7 (verified against a pinned SHA-256) and
 `@anthropic-ai/claude-code` pinned to an exact version. Nothing floats on `latest`, so a restart
-gives you the same environment.
+gives you the same environment. ttyd carries one patch: its startup log prints `credential: **`
+instead of your sign-in encoded in base64, so reading the service's logs does not reveal the
+terminal password. Versions before 0.8.3 logged it on every start, and upgrading does not remove
+those lines from the log history: if you ran one, set a new `ADMIN_PASSWORD` before you upgrade.
 
 ## What you get by hosting it
 

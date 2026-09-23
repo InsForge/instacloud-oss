@@ -1,0 +1,75 @@
+code: miniflux
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/instacloud-oss
+
+# The official image, unmodified: upstream's Dockerfile is a bare `CMD ["/usr/bin/miniflux"]` with
+# no entrypoint script and no fixed data path, so there is nothing here to patch.
+upstream:
+  repo: miniflux/v2
+  image: docker.io/miniflux/miniflux
+  pinned: "2.3.3"
+  license: Apache-2.0
+
+services:
+  # Miniflux keeps everything in Postgres: users, feeds, entries, favicons and sessions. There is
+  # no second store and no local state, which is why the web service declares no volume.
+  db:
+    type: postgres
+
+  miniflux:
+    type: web
+    image: docker.io/miniflux/miniflux:2.3.3
+    port: 8080
+    # `/` answers 302 to /login and never satisfies the deploy health gate. /healthcheck is the
+    # app's own readiness probe: 200 once it can ping the database, 503 while it cannot.
+    healthcheck: /healthcheck
+    # The feed scheduler fires from inside the process on POLLING_FREQUENCY, so an idle machine
+    # would never wake to refresh a feed. Same case as n8n's schedule triggers.
+    alwaysOn: true
+    env:
+      fixed:
+        LISTEN_ADDR: 0.0.0.0:8080
+        # Used for absolute links the app generates (the PWA manifest, OPML, share URLs).
+        BASE_URL: ${services.miniflux.url}
+        # TLS is terminated at the edge, so the app never sees https itself. Saying so marks the
+        # session cookie Secure, which is what the browser's side of the connection actually is.
+        HTTPS: "1"
+        # Miniflux owns its schema and migrates on boot; without this it refuses to start against
+        # an empty database.
+        RUN_MIGRATIONS: "1"
+        # Seeds the first user from the two variables below on the first boot only. Later boots
+        # find the account already there and leave it alone.
+        CREATE_ADMIN: "1"
+      platform:
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
+      required:
+        ADMIN_USERNAME:
+          description: Username for the first Miniflux account, created on first boot
+        ADMIN_PASSWORD:
+          # Deliberately neither `default:` nor `generate:`: a template variable is stored
+          # write-only, so a generated password would be one nobody could ever read back.
+          description: "Password for the first Miniflux account. Miniflux rejects anything shorter than 6 characters"
+      optional:
+        POLLING_FREQUENCY:
+          description: "Minutes between automatic feed refreshes. Upstream's default is 60; this is a server-wide setting with no equivalent in the app's UI"
+        CLEANUP_ARCHIVE_READ_DAYS:
+          description: "Days a read entry is kept before it is archived. Upstream's default is 60, and -1 keeps everything"
+
+meta:
+  name: Miniflux
+  tagline: Minimalist feed reader with a REST API
+  # Draft: the closed category set is ai-agent, llm and automation, and a feed reader is none of
+  # them. `automation` is the nearest fit because the scheduler is what runs unattended, but the
+  # category is a call for a human, so this stays out of the gallery until one makes it.
+  draft: true
+  category: automation
+  tags: [automation, rss]
+  # Upstream publishes an index carrying linux/amd64 and linux/arm64 (plus arm/v6, arm/v7 and
+  # riscv64). Nothing is rebuilt here, so this is upstream's list narrowed to the two the
+  # platform runs.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/miniflux/v2
+    documentation: https://miniflux.app/docs/

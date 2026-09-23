@@ -70,14 +70,14 @@ is built and ready before the URL is handed to you rather than half-made until s
 Set by the template, not by you: `NODE_PORT=3000`, `SERVER_URL` resolved to the web service's own
 HTTPS URL, `STORAGE_TYPE=local`, `STORAGE_LOCAL_PATH=/data/storage`,
 `PG_SSL_ALLOW_SELF_SIGNED=true` for the managed database's TLS lane,
-`NODE_OPTIONS=--require /insta-sni.js` for the managed Redis's (see below), and
+`NODE_OPTIONS=--require /insta-sni.cjs` for the managed Redis's (see below), and
 `INSTA_TWENTY_ROLE`, which is the one thing that differs between the two compute services.
 
 **Why the Redis connection needs a preload.** The managed Redis lane puts many databases behind one
 TLS port and picks yours out of the handshake's server name. Twenty builds both of its Redis
 clients from `REDIS_URL` alone, with no TLS options and no setting to add any, so neither sends
 that name: the connection is opened, silently dropped, and retried forever with nothing logged. The
-image ships a nine-line `sni.js` that fills the name in on outbound TLS connections that left it
+image ships a nine-line `sni.cjs` that fills the name in on outbound TLS connections that left it
 blank, and `NODE_OPTIONS` preloads it. It changes nothing else, and it is the only reason this
 template can use a managed Redis at all.
 

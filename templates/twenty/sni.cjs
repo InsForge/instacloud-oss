@@ -9,7 +9,7 @@
 // hand a `rediss://` URL to their library and pass no TLS options at all:
 // `RedisClientService` does `new IORedis(redisUrl, { maxRetriesPerRequest: null })` and the
 // cache-storage factory does `createClient({ url: redisUrl })`. Neither exposes a knob for it, so
-// this is preloaded with `NODE_OPTIONS=--require /insta-sni.js` instead, set in the manifest on
+// this is preloaded with `NODE_OPTIONS=--require /insta-sni.cjs` instead, set in the manifest on
 // both the server and the worker.
 //
 // Measured before and after on the deployed container, with Twenty's own clients: without this,

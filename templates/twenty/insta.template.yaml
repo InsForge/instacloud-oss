@@ -58,9 +58,9 @@ services:
         # The managed redis lane picks the database out of the TLS handshake's server name, and
         # neither redis client Twenty builds sends one: both are constructed from REDIS_URL alone
         # and expose no TLS option. Without this the connection is opened and silently dropped,
-        # with no error on either side, and the first migration waits on it forever. See sni.js,
+        # with no error on either side, and the first migration waits on it forever. See sni.cjs,
         # which fills the name in and does nothing else.
-        NODE_OPTIONS: --require /insta-sni.js
+        NODE_OPTIONS: --require /insta-sni.cjs
         # Twenty builds invite links, email links and its own CORS origin from this, so it has to
         # be the public URL rather than localhost.
         SERVER_URL: ${services.crm.url}
@@ -123,7 +123,7 @@ services:
         INSTA_TWENTY_ROLE: worker
         # Same reason as the web service above, and more load-bearing here: a queue consumer that
         # cannot reach redis is a worker that looks healthy and drains nothing.
-        NODE_OPTIONS: --require /insta-sni.js
+        NODE_OPTIONS: --require /insta-sni.cjs
         SERVER_URL: ${services.crm.url}
         STORAGE_TYPE: local
         STORAGE_LOCAL_PATH: /data/storage

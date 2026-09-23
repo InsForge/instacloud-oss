@@ -17,7 +17,7 @@
 #      clear-sample-data.sql, and SAMPLE_DATA in the manifest to keep them.
 #   5. SNI on the Redis connection. The managed Redis lane selects the database from the TLS
 #      handshake and Twenty's two Redis clients never send a server name, so both connections are
-#      opened and silently dropped. See sni.js, which is preloaded through NODE_OPTIONS.
+#      opened and silently dropped. See sni.cjs, which is preloaded through NODE_OPTIONS.
 #
 # Redis used to be in this list, started on loopback because a manifest could not declare one. It
 # is a managed `cache` service now, so nothing is installed here at all.
@@ -42,7 +42,7 @@ COPY entrypoint.sh /insta-entrypoint.sh
 COPY boot-listener.mjs /insta-boot-listener.mjs
 COPY seed-admin.mjs /insta-seed-admin.mjs
 COPY clear-sample-data.sql /insta-clear-sample-data.sql
-COPY sni.js /insta-sni.js
+COPY sni.cjs /insta-sni.cjs
 RUN chmod +x /insta-entrypoint.sh
 
 # Upstream runs as uid 1000 and the platform's volume ownership follows the image's USER, so /data

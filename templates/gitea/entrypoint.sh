@@ -60,6 +60,13 @@ fi
 # Seeding before the web server starts, rather than polling it afterwards, means the account
 # exists by the time the port opens, so the health gate can never pass on an instance with no way
 # in. The cost is that the database migration happens here instead, on the first boot only.
+# Gitea's CLI opens the database but does not create its schema, so on a fresh volume the next
+# command fails with `CreateUser: SQL logic error: no such table: user`. `gitea migrate` is
+# upstream's answer and its own help says so, word for word: "Migrate the database, so that you
+# can run gitea admin create user before starting the server". Idempotent on a later boot, where
+# it checks the schema version and returns.
+su-exec "${USER}" /usr/local/bin/gitea migrate
+
 existing=$(su-exec "${USER}" /usr/local/bin/gitea admin user list 2>/dev/null | awk 'NR > 1 { print $2 }' || true)
 if printf '%s\n' "${existing}" | grep -Fxq "${ADMIN_USERNAME}"; then
   echo "insta: user '${ADMIN_USERNAME}' already exists, leaving it alone"

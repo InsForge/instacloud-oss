@@ -41,8 +41,9 @@ branch  = a disposable, fully isolated clone of all three
 
 - **Branches are forks of the disk.** `insta branch create` reflink-copies the Postgres data directory and every compute volume, copies the bucket, and redeploys the apps on their own URLs. A sleeping database on a reflink-capable filesystem forks in about a second; an awake or non-reflink source is streamed with `pg_basebackup` and scales with its size.
 - **Serverless on a single machine.** Services scale to zero and wake on the first request in about two seconds; `main` stays always-on by default, other branches opt in.
-- **The same command and API surface as the cloud.** One daemon answers the hosted platform's API, so the `insta` CLI, agent skills and dashboard work the same way self-hosted, with documented differences for the cloud-only operations (billing, scaling, domain purchase, GitHub deploys) that answer `501` with guidance.
+- **The same command and API surface as the cloud.** One daemon answers the hosted platform's API, so the `insta` CLI, agent skills and dashboard work the same way self-hosted, with documented differences for the cloud-only operations (billing, scaling, domain purchase) that answer `501` with guidance.
 - **A project is Postgres + S3 + your containers.** The daemon provisions the database, an object-storage bucket and your app containers, and wires their credentials into your environment.
+- **Git push-to-deploy.** Bind a compute service to a GitHub repo; a push to the tracked branch hits an HMAC-verified webhook, and the daemon builds the pushed commit with BuildKit and redeploys the service on its existing port. The cloud's GitHub-App connect needs a multi-tenant app (it stays `501`), so a self-hosted box ships its own webhook build instead ([usage below](#deploy-from-github)).
 - **Built for coding agents.** Per-branch sandboxes, opt-in approval gates on sensitive actions, and a full audit trail (`insta agent events`), so an agent can deploy and verify on its own branch and you keep the veto.
 - **One-command templates.** Deploy an app from the bundled catalog with `insta template deploy <code>`, served from this box with no internet access.
 
@@ -106,6 +107,49 @@ immediately. Apps land on `https://<group>-<project>-<branch>.<domain>` and data
 
 Full details, including firewalls, reflinks and your own domain:
 [docs.instacloud.com/self-hosting](https://docs.instacloud.com/self-hosting/overview).
+
+## Deploy from GitHub
+
+Server-mode boxes can auto-deploy on `git push`. Deploy a compute service once, bind it to a repo,
+add the webhook the daemon returns, and every push to the tracked branch rebuilds and redeploys that
+service. The daemon builds the pushed commit itself with BuildKit (no remote build gateway), so the
+repo must carry a `Dockerfile` at its root (a custom Dockerfile path and build args are not exposed
+yet). A public repo needs no credentials; a private one needs a GitHub Personal Access Token with
+`contents: read` scope (fine-grained) or `repo` (classic). Wired via the API today:
+
+```bash
+# read the tokens interactively so they never land in shell history; they are then fed to curl OFF
+# its command line below (auth header via a process-substitution fd, body via stdin), so neither
+# reaches argv / a process listing either. (Get the API token from the console: Account > API Tokens.)
+read -rs -p 'InstaCloud API token: ' INSTA_API_TOKEN; echo; export INSTA_API_TOKEN
+read -rs -p 'GitHub PAT (blank for a public repo): ' GITHUB_PAT; echo; export GITHUB_PAT
+
+# 1. deploy the service once to create the compute group. Set --port to the port your repo's app
+#    listens on: push-to-deploy reuses whatever port the group is currently configured with (a later
+#    `insta deploy` on the group with no --port resets it to 8080). The image is a throwaway
+#    placeholder; the first build from your repo replaces it.
+insta deploy --image nginx:alpine --port 3000 --group web   # 3000 is an example; use your app's port
+
+# 2. bind it to a repo. The response carries a webhook URL and its SECRET (needed in step 3).
+#    The auth header is read from a process-substitution file and the body (with the PAT) from
+#    stdin, so neither secret is passed as a command-line argument.
+curl -sX POST https://api.<domain>/projects/<project-id>/services/cp-web/git \
+  -H @<(printf 'authorization: Bearer %s' "$INSTA_API_TOKEN") \
+  -H 'content-type: application/json' --data @- <<JSON
+{"repo":"owner/repo","ref":"main","token":"$GITHUB_PAT"}
+JSON
+
+# 3. add that webhook to the repo: Settings > Webhooks > Add webhook:
+#    Payload URL = the returned webhook URL, Content type = application/json,
+#    Secret = the returned webhook secret (REQUIRED: without it GitHub sends no signature and the
+#    daemon rejects the push 401). Then just push:
+git push        # the daemon checks out the pushed commit, builds it, and redeploys the service
+```
+
+The webhook is HMAC-verified over the raw body, the build is pinned to the pushed commit SHA, and the
+redeploy reuses the service's port. Push-to-deploy honours the project's `deploy` governance policy:
+it auto-deploys only when that policy is `allow`. `GET`/`DELETE` on the same path show or remove the
+binding. See [COMPATIBILITY.md](COMPATIBILITY.md) for the full behaviour.
 
 ## Run on your laptop
 

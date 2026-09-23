@@ -43,8 +43,19 @@ export GITEA__service__REQUIRE_SIGNIN_VIEW="${REQUIRE_SIGNIN_VIEW:-true}"
 # /data/gitea is the image's GITEA_CUSTOM; spelled out because the manifest does not declare it.
 mkdir -p /data/gitea/conf /data/gitea/log /data/git
 cd /app/gitea
+# Sourced with -e and -u OFF, which is how upstream's own s6 run script invokes it. It reads a
+# bare $INSTALL_LOCK with no default, unbound here because this template fixes that setting
+# through the GITEA__ form instead, and -u would abort on it; and its `chown -R` over the whole
+# volume is allowed to report a straggler on a later boot without taking the container down.
+# What the script had to achieve is asserted straight afterwards instead.
+set +eu
 # shellcheck source=/dev/null
 . /etc/s6/gitea/setup
+set -eu
+if [ ! -f /data/gitea/conf/app.ini ]; then
+  echo "insta: /etc/s6/gitea/setup left no /data/gitea/conf/app.ini to configure" >&2
+  exit 1
+fi
 
 # Seeding before the web server starts, rather than polling it afterwards, means the account
 # exists by the time the port opens, so the health gate can never pass on an instance with no way

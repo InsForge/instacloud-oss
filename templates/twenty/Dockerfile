@@ -1,17 +1,13 @@
 # Twenty's own release image is the whole application: server, compiled frontend, worker and the
-# entrypoint that creates the schema and runs the migrations. This overlay adds the two pieces the
-# platform cannot supply, and nothing else.
+# entrypoint that creates the schema and runs the migrations. This overlay adds the pieces the
+# manifest cannot express, and nothing else.
 #
-#   1. Redis. Twenty requires REDIS_URL for its cache and its BullMQ queues. The platform now has
-#      a managed `redis` service, and Twenty cannot use it: that service is TLS-only and hands out
-#      a `rediss://` URL, while both redis clients Twenty builds straight from that URL (ioredis
-#      5.10.1 and node-redis 4.7.0) connect without TLS and are dropped by the server. Measured on
-#      2026-09-23, with the full trace in this template's pull request. So redis runs on loopback
-#      here, with its data on the volume.
-#   2. The worker. Upstream runs it as a second container off this same image. `type: worker` is a
-#      real service type now, but a worker on its own machine cannot reach a redis bound to this
-#      container's loopback, and point 1 is why there is no shared redis for the two of them to
-#      meet at. So it runs here as a child of the entrypoint.
+#   1. The worker's command. Upstream runs the worker as a second container off this same image,
+#      distinguished only by what it runs. A manifest has no `command:` key, so both services
+#      deploy this image and entrypoint.sh branches on INSTA_TWENTY_ROLE.
+#   2. Holding the routed port. The compute deploy probe wants something accepting on port 3000
+#      within 31 seconds and Twenty's first boot spends about a minute creating its schema before
+#      it listens. See boot-listener.mjs.
 #   3. The first account. Twenty has no admin-credential variable and closes sign-up as soon as one
 #      workspace exists, so the deploy's own ADMIN_EMAIL / ADMIN_PASSWORD claim it through
 #      upstream's public sign-up mutation. See seed-admin.mjs.
@@ -19,6 +15,12 @@
 #      people, which upstream shows to whoever created it in their own browser and which here
 #      would just be somebody else's demo data in the operator's new CRM. See
 #      clear-sample-data.sql, and SAMPLE_DATA in the manifest to keep them.
+#   5. SNI on the Redis connection. The managed Redis lane selects the database from the TLS
+#      handshake and Twenty's two Redis clients never send a server name, so both connections are
+#      opened and silently dropped. See sni.js, which is preloaded through NODE_OPTIONS.
+#
+# Redis used to be in this list, started on loopback because a manifest could not declare one. It
+# is a managed `cache` service now, so nothing is installed here at all.
 #
 # No part of Twenty is rebuilt or repackaged: the upstream release tag is the base and
 # entrypoint.sh calls upstream's own /app/entrypoint.sh for setup and migrations.
@@ -31,12 +33,6 @@ ARG TWENTY_TAG
 
 USER root
 
-# From the base image's own alpine 3.23 community repo, so nothing is downloaded at boot. The
-# lower-bound form matches the base image's own apk lines: an exact pin breaks the build the day
-# alpine rebuilds the package. 8.4.2-r0 is what both amd64 and aarch64 carry today.
-# Redis 8 is AGPL-3.0-only OR SSPL-1.0; AGPL is the same license Twenty itself ships under.
-RUN apk add --no-cache 'redis>=8.4.2-r0'
-
 # What the entrypoint keys its "setup already ran" marker on. A file rather than an env var so a
 # bump of the FROM tag above cannot forget to invalidate the marker, and so entrypoint.sh reads no
 # variable the manifest does not declare.
@@ -46,6 +42,7 @@ COPY entrypoint.sh /insta-entrypoint.sh
 COPY boot-listener.mjs /insta-boot-listener.mjs
 COPY seed-admin.mjs /insta-seed-admin.mjs
 COPY clear-sample-data.sql /insta-clear-sample-data.sql
+COPY sni.js /insta-sni.js
 RUN chmod +x /insta-entrypoint.sh
 
 # Upstream runs as uid 1000 and the platform's volume ownership follows the image's USER, so /data
@@ -53,6 +50,7 @@ RUN chmod +x /insta-entrypoint.sh
 USER 1000
 
 EXPOSE 3000
-# Replaces upstream's ENTRYPOINT rather than wrapping it as CMD: upstream's would run the
-# migrations before redis exists, and the cache flush it does on the way through needs redis up.
+# Replaces upstream's ENTRYPOINT rather than wrapping it as CMD: the server role has to hold the
+# port before upstream's setup runs, and the worker role has to wait for a schema that upstream's
+# entrypoint would assume was already there.
 ENTRYPOINT ["/insta-entrypoint.sh"]

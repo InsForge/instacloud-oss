@@ -18,10 +18,11 @@ services:
     # ttyd's own port and path. herdr speaks no HTTP at all: its API is a unix socket and its
     # interface is a TUI, so ttyd is what answers this gate and what the browser reaches.
     healthcheck: /
-    # Stated, not left out. Omitting alwaysOn does not mean scale-to-zero: a deploy of this
-    # template with the key absent came back `always_on: true` and billed around the clock. The
-    # browser reaches this service INBOUND, so wake-on-request genuinely works here and the field
-    # is a real choice rather than a formality.
+    # Stated, not left out. Omitting alwaysOn does not mean scale-to-zero. Measured on prod on
+    # 2026-09-23 with this image, two deploys differing only in this key: with the key absent the
+    # service came back `always_on: true` and billed around the clock, with `false` it came back
+    # `always_on: false`. The browser reaches this service INBOUND, so wake-on-request genuinely
+    # works here and the field is a real choice rather than a formality.
     # What false costs: a cold boot on the first request after an idle stop, and the panes that
     # were running do not come back. herdr restores the saved layout on the next attach; the
     # processes that were in it do not (herdr.dev/docs/session-state). An agent left working in a

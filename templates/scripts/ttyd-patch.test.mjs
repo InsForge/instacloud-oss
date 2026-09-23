@@ -5,11 +5,11 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const dockerfile = (code) => join(root, code, 'Dockerfile');
+const read = (code, file) => (existsSync(join(root, code, file)) ? readFileSync(join(root, code, file), 'utf8') : '');
+// Keyed on ttyd itself, not on how the binary is fetched, so a new source cannot slip past.
 const ttyd = readdirSync(root)
-  .filter((code) => existsSync(dockerfile(code)))
-  .map((code) => ({ code, text: readFileSync(dockerfile(code), 'utf8') }))
-  .filter(({ text }) => text.includes('tsl0922/ttyd/releases/download'));
+  .filter((code) => /\bttyd\b/.test(read(code, 'Dockerfile') + read(code, 'entrypoint.sh')))
+  .map((code) => ({ code, text: read(code, 'Dockerfile') }));
 
 const UPSTREAM_CHECK = 'echo "${ttyd_sha}  /usr/local/bin/ttyd" | sha256sum -c -';
 const PATCH = "sed -i 's/  credential: %s/  credential: **/' /usr/local/bin/ttyd";

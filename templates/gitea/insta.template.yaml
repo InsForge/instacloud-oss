@@ -1,10 +1,11 @@
 code: gitea
-version: 0.1.0
+version: 0.2.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
 # The overlay adds no application code: it translates this manifest's variable names into the
-# GITEA__section__KEY form upstream already reads, and creates the first account (see ./Dockerfile).
+# GITEA__section__KEY form upstream already reads, splits the managed postgres DATABASE_URL into
+# the keys Gitea's [database] section wants, and creates the first account (see ./Dockerfile).
 upstream:
   repo: go-gitea/gitea
   image: docker.io/gitea/gitea
@@ -17,9 +18,14 @@ generated:
   secret_key: secret:64
 
 services:
+  # Bare, as a managed datastore must be: the platform owns its image, port, version, sizing and
+  # credentials, and mints one canonical key for it, DATABASE_URL.
+  db:
+    type: postgres
+
   gitea:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/gitea:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/gitea:0.2.0   # built from ./Dockerfile by templates-build-images.yml
     port: 3000
     # Registered before the session middleware (routers/web/web.go), so it answers without a
     # sign-in even with REQUIRE_SIGNIN_VIEW on: 200 when the database and cache are reachable,
@@ -30,9 +36,10 @@ services:
     # request that wakes the machine: the web UI, the API, and `git clone` over HTTPS alike.
     # Gitea Actions runners and repository mirrors are the cases that would need `true`.
     alwaysOn: false
+    # Still needed with the database in postgres, because only the relational data moved.
     # Upstream's image already puts every data path under /data, which is where the platform
-    # mounts the volume: repositories at /data/git/repositories, the SQLite database, LFS objects,
-    # avatars, attachments and the issue index. Nothing is overridden to get there.
+    # mounts the volume: git repositories at /data/git/repositories, LFS objects, avatars,
+    # attachments, packages and the bleve issue index. Nothing is overridden to get there.
     volume: true
     env:
       fixed:
@@ -41,6 +48,11 @@ services:
         ROOT_URL: ${services.gitea.url}
         DOMAIN: ${services.gitea.host}
         HTTP_PORT: "3000"
+      platform:
+        # The only canonical key a postgres service has (CANONICAL_KEYS.postgres). Gitea's
+        # [database] section has no DSN field, so entrypoint.sh splits this into HOST, NAME,
+        # USER, PASSWD and SSL_MODE.
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
       generated:
         SECRET_KEY: ${secret_key}
       required:
@@ -54,7 +66,7 @@ services:
           # the world is not a git server, it is a shared one.
         ADMIN_PASSWORD:
           description: "Password for the first administrator. At least 8 characters, which is Gitea's [security] MIN_PASSWORD_LENGTH"
-      # Gitea's site administration panel shows these three as read-only configuration, so unlike
+      # Gitea's site administration panel shows all of these as read-only configuration, so unlike
       # most apps they cannot be changed after deploy from inside the UI. They are here because
       # this is the only place to decide them.
       optional:
@@ -62,6 +74,7 @@ services:
         APP_NAME: "Title shown in the browser tab and the page header. Defaults to Gitea"
         DISABLE_REGISTRATION: "true to keep the instance closed to self-signup (the default), false to let anyone with the URL create an account"
         REQUIRE_SIGNIN_VIEW: "true to hide every page behind a sign-in (the default), false to let anonymous visitors browse public repositories and clone them"
+        DB_SSL_MODE: "Postgres TLS mode, one of disable, require, verify-ca or verify-full. Leave blank to take it from the sslmode in the platform's own DATABASE_URL"
 
 meta:
   name: Gitea

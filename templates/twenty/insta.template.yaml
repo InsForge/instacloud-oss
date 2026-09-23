@@ -14,50 +14,41 @@ upstream:
 
 # Both are env-only on Twenty's side and neither has any reason to be read back: APP_SECRET signs
 # tokens and ENCRYPTION_KEY encrypts stored third-party credentials. A `required:` variable would
-# be stored write-only and lost, which is the trap n8n's encryption key documents. Declared once
-# here so the server and the worker are handed the SAME values: a row one of them encrypts is a
-# row the other has to be able to read.
+# be stored write-only and lost, which is the trap n8n's encryption key documents.
 generated:
   app_secret: secret:64
   encryption_key: secret:64
 
 services:
-  # Both bare on purpose: the platform owns a managed datastore's image, port, version, sizing and
-  # credentials. Two of them, so a deploy of this template costs two platform volumes on top of
-  # the two the compute services below mount.
+  # Bare on purpose: the platform owns a managed database's image, size and credentials.
   db:
     type: postgres
-
-  # Twenty hardcodes the BullMQ queue driver (message-queue.module-factory.ts sets it with no
-  # config variable in front of it) and REDIS_URL carries no default, so this is not optional and
-  # not swappable for postgres-backed queues.
-  cache:
-    type: redis
 
   crm:
     type: web
     image: ghcr.io/insforge/insta-oss/templates/twenty:1.0.0   # built from ./Dockerfile by templates-build-images.yml
     port: 3000
     healthcheck: /healthz     # Twenty's own liveness route, the one upstream's compose probes
-    # Not about background work any more: the `jobs` worker below owns every scheduled and queued
-    # job, so nothing in this process needs to be awake with nobody watching. It is about the cold
-    # boot. Twenty takes tens of seconds to build its Nest context before it answers at all, so
-    # the first request to a machine that has been idle-stopped waits that long. Cost against
-    # first-request latency, and the README says so.
+    # Two reasons, both about work that happens with nobody watching. Twenty registers cron jobs
+    # (message and calendar sync, workflow schedules) that fire from inside the process, so an
+    # idle machine never wakes to run them. And every cold boot replays `command:prod upgrade`
+    # plus two cache flushes before the server listens, so a woken machine answers its first
+    # request roughly a minute late.
     alwaysOn: true
-    # Uploaded attachments and workspace logos (STORAGE_LOCAL_PATH). The records themselves are in
-    # the managed postgres and the queues are in the managed redis.
+    # Holds three things: uploaded attachments and workspace logos (STORAGE_LOCAL_PATH), redis's
+    # append-only file, and nothing else. The records themselves are in the managed postgres.
     volume: true
     env:
       fixed:
-        # One image, two roles. A manifest cannot set a container command and upstream ships the
-        # server and the worker as the same image started differently, so entrypoint.sh branches
-        # on this. See the Dockerfile.
-        INSTA_TWENTY_ROLE: server
         NODE_PORT: "3000"
         # Twenty builds invite links, email links and its own CORS origin from this, so it has to
         # be the public URL rather than localhost.
         SERVER_URL: ${services.crm.url}
+        # Loopback, and not `${{services.<cache>.REDIS_URL}}` from a managed redis service, which
+        # this template did try: that service is TLS-only and Twenty's two redis clients do not
+        # turn TLS on from a `rediss://` URL, so every connection is opened and immediately
+        # dropped and the first migration hangs forever with no error. See the Dockerfile.
+        REDIS_URL: redis://127.0.0.1:6379
         STORAGE_TYPE: local
         STORAGE_LOCAL_PATH: /data/storage
         # The managed postgres lane terminates TLS with the platform's own certificate, which the
@@ -66,7 +57,6 @@ services:
         PG_SSL_ALLOW_SELF_SIGNED: "true"
       platform:
         PG_DATABASE_URL: ${{services.db.DATABASE_URL}}
-        REDIS_URL: ${{services.cache.REDIS_URL}}
       generated:
         APP_SECRET: ${app_secret}
         ENCRYPTION_KEY: ${encryption_key}
@@ -97,47 +87,13 @@ services:
         # workflows stay either way.
         SAMPLE_DATA: Set to true to keep Twenty's example companies and people. Empty workspace otherwise
 
-  # Twenty's BullMQ consumer, the second half of upstream's compose. Every scheduled and queued job
-  # runs here: workflow executions, CSV imports, message and calendar sync, outbound email, the
-  # cron jobs the server registers. Without it they are enqueued into the managed redis and never
-  # picked up, which looks like a CRM where automations silently do nothing.
-  jobs:
-    type: worker
-    # The same overlay image as the web service, told to be the worker by INSTA_TWENTY_ROLE.
-    image: ghcr.io/insforge/insta-oss/templates/twenty:1.0.0
-    # Not a choice: a worker is portless, so nothing is routed to it and no request could ever
-    # wake it. A sleeping queue consumer is a queue that never drains.
-    alwaysOn: true
-    # Jobs that stage files (CSV import, attachment processing) write under STORAGE_LOCAL_PATH.
-    # This is NOT the web service's disk, see the README's Scope for what that costs and how S3
-    # fixes it.
-    volume: true
-    env:
-      fixed:
-        INSTA_TWENTY_ROLE: worker
-        SERVER_URL: ${services.crm.url}
-        STORAGE_TYPE: local
-        STORAGE_LOCAL_PATH: /data/storage
-        PG_SSL_ALLOW_SELF_SIGNED: "true"
-        # Both already happen on the web service, and two processes migrating one database at the
-        # same time is how the metadata cache ends up half written. Upstream's compose passes the
-        # same two to its worker for the same reason.
-        DISABLE_DB_MIGRATIONS: "true"
-        DISABLE_CRON_JOBS_REGISTRATION: "true"
-      platform:
-        PG_DATABASE_URL: ${{services.db.DATABASE_URL}}
-        REDIS_URL: ${{services.cache.REDIS_URL}}
-      generated:
-        APP_SECRET: ${app_secret}
-        ENCRYPTION_KEY: ${encryption_key}
-
 meta:
   name: Twenty
   tagline: Open-source CRM for contacts, companies and deals
   category: crm
   tags: [crm, business]
-  # The upstream index for v2.41.0 carries both, and this image only adds shell and node scripts
-  # on top of it.
+  # The upstream index for v2.41.0 carries both, and this image only adds an alpine package and a
+  # shell script on top of it.
   architectures: [amd64, arm64]
   logo: ./logo.svg
   links:

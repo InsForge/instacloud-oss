@@ -84,6 +84,12 @@ that can run anything and holds whatever API keys and repository access you gave
 the URL and this password has all of that. Both fields can be changed later from the service's
 variables.
 
+**The credential is kept out of the service log.** ttyd 1.7.7 prints it at startup by default, as
+base64 of `username:password`, which anyone who can read your project's logs could reverse. This
+image runs ttyd with `-d 3`, so only errors and warnings are logged. The trade is that a healthy
+boot logs one line from the entrypoint and nothing else: ttyd's per-request access lines are gone
+too. A container that fails to start still says why.
+
 ## After deploy
 
 1. Open the service URL. The browser asks for HTTP basic auth: the `ADMIN_USERNAME` and

@@ -48,7 +48,28 @@ if [ "$CRED_BYTES" -gt 186 ]; then
     exit 1
 fi
 
+# The only line a healthy boot logs, and the reason it exists: -d 3 below silences ttyd's own
+# "Listening on port: 7681" notice, and a service that logs nothing at all when it works cannot be
+# told apart from one that never started. Carries no part of the credential.
+echo "entrypoint: starting ttyd on port 7681; notice-level logging is off, see the -d 3 note below"
+
 # ttyd is the long-running process and owns the port; herdr is what it launches per connection.
 # That order matters: herdr's client is a TUI that exits on `ctrl+b q`, and a container whose PID 1
 # was herdr would stop the moment someone detached.
-exec ttyd -p 7681 -W -c "$CRED" /usr/local/bin/herdr-web
+#
+# -d 3 is the libwebsockets log mask ERR|WARN, dropping NOTICE. It is here for one reason: ttyd
+# 1.7.7 prints the -c value at NOTICE during startup, as base64 of "user:pass", which is reversible.
+# Left at the default mask of 7 that line lands in the service log on every container start, so
+# anyone who can read logs on the project can recover the password to a root shell. Measured in the
+# deployed container on 2026-09-23, same binary, one flag apart:
+#
+#   ttyd -p 7690 -c probeuser:probepass   ->  N:   credential: cHJvYmV1c2VyOnByb2JlcGFzcw==
+#   ttyd -d 3 -p 7691 -c probeuser:probepass  ->  (no output at all)
+#   ttyd -d 3 on an occupied port         ->  E: lws_socket_bind: ERROR on binding ... exit 1
+#
+# So errors and warnings still reach the log; only notices go, and with them ttyd's per-request
+# access lines. What this does NOT do is hide the credential from the container's own process
+# table: -c is ttyd's only way to take one in 1.7.7, so it is in argv either way. That is reachable
+# only from inside the box, where the user is already root and it is their own credential; the
+# exported log stream is the surface this closes.
+exec ttyd -d 3 -p 7681 -W -c "$CRED" /usr/local/bin/herdr-web

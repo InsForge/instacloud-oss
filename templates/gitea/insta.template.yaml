@@ -1,0 +1,93 @@
+code: gitea
+version: 0.2.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# The overlay adds no application code: it translates this manifest's variable names into the
+# GITEA__section__KEY form upstream already reads, splits the managed postgres DATABASE_URL into
+# the keys Gitea's [database] section wants, and creates the first account (see ./Dockerfile).
+upstream:
+  repo: go-gitea/gitea
+  image: docker.io/gitea/gitea
+  pinned: "1.27.3"
+  license: MIT
+
+generated:
+  # [security] SECRET_KEY, which encrypts 2FA secrets and mirror credentials at rest. Generated
+  # rather than required: nobody ever needs to read it back, and a template variable is write-only.
+  secret_key: secret:64
+
+services:
+  # Bare, as a managed datastore must be: the platform owns its image, port, version, sizing and
+  # credentials, and mints one canonical key for it, DATABASE_URL.
+  db:
+    type: postgres
+
+  gitea:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/gitea:0.2.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 3000
+    # Registered before the session middleware (routers/web/web.go), so it answers without a
+    # sign-in even with REQUIRE_SIGNIN_VIEW on: 200 when the database and cache are reachable,
+    # 424 when they are not. Gitea's own comment warns against wiring it to a container restart;
+    # the platform only uses it as the deploy gate, which is the reading it was written for.
+    healthcheck: /api/healthz
+    # A git server does nothing until something asks it to. Every way in is an inbound HTTP
+    # request that wakes the machine: the web UI, the API, and `git clone` over HTTPS alike.
+    # Gitea Actions runners and repository mirrors are the cases that would need `true`.
+    alwaysOn: false
+    # Still needed with the database in postgres, because only the relational data moved.
+    # Upstream's image already puts every data path under /data, which is where the platform
+    # mounts the volume: git repositories at /data/git/repositories, LFS objects, avatars,
+    # attachments, packages and the bleve issue index. Nothing is overridden to get there.
+    volume: true
+    env:
+      fixed:
+        # Gitea builds every absolute link from ROOT_URL: clone URLs, webhook payloads, the OAuth2
+        # redirect, and the Secure flag on its session cookie.
+        ROOT_URL: ${services.gitea.url}
+        DOMAIN: ${services.gitea.host}
+        HTTP_PORT: "3000"
+      platform:
+        # The only canonical key a postgres service has (CANONICAL_KEYS.postgres). Gitea's
+        # [database] section has no DSN field, so entrypoint.sh splits this into HOST, NAME,
+        # USER, PASSWD and SSL_MODE.
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
+      generated:
+        SECRET_KEY: ${secret_key}
+      required:
+        # Neither a `default:` nor a `generate:`, matching the other credentialed templates. Gitea
+        # has no bootstrap of its own: its install wizard is the only path to a first account, and
+        # this template locks that wizard, so these two are the whole way in. A generated password
+        # would be one nobody could read back, since a template variable is stored write-only.
+        ADMIN_USERNAME:
+          description: "Username for the first administrator. Letters, digits, dash, underscore and dot only"
+          # No default: a public git server whose admin password is the same on every deploy in
+          # the world is not a git server, it is a shared one.
+        ADMIN_PASSWORD:
+          description: "Password for the first administrator. At least 8 characters, which is Gitea's [security] MIN_PASSWORD_LENGTH"
+      # Gitea's site administration panel shows all of these as read-only configuration, so unlike
+      # most apps they cannot be changed after deploy from inside the UI. They are here because
+      # this is the only place to decide them.
+      optional:
+        ADMIN_EMAIL: "Email address for the first administrator, used for commit attribution and notifications. Defaults to admin@example.com"
+        APP_NAME: "Title shown in the browser tab and the page header. Defaults to Gitea"
+        DISABLE_REGISTRATION: "true to keep the instance closed to self-signup (the default), false to let anyone with the URL create an account"
+        REQUIRE_SIGNIN_VIEW: "true to hide every page behind a sign-in (the default), false to let anonymous visitors browse public repositories and clone them"
+        DB_SSL_MODE: "Postgres TLS mode, one of disable, require, verify-ca or verify-full. Leave blank to take it from the sslmode in the platform's own DATABASE_URL"
+
+meta:
+  name: Gitea
+  tagline: Self-hosted Git service with issues, pull requests and CI
+  # Not one of ai-agent, llm or automation. See the Open questions on the pull request: Gitea is
+  # developer tooling, and picking the least-wrong of the three would mis-file it in the gallery.
+  category: automation
+  tags: [git, developer-tools]
+  # Upstream's 1.27.3 index carries amd64, arm64 and riscv64; this image only copies a script in,
+  # so it cross-builds for the two the platform names.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  draft: true
+  links:
+    upstream: https://github.com/go-gitea/gitea
+    documentation: https://docs.gitea.com

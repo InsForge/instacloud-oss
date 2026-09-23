@@ -16,4 +16,6 @@ if [ "$CRED_BYTES" -gt 186 ]; then
   echo "ADMIN_USERNAME:ADMIN_PASSWORD is $CRED_BYTES bytes; ttyd accepts at most 186" >&2
   exit 1
 fi
-exec ttyd -p 7681 -W -c "$CRED" bash
+# ttyd prints the credential base64-encoded at startup; drop every log line that carries it.
+CRED_B64=$(printf '%s' "$CRED" | base64 | tr -d '\n')
+exec ttyd -p 7681 -W -c "$CRED" bash 2> >(grep --line-buffered -v -F "$CRED_B64" >&2)

@@ -1,5 +1,5 @@
 code: pi
-version: 0.8.2
+version: 0.8.3
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -14,7 +14,7 @@ services:
   # the same branch, the second overwriting the first (QA.md finding 1).
   pi:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/pi:0.8.2   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/pi:0.8.3   # built from ./Dockerfile by templates-build-images.yml
     port: 7681
     healthcheck: /
     # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works (hermes and n8n

@@ -118,12 +118,11 @@ yet). A public repo needs no credentials; a private one needs a GitHub Personal 
 `contents: read` scope (fine-grained) or `repo` (classic). Wired via the API today:
 
 ```bash
-# both tokens are fed to curl OFF its command line below (auth header from a process-substitution
-# fd, body from stdin), so neither reaches argv / a process listing. Prefix these `export` lines
-# with a space (with HISTCONTROL=ignorespace), or source them from a 0600 file, to keep them out of
-# shell history too.
-export INSTA_API_TOKEN=insta_...        # create one in the console: Account > API Tokens
-export GITHUB_PAT=...                    # only for a private repo; leave empty for a public one
+# read the tokens interactively so they never land in shell history; they are then fed to curl OFF
+# its command line below (auth header via a process-substitution fd, body via stdin), so neither
+# reaches argv / a process listing either. (Get the API token from the console: Account > API Tokens.)
+read -rs -p 'InstaCloud API token: ' INSTA_API_TOKEN; echo; export INSTA_API_TOKEN
+read -rs -p 'GitHub PAT (blank for a public repo): ' GITHUB_PAT; echo; export GITHUB_PAT
 
 # 1. deploy the service once to create the compute group. Set --port to the port your repo's app
 #    listens on: push-to-deploy reuses whatever port the group is currently configured with (a later

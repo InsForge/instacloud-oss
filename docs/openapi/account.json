@@ -23,7 +23,7 @@
     },
     {
       "name": "Catalog",
-      "description": "Public catalogs: templates and regions. No authentication required."
+      "description": "Public catalogs: templates and regions. No token needed."
     }
   ],
   "paths": {
@@ -386,6 +386,7 @@
             }
           }
         },
+        "security": [],
         "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nList the regions available for postgres/compute services.",
         "x-mint": {
           "metadata": {

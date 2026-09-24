@@ -42,6 +42,13 @@ test('denullify recurses through nested objects and arrays, e.g. a full schema d
   expect(out.components.schemas.Foo).toEqual({ type: ['string', 'null'] })
 })
 
+test('denullify recurses into array-valued keywords such as oneOf and items', () => {
+  const input = { oneOf: [{ type: 'string', nullable: true }, { type: 'object', properties: { list: { type: 'array', items: { type: 'integer', nullable: true } } } }] }
+  expect(denullify(input)).toEqual({
+    oneOf: [{ type: ['string', 'null'] }, { type: 'object', properties: { list: { type: 'array', items: { type: ['integer', 'null'] } } } }],
+  })
+})
+
 test('denullify leaves non-nullable schemas untouched', () => {
   const schema = { type: 'string', format: 'date-time' }
   expect(denullify(schema)).toEqual(schema)

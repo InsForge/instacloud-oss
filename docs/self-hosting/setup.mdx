@@ -48,7 +48,7 @@ export INSTA_API_URL=https://api.<domain>
 To go back to the hosted platform, run `insta env use prod`, or unset `INSTA_API_URL`.
 
 <Note>
-There is no `insta tokens` command. Tokens are created in the dashboard, or with `POST /tokens`.
+`insta tokens create <name> --account` mints a token from a logged-in CLI. `--account` is required: the daemon is single-tenant and answers 400 to the organization binding the CLI applies by default. Tokens are also created in the dashboard, or with `POST /tokens`.
 </Note>
 
 ### Tokens are not scoped

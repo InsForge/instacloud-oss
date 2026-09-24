@@ -166,14 +166,14 @@ const CLI_VERBS = [
 // noun-first `insta agent policy` / `insta agent observe`, which ARE real subcommands (e2e/lib.sh
 // names `insta agent policy` alongside `insta agent approvals` as governance verbs the CLI ships;
 // src/server.ts's `POST /projects/:id/events` route is what the CLI's observe hook uploads to) and
-// must not be pinned here. Only the bare top-level forms are invented. `services scale` /
+// must not be pinned here. Only the bare top-level forms are invented. `insta tokens` (list /
+// create / revoke) is real since insta-cli#291 and is documented in COMPATIBILITY, so it is not
+// pinned either. `services scale` /
 // `services upgrade` were renamed to `compute scale` / `compute limits` under the 0.1 noun-first
 // regrouping, so that retired sequence is pinned here alongside the top-level ones.
 const INVENTED = [
   'compute domain add',
   'insta compute domain',
-  'tokens list',
-  'insta tokens',
   'insta policy',
   'insta observe',
   'insta services scale',

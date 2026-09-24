@@ -95,7 +95,7 @@ const TAG_ORDER = ['Account', 'Organization', 'Catalog', 'Projects', 'Branches',
 const TAG_DESCRIPTIONS = {
   Account: 'The caller, their organizations and API tokens.',
   Organization: 'The organization itself: name, members, invitations.',
-  Catalog: 'Public catalogs: templates and regions. No authentication required.',
+  Catalog: 'Public catalogs: templates and regions. No token needed.',
   Projects: 'Projects inside an organization.',
   Branches: 'Branch environments of a project: isolated database, storage and compute per branch.',
   Services: 'Services on a branch: compute, postgres, storage and managed databases.',
@@ -182,7 +182,7 @@ for (const [level, meta] of Object.entries(LEVELS)) {
   for (const { method, path, op, kind } of ops) {
     // Tags: the account file keeps the platform's `Account`; the org file renames it so the two
     // levels do not share a group name; catalog reads get a tag of their own.
-    if (kind === 'open') op.tags = ['Catalog']
+    if (kind === 'open') { op.tags = ['Catalog']; op.security = [] } // open = no bearer semantics on the platform (tokenScope.ts): say so, since the document's global security would otherwise claim one
     else if (level === 'org' && op.tags?.[0] === 'Account') op.tags = ['Organization']
     // Titles: many platform summaries are a paragraph. Keep a short one as the title, otherwise
     // derive one from the operationId and move the paragraph into the description.

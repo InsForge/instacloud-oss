@@ -55,10 +55,13 @@ domain. See [self-hosting](https://docs.instacloud.com/self-hosting/overview).
 
 ## API tokens
 
-Server mode mints bearer tokens for the CLI, MCP and agents. The CLI has no `tokens` command:
-create one in the dashboard, on the Account page, or with `POST /tokens` and a session cookie.
-`GET /tokens` lists them and `DELETE /tokens/:id` revokes one. In local mode those routes stay
-`501`, because there is nothing to authenticate.
+Server mode mints bearer tokens for the CLI, MCP and agents. `insta tokens list` and
+`insta tokens revoke <id>` work as on the hosted platform; `insta tokens create <name>` needs
+`--account`, because the CLI binds a new token to an organization by default and a single-tenant
+daemon answers `400 orgId must be omitted on a single-tenant daemon`. Tokens are also created in
+the dashboard, on the Account page, or with `POST /tokens`. `GET /tokens` lists them and
+`DELETE /tokens/:id` revokes one. In local mode those routes stay `501`, because there is nothing
+to authenticate.
 
 `scopes` is accepted on create and echoed back on the record, matching the hosted platform's wire
 shape, and like the platform it is never enforced: every valid `insta_` key acts as the one admin

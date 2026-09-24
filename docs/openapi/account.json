@@ -1,0 +1,1308 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "InstaCloud API — Account level",
+    "version": "0.1.0",
+    "description": "Endpoints that act as the token's owner: their organizations, their API tokens, and the public catalog. Creating an organization needs an account-wide token.\n\nGenerated from the platform's own OpenAPI document (https://api.instacloud.com/openapi.json); see the [API overview](/reference/api/overview) for authentication and token scopes."
+  },
+  "servers": [
+    {
+      "url": "https://api.instacloud.com",
+      "description": "InstaCloud"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Account",
+      "description": "The caller, their organizations and API tokens."
+    },
+    {
+      "name": "Catalog",
+      "description": "Public catalogs: templates and regions. No token needed."
+    }
+  ],
+  "paths": {
+    "/me": {
+      "get": {
+        "operationId": "getMe",
+        "summary": "Current user",
+        "tags": [
+          "Account"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/PublicUser"
+                    },
+                    "via": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "jwt"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "api"
+                          ]
+                        }
+                      ]
+                    },
+                    "agentCredential": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "token": {
+                      "type": "object",
+                      "properties": {
+                        "scope": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "account"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "org"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "project"
+                              ]
+                            }
+                          ]
+                        },
+                        "orgId": {
+                          "format": "uuid",
+                          "type": "string"
+                        },
+                        "projectId": {
+                          "format": "uuid",
+                          "type": "string"
+                        },
+                        "access": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "full"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "read_only"
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "scope",
+                        "access"
+                      ]
+                    },
+                    "impersonation": {
+                      "type": "object",
+                      "properties": {
+                        "projectId": {
+                          "type": "string"
+                        },
+                        "projectName": {
+                          "type": "string"
+                        },
+                        "orgName": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "projectId",
+                        "projectName",
+                        "orgName"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.",
+        "x-mint": {
+          "metadata": {
+            "title": "Current user",
+            "sidebarTitle": "Get me"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateMe",
+        "summary": "Update the current user's profile (display name)",
+        "tags": [
+          "Account"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": [
+                  "name"
+                ],
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "maxLength": 100,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/PublicUser"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Update the current user's profile (display name)",
+            "sidebarTitle": "Update me"
+          }
+        }
+      }
+    },
+    "/orgs": {
+      "get": {
+        "operationId": "listOrgs",
+        "summary": "List orgs the caller belongs to",
+        "tags": [
+          "Account"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orgs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OrgWithRole"
+                      }
+                    }
+                  },
+                  "required": [
+                    "orgs"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.",
+        "x-mint": {
+          "metadata": {
+            "title": "List orgs the caller belongs to",
+            "sidebarTitle": "List orgs"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createOrg",
+        "summary": "Create an org (caller becomes owner)",
+        "tags": [
+          "Account"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": [
+                  "name"
+                ],
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "org": {
+                      "$ref": "#/components/schemas/Org"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Create an org (caller becomes owner)",
+            "sidebarTitle": "Create org"
+          }
+        }
+      }
+    },
+    "/regions": {
+      "get": {
+        "operationId": "listRegions",
+        "summary": "List regions",
+        "tags": [
+          "Catalog"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "regions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "slug": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "slug",
+                          "label"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "regions"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nList the regions available for postgres/compute services.",
+        "x-mint": {
+          "metadata": {
+            "title": "List regions",
+            "sidebarTitle": "List regions"
+          }
+        }
+      }
+    },
+    "/templates": {
+      "get": {
+        "operationId": "listTemplates",
+        "summary": "List templates",
+        "tags": [
+          "Catalog"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "description": "substring filter over code/name/tagline/tags"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "description": "exact category filter (case-insensitive)"
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "templates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TemplateListItem"
+                      }
+                    }
+                  },
+                  "required": [
+                    "templates"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nList published templates in the platform registry. Public — no auth required.",
+        "x-mint": {
+          "metadata": {
+            "title": "List templates",
+            "sidebarTitle": "List templates"
+          }
+        }
+      }
+    },
+    "/templates/{code}": {
+      "get": {
+        "operationId": "getTemplate",
+        "summary": "Get template",
+        "tags": [
+          "Catalog"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "description": "template code (lower-kebab)"
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "template": {
+                      "$ref": "#/components/schemas/TemplateDetail"
+                    }
+                  },
+                  "required": [
+                    "template"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nOne template: upstream pin, services, and its required/optional variables. Public — no auth required.",
+        "x-mint": {
+          "metadata": {
+            "title": "Get template",
+            "sidebarTitle": "Get template"
+          }
+        }
+      }
+    },
+    "/tokens": {
+      "get": {
+        "operationId": "listApiTokens",
+        "summary": "List API tokens",
+        "tags": [
+          "Account"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tokens": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ApiToken"
+                      }
+                    }
+                  },
+                  "required": [
+                    "tokens"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nList the caller's API tokens. An org-bound token lists only tokens inside its org; a project token is refused (403 token_scope).",
+        "x-mint": {
+          "metadata": {
+            "title": "List API tokens",
+            "sidebarTitle": "List API tokens"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createApiToken",
+        "summary": "Create API token",
+        "tags": [
+          "Account"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": [
+                  "name"
+                ],
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "orgId": {
+                    "anyOf": [
+                      {
+                        "format": "uuid",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "projectId": {
+                    "description": "requires orgId; the project must belong to that org",
+                    "anyOf": [
+                      {
+                        "format": "uuid",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "access": {
+                    "description": "default full; read_only accepts GET/HEAD only",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "full"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "read_only"
+                        ]
+                      }
+                    ]
+                  },
+                  "expiresInDays": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "example": "insta_xxxxxxxxxxxxxxxxxxxxxxxx",
+                      "type": "string"
+                    },
+                    "record": {
+                      "$ref": "#/components/schemas/ApiToken"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "the minting credential is narrower than the requested token (token_scope)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "the minting credential is narrower than the requested token (token_scope)",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not a member of orgId, or projectId is not a project of that org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "not a member of orgId, or projectId is not a project of that org",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nCreate an API token (the plaintext is returned once). Omit orgId for an account-wide token (access still applies: an account-wide read_only token is GET-only); orgId binds it to one org; orgId+projectId to one project. An org-bound token may mint only inside its org, no wider than itself; a project token cannot mint.",
+        "x-mint": {
+          "metadata": {
+            "title": "Create API token",
+            "sidebarTitle": "Create API token"
+          }
+        }
+      }
+    },
+    "/tokens/{tokenId}": {
+      "delete": {
+        "operationId": "revokeApiToken",
+        "summary": "Revoke an API token",
+        "tags": [
+          "Account"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "tokenId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Revoke an API token",
+            "sidebarTitle": "Revoke API token"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Session access JWT or an API token (`insta_<prefix>_<secret>`)."
+      }
+    },
+    "schemas": {
+      "ApiToken": {
+        "description": "Public view of an API token (never includes the secret).",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scope": {
+            "description": "What the token is bound to: the whole account, one org, one project, or invalid (a malformed binding — the token can never authenticate)",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "account"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "org"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "project"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "invalid"
+                ]
+              }
+            ]
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "projectId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "access": {
+            "description": "read_only accepts GET/HEAD only (it cannot run SQL); invalid means the binding is malformed and the token can never authenticate",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "full"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "read_only"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "invalid"
+                ]
+              }
+            ]
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Ok": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Org": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "is_personal": {
+            "type": "boolean"
+          },
+          "owner_user_id": {
+            "description": "Better Auth user id (opaque string, not a UUID)",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "checkout_token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "OrgWithRole": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Org"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "$ref": "#/components/schemas/Role"
+              }
+            }
+          }
+        ]
+      },
+      "PublicUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Better Auth user id (opaque string, not a UUID)",
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emailVerified": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "emailVerified"
+        ]
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "owner",
+          "admin",
+          "member"
+        ]
+      },
+      "TemplateDetail": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "maintainer": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tagline": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "upstream": {
+            "description": "the upstream pin (repo/image/pinned) from the manifest",
+            "type": "object",
+            "additionalProperties": true
+          },
+          "services": {
+            "description": "the manifest's services map, keyed by service name",
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TemplateManifestService"
+            }
+          },
+          "variables": {
+            "type": "object",
+            "properties": {
+              "required": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TemplateVariable"
+                }
+              },
+              "optional": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TemplateVariable"
+                }
+              }
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "totalProjects": {
+            "description": "distinct PROJECTS that ever deployed this template (any outcome) — the adoption number; one project deploying repeatedly counts once",
+            "type": "integer"
+          },
+          "activeProjects": {
+            "description": "distinct PROJECTS that still have at least one live service from a SUCCEEDED deployment of this template (service in creating/active; deleting, errored or deleted services do not keep a project active) — what a visitor reads as \"running this now\"",
+            "type": "integer"
+          },
+          "successRate": {
+            "description": "share of the CONCLUDED deployments of this template that reached succeeded, as a whole percent. Denominator: deployments with status succeeded + failed + partial, EXCLUDING runs abandoned by a platform restart (a platform release must not count against a template) and excluding running deployments (not concluded). A partial deployment counts as a failure. This is a per-DEPLOYMENT rate, not per attempt: an idempotent retry reuses its deployment row. null (never 0) when nothing has concluded — no data is not 0%",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "deploymentCount": {
+            "description": "cumulative DEPLOYMENT runs for this code",
+            "type": "integer"
+          },
+          "activeDeploymentCount": {
+            "description": "DEPLOYMENT runs that succeeded and still have a live attributed service",
+            "type": "integer"
+          },
+          "logoUrl": {
+            "description": "absolute https logo URL, served by the CDN in front of the public registry repo (cdn.jsdelivr.net) and pinned to the publishing merge SHA; null when the template published no logo. See templateManifest.ts TEMPLATE_LOGO_HOST for the enforced host.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "license": {
+            "description": "the upstream project's license id, from the manifest's upstream.license; null when the manifest declares none",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "description": "when this template was last published — the catalog freshness stamp",
+            "type": "string"
+          },
+          "readme": {
+            "description": "the template README as markdown (capped at publish — see templateManifest.ts TEMPLATE_README_MAX_BYTES); null when the template published none. Render with raw HTML disabled: the platform bounds its size, not its contents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documentationUrl": {
+            "description": "the upstream project's own documentation link, from the manifest's meta.links.documentation; null when the manifest declares none",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TemplateListItem": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "maintainer": {
+            "description": "who publishes it, as the manifest declares ('official' for InstaCloud's own)",
+            "type": "string"
+          },
+          "source": {
+            "description": "the registry row's publisher tag, set at publish; defaults to the maintainer",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tagline": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "totalProjects": {
+            "description": "distinct PROJECTS that ever deployed this template (any outcome) — the adoption number; one project deploying repeatedly counts once",
+            "type": "integer"
+          },
+          "activeProjects": {
+            "description": "distinct PROJECTS that still have at least one live service from a SUCCEEDED deployment of this template (service in creating/active; deleting, errored or deleted services do not keep a project active) — what a visitor reads as \"running this now\"",
+            "type": "integer"
+          },
+          "successRate": {
+            "description": "share of the CONCLUDED deployments of this template that reached succeeded, as a whole percent. Denominator: deployments with status succeeded + failed + partial, EXCLUDING runs abandoned by a platform restart (a platform release must not count against a template) and excluding running deployments (not concluded). A partial deployment counts as a failure. This is a per-DEPLOYMENT rate, not per attempt: an idempotent retry reuses its deployment row. null (never 0) when nothing has concluded — no data is not 0%",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "deploymentCount": {
+            "description": "cumulative DEPLOYMENT runs for this code (every run ever) — the deployment-unit counterpart of totalProjects",
+            "type": "integer"
+          },
+          "activeDeploymentCount": {
+            "description": "DEPLOYMENT runs that succeeded and still have a live attributed service — the deployment-unit counterpart of activeProjects",
+            "type": "integer"
+          },
+          "logoUrl": {
+            "description": "absolute https logo URL, served by the CDN in front of the public registry repo (cdn.jsdelivr.net) and pinned to the publishing merge SHA; null when the template published no logo. See templateManifest.ts TEMPLATE_LOGO_HOST for the enforced host.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "license": {
+            "description": "the upstream project's license id, from the manifest's upstream.license; null when the manifest declares none",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "description": "when this template was last published — the catalog freshness stamp",
+            "type": "string"
+          }
+        }
+      },
+      "TemplateManifestService": {
+        "description": "One entry of a manifest's services map, as parseTemplateManifest normalizes it. The four managed types, postgres, redis, mysql and mongodb, are declared bare: they carry none of image, build, port, healthcheck, volume or alwaysOn, because the platform owns all of it.",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "web",
+              "worker",
+              "postgres",
+              "redis",
+              "mysql",
+              "mongodb"
+            ]
+          },
+          "image": {
+            "type": "string"
+          },
+          "build": {
+            "type": "string"
+          },
+          "port": {
+            "description": "web only: the port the image listens on (8080 when omitted). A worker is portless and may not declare one — the platform runs it as port 0: nothing routed, no PORT env, no URL. A managed database may not declare one either: the platform owns its port.",
+            "type": "integer"
+          },
+          "healthcheck": {
+            "description": "web only (required there): a path on the deployed service that the platform itself fetches. A worker has no HTTP endpoint and may not declare one — its health gate is the machine state. A managed database may not declare one: it is gated by the platform before any app deploys.",
+            "type": "string"
+          },
+          "volume": {
+            "description": "needs a /data disk; the platform owns the size, a manifest never names one. A managed database may not declare one either: the platform owns its disk.",
+            "type": "boolean"
+          },
+          "alwaysOn": {
+            "description": "idle mode at creation. Omitted = the platform default (compute is born always-on); explicit false = opt this service into scale-to-zero (refused on a worker: nothing is routed to it, so nothing could wake it); true = always-on, for work that arrives on an outbound connection. A managed database may not declare it either: the platform owns its idle policy.",
+            "type": "boolean"
+          },
+          "env": {
+            "$ref": "#/components/schemas/TemplateServiceEnv"
+          }
+        },
+        "required": [
+          "type",
+          "env"
+        ]
+      },
+      "TemplateServiceEnv": {
+        "description": "The env a manifest service receives, normalized so every map is present.",
+        "type": "object",
+        "properties": {
+          "fixed": {
+            "description": "ENV_NAME → literal value",
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "generated": {
+            "description": "ENV_NAME → \"${<declared generator>}\"",
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "platform": {
+            "description": "ENV_NAME → \"${{services.<name>.<CANONICAL_KEY>}}\": a platform credential bound into this env by name; the value never leaves the secrets store",
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "required": {
+            "description": "ENV_NAME → spec; the deploy fails with missing_variables when one resolves to no value",
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TemplateVarSpec"
+            }
+          },
+          "optional": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TemplateVarSpec"
+            }
+          }
+        },
+        "required": [
+          "fixed",
+          "generated",
+          "platform",
+          "required",
+          "optional"
+        ]
+      },
+      "TemplateVarSpec": {
+        "description": "One variable as the manifest declares it, keyed by env name in the service's env maps.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "default": {
+            "type": "string"
+          },
+          "generate": {
+            "description": "generator spec (secret:N) — the platform auto-generates the value when the caller supplies none",
+            "type": "string"
+          },
+          "editable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TemplateVariable": {
+        "description": "One deploy-time template variable (env var), flattened out of the manifest.",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "default": {
+            "type": "string"
+          },
+          "generate": {
+            "description": "generator spec (secret:N) — the platform auto-generates the value when the caller supplies none",
+            "type": "string"
+          },
+          "editable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,4664 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "InstaCloud API — Organization level",
+    "version": "0.1.0",
+    "description": "Endpoints under `/orgs/{orgId}`: members, projects, billing, domains. Callable with an account-wide token or a token bound to that organization.\n\nGenerated from the platform's own OpenAPI document (https://api.instacloud.com/openapi.json); see the [API overview](/reference/api/overview) for authentication and token scopes."
+  },
+  "servers": [
+    {
+      "url": "https://api.instacloud.com",
+      "description": "InstaCloud"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Organization",
+      "description": "The organization itself: name, members, invitations."
+    },
+    {
+      "name": "Projects",
+      "description": "Projects inside an organization."
+    },
+    {
+      "name": "Audit",
+      "description": "The project's event timeline, including agent-ingested events."
+    },
+    {
+      "name": "Domains",
+      "description": "Domains bought through InstaCloud, bring-your-own zones and their DNS records."
+    },
+    {
+      "name": "Billing",
+      "description": "Usage, cycles, invoices and credits."
+    }
+  ],
+  "paths": {
+    "/orgs/{orgId}": {
+      "get": {
+        "operationId": "getOrg",
+        "summary": "Org detail + caller's role",
+        "tags": [
+          "Organization"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "org": {
+                      "$ref": "#/components/schemas/Org"
+                    },
+                    "role": {
+                      "$ref": "#/components/schemas/Role"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.",
+        "x-mint": {
+          "metadata": {
+            "title": "Org detail + caller's role",
+            "sidebarTitle": "Get org"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "renameOrg",
+        "summary": "Rename org",
+        "tags": [
+          "Organization"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": [
+                  "name"
+                ],
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "maxLength": 100,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "org": {
+                      "$ref": "#/components/schemas/Org"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nRename an org (display name only; slug is frozen). Requires admin.",
+        "x-mint": {
+          "metadata": {
+            "title": "Rename org",
+            "sidebarTitle": "Rename org"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/billing": {
+      "get": {
+        "operationId": "getBilling",
+        "summary": "Current billing cycle summary (tier, included credit, used, overage, status)",
+        "tags": [
+          "Billing"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSummary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.",
+        "x-mint": {
+          "metadata": {
+            "title": "Current billing cycle summary (tier, included credit, used, overage, status)",
+            "sidebarTitle": "Get billing"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/billing/checkout": {
+      "post": {
+        "operationId": "createCheckout",
+        "summary": "Start a Stripe Checkout session to subscribe the org to a paid tier",
+        "tags": [
+          "Billing"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": [
+                  "tier"
+                ],
+                "type": "object",
+                "properties": {
+                  "tier": {
+                    "type": "string",
+                    "enum": [
+                      "pro",
+                      "team"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "format": "uri",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Billing (Stripe) not configured"
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Start a Stripe Checkout session to subscribe the org to a paid tier",
+            "sidebarTitle": "Create checkout"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/billing/credits/transactions": {
+      "get": {
+        "operationId": "listCreditTransactions",
+        "summary": "List credit transactions",
+        "tags": [
+          "Billing"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "description": "opaque cursor from a previous page's nextBefore"
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditTransactions"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nCredit transaction history for an org — grants, spends and reversals, newest first (pure read)",
+        "x-mint": {
+          "metadata": {
+            "title": "List credit transactions",
+            "sidebarTitle": "List credit transactions"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/billing/cycle": {
+      "get": {
+        "operationId": "getBillingCycle",
+        "summary": "Get billing cycle",
+        "tags": [
+          "Billing"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingCycle"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nCurrent billing-cycle window (frontend uses it to compute from/to for overview/daily)",
+        "x-mint": {
+          "metadata": {
+            "title": "Get billing cycle",
+            "sidebarTitle": "Get billing cycle"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/billing/invoices": {
+      "get": {
+        "operationId": "listBillingInvoices",
+        "summary": "List the org's Stripe invoices (receipts) with links to their PDFs",
+        "tags": [
+          "Billing"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "description": "opaque cursor from a previous page's nextBefore"
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingInvoiceList"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Billing (Stripe) not configured"
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.",
+        "x-mint": {
+          "metadata": {
+            "title": "List the org's Stripe invoices (receipts) with links to their PDFs",
+            "sidebarTitle": "List billing invoices"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/billing/overview": {
+      "get": {
+        "operationId": "getBillingOverview",
+        "summary": "Get billing overview",
+        "tags": [
+          "Billing"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "description": "unix seconds (default current cycle start)"
+          },
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "description": "unix seconds (default current cycle end)"
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingOverview"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nBilling overview for a window — totals, credits, forecast, per-dimension + per-project breakdown (pure read)",
+        "x-mint": {
+          "metadata": {
+            "title": "Get billing overview",
+            "sidebarTitle": "Get billing overview"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/billing/portal": {
+      "post": {
+        "operationId": "createBillingPortal",
+        "summary": "Open the Stripe Customer Portal (change plan / card / cancel)",
+        "tags": [
+          "Billing"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "format": "uri",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Billing (Stripe) not configured"
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Open the Stripe Customer Portal (change plan / card / cancel)",
+            "sidebarTitle": "Create billing portal"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/domains": {
+      "get": {
+        "operationId": "listOrgDomains",
+        "summary": "List org domains",
+        "tags": [
+          "Domains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PurchasedDomain"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nEvery domain the org bought through InstaCloud, including detached ones whose project or service is gone",
+        "x-mint": {
+          "metadata": {
+            "title": "List org domains",
+            "sidebarTitle": "List org domains"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/domains/orders": {
+      "post": {
+        "operationId": "createOrgDomainOrder",
+        "summary": "Create org domain order",
+        "tags": [
+          "Domains"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": [
+                  "domainName"
+                ],
+                "type": "object",
+                "properties": {
+                  "domainName": {
+                    "description": "a registrable apex name, e.g. myapp.com",
+                    "type": "string"
+                  },
+                  "years": {
+                    "minimum": 1,
+                    "maximum": 10,
+                    "default": 1,
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "order": {
+                      "$ref": "#/components/schemas/DomainOrder"
+                    },
+                    "quote": {
+                      "$ref": "#/components/schemas/DomainQuote"
+                    }
+                  },
+                  "required": [
+                    "order",
+                    "quote"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "the name is taken, premium, or already registered through InstaCloud",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "the name is taken, premium, or already registered through InstaCloud",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nBuy a domain into the org. Returns a Stripe Checkout URL; nothing serves it until an attach names one of its hostnames. Gated for agents — domain.purchase, read at the project their session is bound to.",
+        "x-mint": {
+          "metadata": {
+            "title": "Create org domain order",
+            "sidebarTitle": "Create org domain order"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listOrgDomainOrders",
+        "summary": "List org domain orders",
+        "tags": [
+          "Domains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DomainOrder"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nThe org's domain purchases, including those still awaiting payment and those bought without a service",
+        "x-mint": {
+          "metadata": {
+            "title": "List org domain orders",
+            "sidebarTitle": "List org domain orders"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/domains/orders/{orderId}/checkout": {
+      "post": {
+        "operationId": "resumeDomainCheckout",
+        "summary": "Resume domain checkout",
+        "tags": [
+          "Domains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orderId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "description": "the order's Stripe Checkout URL",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "agents are refused: this settles money a human started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "agents are refused: this settles money a human started",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "no URL to give back — already paid, payment in progress, or the checkout expired. THE ORDER IS UPDATED to match whichever it was, so this 4xx does not mean nothing happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "no URL to give back — already paid, payment in progress, or the checkout expired. THE ORDER IS UPDATED to match whichever it was, so this 4xx does not mean nothing happened.",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nThe Stripe Checkout URL of an unpaid order. The create returns it once and no list read carries it, so this is the only way back to a checkout the customer left.",
+        "x-mint": {
+          "metadata": {
+            "title": "Resume domain checkout",
+            "sidebarTitle": "Resume domain checkout"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/domains/search": {
+      "get": {
+        "operationId": "searchDomains",
+        "summary": "Search purchasable domain names with customer prices",
+        "tags": [
+          "Domains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "description": "a label (\"myapp\") or a full name (\"myapp.com\")"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "tlds",
+            "required": false,
+            "description": "comma-separated subset of the sellable TLDs"
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DomainQuote"
+                      }
+                    }
+                  },
+                  "required": [
+                    "results"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.",
+        "x-mint": {
+          "metadata": {
+            "title": "Search purchasable domain names with customer prices",
+            "sidebarTitle": "Search domains"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/domains/{domainName}": {
+      "patch": {
+        "operationId": "updatePurchasedDomain",
+        "summary": "Update purchased domain",
+        "tags": [
+          "Domains"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "minProperties": 1,
+                "type": "object",
+                "properties": {
+                  "autorenew": {
+                    "description": "renew the domain each year before it expires",
+                    "type": "boolean"
+                  },
+                  "locked": {
+                    "description": "the registrar transfer lock. Turn it off to move the domain to another registrar; the ICANN lock in `transferLockExpiresAt` still refuses a transfer until it passes",
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainName",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchasedDomain"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nTurn renewal or the transfer lock on or off for a domain this org bought. A field left out keeps its value. (admin+ for the lock)",
+        "x-mint": {
+          "metadata": {
+            "title": "Update purchased domain",
+            "sidebarTitle": "Update purchased domain"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/domains/{domainName}/auth-code": {
+      "post": {
+        "operationId": "getDomainAuthCode",
+        "summary": "Get domain auth code",
+        "tags": [
+          "Domains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainName",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authCode": {
+                      "description": "the EPP/authorization code the gaining registrar asks for",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "authCode"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nThe transfer authorization code another registrar needs to pull this domain away. Unlocking is the separate PATCH; the code alone moves nothing. (admin+)",
+        "x-mint": {
+          "metadata": {
+            "title": "Get domain auth code",
+            "sidebarTitle": "Get domain auth code"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/domains/{domainName}/delegate": {
+      "post": {
+        "operationId": "delegatePurchasedDomain",
+        "summary": "Delegate purchased domain",
+        "tags": [
+          "Domains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainName",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchasedDomain"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalRequired"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "managed DNS delegation is not enabled on this deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "managed DNS delegation is not enabled on this deployment",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nManaged delegation: host this domain's zone on an InstaCloud-managed Cloudflare zone and keep publishing its DNS there. Nothing goes dark — the zone carries every published record before the nameservers move — and attach keeps working, apexes included. Gated — domain.delegate. (admin+)",
+        "x-mint": {
+          "metadata": {
+            "title": "Delegate purchased domain",
+            "sidebarTitle": "Delegate purchased domain"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/domains/{domainName}/nameservers": {
+      "put": {
+        "operationId": "setDomainNameservers",
+        "summary": "Set domain nameservers",
+        "tags": [
+          "Domains"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "nameservers": {
+                    "maxItems": 13,
+                    "description": "hostnames, in order; at least one",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "nameservers"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainName",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchasedDomain"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "the registrar refused them — with its own sentence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "the registrar refused them — with its own sentence",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nDelegate the domain to other nameservers (Cloudflare, Route 53, your own). They must already host the zone — some registries check before accepting the change. EVERY hostname this domain serves goes down with the move, because the records an attach published live in the registrar's zone: the answer marks them `failed` and names why. While the domain is delegated, attaching a hostname is refused for the same reason. (admin+)",
+        "x-mint": {
+          "metadata": {
+            "title": "Set domain nameservers",
+            "sidebarTitle": "Set domain nameservers"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "resetDomainNameservers",
+        "summary": "Reset domain nameservers",
+        "tags": [
+          "Domains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainName",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchasedDomain"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nPoint the domain back at the registrar's own nameservers, which is where an attach publishes. Never refused for a hostname in the way: this is the repair. (admin+)",
+        "x-mint": {
+          "metadata": {
+            "title": "Reset domain nameservers",
+            "sidebarTitle": "Reset domain nameservers"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/domains/{domainName}/records": {
+      "get": {
+        "operationId": "listDomainRecords",
+        "summary": "List domain records",
+        "tags": [
+          "Domains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainName",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DnsRecord"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nThe DNS records in a bought domain's zone, as the registrar holds them. A record InstaCloud published is `managed`: read-only while the attached hostname in `hostname` claims it; with no `hostname`, a leftover that may be deleted.",
+        "x-mint": {
+          "metadata": {
+            "title": "List domain records",
+            "sidebarTitle": "List domain records"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createDomainRecord",
+        "summary": "Create domain record",
+        "tags": [
+          "Domains"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": [
+                  "type",
+                  "answer"
+                ],
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "$ref": "#/components/schemas/DnsRecordType"
+                  },
+                  "host": {
+                    "description": "relative to the domain: \"@\" for the domain itself, \"api\" for api.<domain>; the full hostname is accepted too",
+                    "type": "string"
+                  },
+                  "answer": {
+                    "description": "an IPv4 (A) or IPv6 (AAAA) address; a hostname (CNAME, ANAME, NS, MX); \"<weight> <port> <target>\" (SRV); text (TXT). \".\" is the null MX and the no-service SRV target",
+                    "type": "string"
+                  },
+                  "ttl": {
+                    "minimum": 300,
+                    "maximum": 604800,
+                    "description": "seconds",
+                    "type": "integer"
+                  },
+                  "priority": {
+                    "minimum": 0,
+                    "maximum": 65535,
+                    "description": "required for MX and SRV, refused for every other type",
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainName",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DnsRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "the record does not fit its type, the zone cannot hold it (a CNAME or NS at the domain itself), or the registrar refused it — with its own sentence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "the record does not fit its type, the zone cannot hold it (a CNAME or NS at the domain itself), or the registrar refused it — with its own sentence",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "the host serves a compute service through InstaCloud, or an NS there would delegate one away",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "the host serves a compute service through InstaCloud, or an NS there would delegate one away",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nAdd a DNS record to a bought domain's zone. Omitted, `host` is the domain itself and `ttl` is 300 seconds. Routing (A, AAAA, ANAME, CNAME) and delegation (NS) are refused at a hostname an attach serves — those are the platform's — and an NS above one, which would delegate it away; attaching a hostname later replaces the routing records at that host.",
+        "x-mint": {
+          "metadata": {
+            "title": "Create domain record",
+            "sidebarTitle": "Create domain record"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/domains/{domainName}/records/{recordId}": {
+      "patch": {
+        "operationId": "updateDomainRecord",
+        "summary": "Update domain record",
+        "tags": [
+          "Domains"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "minProperties": 1,
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "$ref": "#/components/schemas/DnsRecordType"
+                  },
+                  "host": {
+                    "description": "relative to the domain: \"@\" for the domain itself, \"api\" for api.<domain>; the full hostname is accepted too",
+                    "type": "string"
+                  },
+                  "answer": {
+                    "description": "an IPv4 (A) or IPv6 (AAAA) address; a hostname (CNAME, ANAME, NS, MX); \"<weight> <port> <target>\" (SRV); text (TXT). \".\" is the null MX and the no-service SRV target",
+                    "type": "string"
+                  },
+                  "ttl": {
+                    "minimum": 300,
+                    "maximum": 604800,
+                    "description": "seconds",
+                    "type": "integer"
+                  },
+                  "priority": {
+                    "minimum": 0,
+                    "maximum": 65535,
+                    "description": "required for MX and SRV, refused for every other type",
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainName",
+            "required": true
+          },
+          {
+            "schema": {
+              "pattern": "^[0-9]{1,18}$",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "recordId",
+            "required": true,
+            "description": "the id from the records list"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DnsRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "the merged record does not fit its type, the zone cannot hold it, or the registrar refused it — with its own sentence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "the merged record does not fit its type, the zone cannot hold it, or the registrar refused it — with its own sentence",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "the record is managed, or the host it moves to serves a compute service (for an NS: or has one beneath it)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "the record is managed, or the host it moves to serves a compute service (for an NS: or has one beneath it)",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nChange a DNS record; a field left out keeps its value. A managed record is refused.",
+        "x-mint": {
+          "metadata": {
+            "title": "Update domain record",
+            "sidebarTitle": "Update domain record"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteDomainRecord",
+        "summary": "Delete domain record",
+        "tags": [
+          "Domains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainName",
+            "required": true
+          },
+          {
+            "schema": {
+              "pattern": "^[0-9]{1,18}$",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "recordId",
+            "required": true,
+            "description": "the id from the records list"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "a hostname still claims the record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "a hostname still claims the record",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nRemove a DNS record. One a hostname still claims is refused — it leaves the zone with that hostname; a managed record no hostname claims may go.",
+        "x-mint": {
+          "metadata": {
+            "title": "Delete domain record",
+            "sidebarTitle": "Delete domain record"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/events/stream": {
+      "get": {
+        "operationId": "streamOrgEvents",
+        "summary": "Live org progress stream (Server-Sent Events)",
+        "tags": [
+          "Audit"
+        ],
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nA long-lived `text/event-stream` for progress on org-scoped resources (purchased domains). Each `live` event (orgId, kind; no `id`) says something moved in the background: `domain.order.progress` — an order changed status, refetch the orders and the domain inventory; `domain.progress` — a domain's hostnames or status changed or its zone was published into, refetch the inventory, the orders and an open zone read. Nothing is replayed: after a reconnect, or on a `reset` event, refetch every view. The server ends each stream after a few minutes; reconnect.",
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events: `live` and `reset` events",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "x-mint": {
+          "metadata": {
+            "title": "Live org progress stream (Server-Sent Events)",
+            "sidebarTitle": "Stream org events"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/invitations": {
+      "post": {
+        "operationId": "createInvitation",
+        "summary": "Invite a member by email (admin+)",
+        "tags": [
+          "Organization"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": [
+                  "email",
+                  "role"
+                ],
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "format": "email",
+                    "type": "string"
+                  },
+                  "role": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "admin"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "member"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Invite a member by email (admin+)",
+            "sidebarTitle": "Create invitation"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listInvitations",
+        "summary": "List pending invitations (admin+)",
+        "tags": [
+          "Organization"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "invitations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Invitation"
+                      }
+                    }
+                  },
+                  "required": [
+                    "invitations"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.",
+        "x-mint": {
+          "metadata": {
+            "title": "List pending invitations (admin+)",
+            "sidebarTitle": "List invitations"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/invitations/{invitationId}": {
+      "delete": {
+        "operationId": "revokeInvitation",
+        "summary": "Revoke a pending invitation (admin+)",
+        "tags": [
+          "Organization"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "invitationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Revoke a pending invitation (admin+)",
+            "sidebarTitle": "Revoke invitation"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/members": {
+      "get": {
+        "operationId": "listMembers",
+        "summary": "List members",
+        "tags": [
+          "Organization"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Member"
+                      }
+                    }
+                  },
+                  "required": [
+                    "members"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.",
+        "x-mint": {
+          "metadata": {
+            "title": "List members",
+            "sidebarTitle": "List members"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/members/{userId}": {
+      "put": {
+        "operationId": "setMemberRole",
+        "summary": "Change a member's role (admin+; only an owner may set/clear owner)",
+        "tags": [
+          "Organization"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": [
+                  "role"
+                ],
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "$ref": "#/components/schemas/Role"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 128,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "description": "Better Auth user id (opaque string, not a UUID)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Change a member's role (admin+; only an owner may set/clear owner)",
+            "sidebarTitle": "Set member role"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removeMember",
+        "summary": "Remove a member (admin+, or self-leave); the last owner cannot be removed",
+        "tags": [
+          "Organization"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 128,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "description": "Better Auth user id (opaque string, not a UUID)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Remove a member (admin+, or self-leave); the last owner cannot be removed",
+            "sidebarTitle": "Remove member"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/projects": {
+      "post": {
+        "operationId": "createProject",
+        "summary": "Provision a project (DB + storage + compute)",
+        "tags": [
+          "Projects"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": [
+                  "name"
+                ],
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Provision a project (DB + storage + compute)",
+            "sidebarTitle": "Create project"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listProjects",
+        "summary": "List projects in an org",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Project"
+                      }
+                    }
+                  },
+                  "required": [
+                    "projects"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.",
+        "x-mint": {
+          "metadata": {
+            "title": "List projects in an org",
+            "sidebarTitle": "List projects"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/usage": {
+      "get": {
+        "operationId": "getOrgUsage",
+        "summary": "Get org usage",
+        "tags": [
+          "Billing"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "description": "unix seconds (default current cycle start)"
+          },
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "description": "unix seconds (default current cycle end)"
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgUsage"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nOrg usage across the 5 billing dimensions + per-project breakdown over a window (default current cycle)",
+        "x-mint": {
+          "metadata": {
+            "title": "Get org usage",
+            "sidebarTitle": "Get org usage"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/zones": {
+      "post": {
+        "operationId": "createOrgZone",
+        "summary": "Create org zone",
+        "tags": [
+          "Domains"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "domainName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "domainName"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgZone"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "already delegated, bought through InstaCloud (use its own delegate door), or the domain carries live mail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "already delegated, bought through InstaCloud (use its own delegate door), or the domain carries live mail",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "managed DNS delegation is not enabled on this deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "managed DNS delegation is not enabled on this deployment",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nDelegate a bring-your-own domain: build its InstaCloud-managed zone (seeded by the provider's record scan — a heuristic, so REVIEW the zone via GET .../zones/:domainName/records before re-pointing) and answer the two nameservers to set at your registrar. Refused for a domain carrying live MX records. Once the registry points at the zone, attach records are published automatically — apexes included. Gated — zone.delegate. (admin+)",
+        "x-mint": {
+          "metadata": {
+            "title": "Create org zone",
+            "sidebarTitle": "Create org zone"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listOrgZones",
+        "summary": "List org zones",
+        "tags": [
+          "Domains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OrgZone"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nThe org's BYO delegated zones, each with its nameservers and the sweeper's last is-it-pointed-yet observation (refreshed about every minute at small fleet sizes; no per-request DNS).",
+        "x-mint": {
+          "metadata": {
+            "title": "List org zones",
+            "sidebarTitle": "List org zones"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/zones/{domainName}": {
+      "delete": {
+        "operationId": "releaseOrgZone",
+        "summary": "Release org zone",
+        "tags": [
+          "Domains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainName",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "domainName": {
+                      "type": "string"
+                    },
+                    "released": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "domainName",
+                    "released"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalRequired"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nRelease a BYO delegated zone: the platform's records are pruned and the zone deleted. Point the domain's nameservers back at your own provider; hostnames then re-verify on the records path. Gated — zone.delegate. (admin+)",
+        "x-mint": {
+          "metadata": {
+            "title": "Release org zone",
+            "sidebarTitle": "Release org zone"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/zones/{domainName}/records": {
+      "post": {
+        "operationId": "createOrgZoneRecord",
+        "summary": "Create org zone record",
+        "tags": [
+          "Domains"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "host": {
+                    "type": "string"
+                  },
+                  "answer": {
+                    "type": "string"
+                  },
+                  "ttl": {
+                    "type": "number"
+                  },
+                  "priority": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "type",
+                  "answer"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainName",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgZoneRecord"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "the zone already serves (the repair window closed at activation), or the provider refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "the zone already serves (the repair window closed at activation), or the provider refused",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nThe pre-cutover REPAIR door: create a record the provider's scan missed, directly in the delegated zone, BEFORE switching the nameservers (the door closes at activation). Types beyond the registrar model are accepted where the review needs them (CAA). The record is yours, not the platform's — attach-published records are still managed for you. Gated — zone.delegate. (admin+)",
+        "x-mint": {
+          "metadata": {
+            "title": "Create org zone record",
+            "sidebarTitle": "Create org zone record"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listOrgZoneRecords",
+        "summary": "List org zone records",
+        "tags": [
+          "Domains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "domainName",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OrgZoneRecord"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nA delegated zone's records, for the pre-switch review: the provider's scan seeds common records but is not exhaustive — check this list against your current DNS and add what is missing before re-pointing the nameservers.",
+        "x-mint": {
+          "metadata": {
+            "title": "List org zone records",
+            "sidebarTitle": "List org zone records"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Session access JWT or an API token (`insta_<prefix>_<secret>`)."
+      }
+    },
+    "schemas": {
+      "ApprovalRequired": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "approval_required"
+            ]
+          },
+          "approvalId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "action": {
+            "description": "the gated action, or a comma-joined compound set — prefer `actions`",
+            "type": "string"
+          },
+          "actions": {
+            "description": "every capability this approval covers",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "url": {
+            "description": "the console page where a project admin reviews this request",
+            "type": "string"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NextAction"
+            }
+          }
+        }
+      },
+      "BillingCycle": {
+        "type": "object",
+        "properties": {
+          "tier": {
+            "type": "string",
+            "enum": [
+              "free",
+              "pro",
+              "team",
+              "enterprise"
+            ]
+          },
+          "cycleStart": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cycleEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "anchorDay": {
+            "description": "day-of-month the cycle recurs on (org creation date, UTC)",
+            "type": "integer"
+          },
+          "now": {
+            "format": "date-time",
+            "type": "string"
+          }
+        }
+      },
+      "BillingInvoice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Stripe invoice id",
+            "example": "in_1Ofg…",
+            "type": "string"
+          },
+          "number": {
+            "description": "the invoice number printed on the PDF; null before Stripe assigns one",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "amountUsd": {
+            "description": "invoice total in USD",
+            "type": "number"
+          },
+          "currency": {
+            "example": "usd",
+            "type": "string"
+          },
+          "status": {
+            "description": "Stripe invoice status — paid, open or uncollectible (drafts and voided invoices are never listed)",
+            "example": "paid",
+            "type": "string"
+          },
+          "description": {
+            "description": "the invoice's description, else its first line item — what was bought",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pdfUrl": {
+            "description": "Stripe-hosted, read-only PDF; null until Stripe has rendered it. The payable hosted invoice link is deliberately never returned.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "createdAt",
+          "amountUsd",
+          "currency",
+          "status",
+          "description",
+          "pdfUrl"
+        ]
+      },
+      "BillingInvoiceList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BillingInvoice"
+            }
+          },
+          "nextBefore": {
+            "description": "opaque cursor; pass as ?before= for the next page, null when there are no more",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "BillingOverview": {
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "integer"
+              },
+              "to": {
+                "type": "integer"
+              }
+            }
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "free",
+              "pro",
+              "team",
+              "enterprise"
+            ]
+          },
+          "billingStatus": {
+            "type": "string",
+            "enum": [
+              "active",
+              "suspended"
+            ]
+          },
+          "subscriptionStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "totals": {
+            "type": "object",
+            "properties": {
+              "usedUsd": {
+                "description": "total usage cost in the window",
+                "type": "number"
+              },
+              "includedUsd": {
+                "description": "tier allowance for the window (free $5 / pro $20 / team $0 — the plan fee is flat and usage bills from the first cent / enterprise per deal, $0 default); platform-configurable",
+                "type": "number"
+              },
+              "overageUsd": {
+                "description": "amount still owed for the window: max(0, used − included − creditsApplied − (live window ? creditBalance : 0))",
+                "type": "number"
+              },
+              "creditsUsd": {
+                "description": "remaining included allowance plus the org credit balance (legacy merged figure; prefer creditBalanceUsd)",
+                "type": "number"
+              },
+              "forecastUsd": {
+                "description": "linear run-rate projection to the full cycle",
+                "type": "number"
+              },
+              "creditBalanceUsd": {
+                "description": "credits the org holds as of now (every grant kind, unexpired, remaining > 0); not window-scoped; carries over between cycles",
+                "type": "number"
+              },
+              "creditsAppliedUsd": {
+                "description": "credits taken off this window's billing cycle so far (billing_cycles.credit_applied_micros); 0 when the window is not a billing cycle",
+                "type": "number"
+              }
+            }
+          },
+          "byDimension": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DimensionUsage"
+            }
+          },
+          "byProject": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "projectId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "deletedAt": {
+                  "format": "date-time",
+                  "description": "when the project was deleted — its usage history outlives it; null for a live project",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "totalCostUsd": {
+                  "type": "number"
+                },
+                "dimensions": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DimensionUsage"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "BillingSummary": {
+        "type": "object",
+        "properties": {
+          "tier": {
+            "type": "string",
+            "enum": [
+              "free",
+              "pro",
+              "team",
+              "enterprise"
+            ]
+          },
+          "billingStatus": {
+            "type": "string",
+            "enum": [
+              "active",
+              "suspended"
+            ]
+          },
+          "cycleStart": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cycleEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "includedUsd": {
+            "description": "tier allowance for the cycle (free $5 / pro $20 / team $0 — the plan fee is flat and usage bills from the first cent / enterprise per deal, $0 default); platform-configurable",
+            "type": "number"
+          },
+          "usedUsd": {
+            "type": "number"
+          },
+          "overageUsd": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "suspended"
+            ]
+          },
+          "subscriptionStatus": {
+            "description": "Stripe subscription status (active/past_due/canceled/…); null if no paid subscription.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "caps": {
+            "description": "this plan's resource ceilings for a compute service (vCPU / MB / volume Gi; managed redis/mysql/mongodb read the compute row) and for a postgres service (millicores / MiB / volume Gi) — the same rows the per-service `cap` fields return. A NEW service is born at them (cpu, memory and, since 2026-09-12, its volume), and an existing one may be raised to them. Read them from here to prefill a create form before any service exists; they move with the plan and with env overrides per deployment, so never hardcode a tier's numbers.",
+            "type": "object",
+            "properties": {
+              "compute": {
+                "type": "object",
+                "properties": {
+                  "cpu": {
+                    "type": "integer"
+                  },
+                  "memoryMb": {
+                    "type": "integer"
+                  },
+                  "volumeGib": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "cpu",
+                  "memoryMb",
+                  "volumeGib"
+                ]
+              },
+              "db": {
+                "type": "object",
+                "properties": {
+                  "cpuMilli": {
+                    "type": "integer"
+                  },
+                  "memoryMib": {
+                    "type": "integer"
+                  },
+                  "volumeGib": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "cpuMilli",
+                  "memoryMib",
+                  "volumeGib"
+                ]
+              }
+            },
+            "required": [
+              "compute",
+              "db"
+            ]
+          }
+        }
+      },
+      "ComputeProvider": {
+        "description": "Compute plane actually backing a compute resource, derived from its provider_ref rather than its kind. Absent when it cannot be determined from the row — clients must then assert no provider rather than assume one from `kind`.",
+        "type": "string",
+        "enum": [
+          "fly",
+          "insta-compute"
+        ]
+      },
+      "CreditTransaction": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "amountUsd": {
+            "description": "signed: positive = credit added (grant or reversal), negative = credit spent",
+            "type": "number"
+          },
+          "reason": {
+            "description": "gift_grant | usage_debit | subscription_debit | adjust | expire | legacy_import",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "description": "the expiry of the grant this row moved, so a reader can see which bucket it came out of; null = never expires",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "additionalProperties": false,
+            "description": "what the movement was for",
+            "type": "object",
+            "properties": {
+              "invoiceId": {
+                "type": "string"
+              },
+              "subscriptionId": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "reversal": {
+                "type": "string"
+              },
+              "idempotencyKey": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "id",
+          "amountUsd",
+          "reason",
+          "createdAt"
+        ]
+      },
+      "CreditTransactions": {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreditTransaction"
+            }
+          },
+          "nextBefore": {
+            "description": "opaque cursor; pass as ?before= for the next page, null when there are no more",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "DimensionUsage": {
+        "type": "object",
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "ram",
+              "cpu",
+              "volume",
+              "storage",
+              "egress"
+            ]
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "unit": {
+            "example": "GB·min",
+            "type": "string"
+          },
+          "costUsd": {
+            "description": "quantity × unit price for this dimension in the window",
+            "type": "number"
+          }
+        }
+      },
+      "DnsRecord": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "the registrar's id for the record; the handle every write takes",
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/DnsRecordType"
+          },
+          "host": {
+            "description": "relative to the domain: \"@\" is the domain itself, \"api\" is api.<domain>",
+            "type": "string"
+          },
+          "fqdn": {
+            "type": "string"
+          },
+          "answer": {
+            "type": "string"
+          },
+          "ttl": {
+            "description": "seconds",
+            "type": "integer"
+          },
+          "priority": {
+            "description": "MX and SRV only",
+            "type": "integer"
+          },
+          "managed": {
+            "description": "published by InstaCloud: read-only while `hostname` names the attached hostname it serves; without one, a leftover no hostname claims, which may be deleted",
+            "type": "boolean"
+          },
+          "hostname": {
+            "description": "the attached hostname a managed record serves",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "host",
+          "fqdn",
+          "answer",
+          "ttl",
+          "managed"
+        ]
+      },
+      "DnsRecordType": {
+        "type": "string",
+        "enum": [
+          "A",
+          "AAAA",
+          "ANAME",
+          "CNAME",
+          "MX",
+          "NS",
+          "SRV",
+          "TXT"
+        ]
+      },
+      "DomainHostnameState": {
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "attached",
+              "active",
+              "failed"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "service": {
+            "description": "the compute service this hostname serves; each hostname of a domain can serve a different one",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "hostname",
+          "state",
+          "service"
+        ]
+      },
+      "DomainOrder": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "domainName": {
+            "type": "string"
+          },
+          "years": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DomainOrderStatus"
+          },
+          "priceCents": {
+            "type": "integer"
+          },
+          "renewalPriceCents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currency": {
+            "type": "string"
+          },
+          "checkoutUrl": {
+            "format": "uri",
+            "description": "Stripe Checkout — present on create only; the human completes payment here",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "paidAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "registeredAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "domainName",
+          "years",
+          "status",
+          "priceCents",
+          "renewalPriceCents",
+          "currency",
+          "createdAt",
+          "paidAt",
+          "registeredAt",
+          "failedReason"
+        ]
+      },
+      "DomainOrderStatus": {
+        "type": "string",
+        "enum": [
+          "pending_payment",
+          "paid",
+          "registering",
+          "registered",
+          "attaching",
+          "active",
+          "failed",
+          "canceled"
+        ]
+      },
+      "DomainQuote": {
+        "type": "object",
+        "properties": {
+          "domainName": {
+            "type": "string"
+          },
+          "tld": {
+            "type": "string"
+          },
+          "purchasable": {
+            "type": "boolean"
+          },
+          "premium": {
+            "type": "boolean"
+          },
+          "priceCents": {
+            "description": "what the customer pays for the registration term",
+            "type": "integer"
+          },
+          "renewalPriceCents": {
+            "description": "per year, at today's price",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "why it cannot be bought here",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domainName",
+          "tld",
+          "purchasable",
+          "premium",
+          "currency"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Invitation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "org_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "revoked"
+            ]
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        }
+      },
+      "Member": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "description": "Better Auth user id (opaque string, not a UUID)",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avatar_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "NextAction": {
+        "type": "object",
+        "properties": {
+          "op": {
+            "description": "Neutral logical action id, e.g. \"service.add\" — NOT an operationId or a CLI/MCP tool name; each client maps it to its own surface.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Natural-language, human/LLM-facing \"why do this now\".",
+            "type": "string"
+          },
+          "args": {
+            "description": "Suggested, flat named arguments; \"<placeholder>\"s where a value is unknown.",
+            "type": "object",
+            "additionalProperties": true
+          },
+          "gated": {
+            "description": "True if the action passes a governance gate.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "op",
+          "reason"
+        ]
+      },
+      "Ok": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Org": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "is_personal": {
+            "type": "boolean"
+          },
+          "owner_user_id": {
+            "description": "Better Auth user id (opaque string, not a UUID)",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "checkout_token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "OrgUsage": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "integer"
+          },
+          "to": {
+            "type": "integer"
+          },
+          "org": {
+            "type": "object",
+            "properties": {
+              "dimensions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DimensionUsage"
+                }
+              },
+              "totalCostUsd": {
+                "type": "number"
+              }
+            }
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "projectId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "deletedAt": {
+                  "format": "date-time",
+                  "description": "when the project was deleted — its usage history outlives it; null for a live project",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "dimensions": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DimensionUsage"
+                  }
+                },
+                "totalCostUsd": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        }
+      },
+      "OrgZone": {
+        "type": "object",
+        "properties": {
+          "domainName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "awaiting_ns",
+              "active"
+            ],
+            "description": "awaiting_ns: the zone is built and seeded by the provider's record scan — REVIEW its records (GET .../zones/:domainName/records; the scan finds common records, not necessarily all of them), add anything missing, then set the domain to `nameservers` at your registrar; active: the registry answers from the managed zone"
+          },
+          "nameservers": {
+            "description": "the managed zone's assigned nameservers — what the customer sets at their registrar",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "delegated": {
+            "description": "whether the domain's public nameservers answer from the managed zone, as of the platform's last periodic observation (about a minute); a domain pointed away after activation reads false again within the same window",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "domainName",
+          "status",
+          "nameservers",
+          "delegated"
+        ]
+      },
+      "OrgZoneRecord": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "host": {
+            "description": "\"@\" is the domain itself",
+            "type": "string"
+          },
+          "answer": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "integer"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "proxied": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "type",
+          "host",
+          "answer"
+        ]
+      },
+      "Project": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "org_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "owner_user_id": {
+            "description": "Better Auth user id (opaque string, not a UUID)",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "error",
+              "deleting",
+              "deleted"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        }
+      },
+      "ProvisionResult": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "defaultBranch": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "$ref": "#/components/schemas/ResourceKind"
+                },
+                "provider": {
+                  "$ref": "#/components/schemas/ComputeProvider"
+                },
+                "status": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NextAction"
+            }
+          }
+        }
+      },
+      "PurchasedDomain": {
+        "type": "object",
+        "properties": {
+          "domainName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "registered",
+              "attaching",
+              "active",
+              "attach_failed",
+              "detached"
+            ],
+            "description": "detached: every service its hostnames named is gone — attach it again"
+          },
+          "hostnames": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DomainHostnameState"
+            }
+          },
+          "registeredAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "autorenew": {
+            "type": "boolean"
+          },
+          "privacy": {
+            "type": "boolean"
+          },
+          "locked": {
+            "description": "the registrar transfer lock: while it is on, no other registrar can pull the domain away. Turn it off to move the domain out. What the last write reported, or what registration asked for — nothing reads it back",
+            "type": "boolean"
+          },
+          "nameservers": {
+            "description": "what the registrar holds. Empty means never written — only a nameserver write fills it in",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "delegated": {
+            "description": "the zone is answered by nameservers InstaCloud cannot write to (custody `foreign`), so nothing published resolves and an attach is refused. A MANAGED delegation reads false: the platform still publishes there",
+            "type": "boolean"
+          },
+          "custody": {
+            "type": "string",
+            "enum": [
+              "registrar",
+              "managed",
+              "foreign"
+            ],
+            "description": "who answers the domain's zone: the registrar's own nameservers, a managed InstaCloud zone (delegated, still platform-published), or somewhere the platform cannot write"
+          },
+          "transferLockExpiresAt": {
+            "description": "ICANN 60-day lock after registration: no transfer out before this, whatever `locked` says",
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orderId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "domainName",
+          "status",
+          "hostnames",
+          "registeredAt",
+          "expiresAt",
+          "autorenew",
+          "privacy",
+          "locked",
+          "nameservers",
+          "delegated",
+          "custody",
+          "transferLockExpiresAt",
+          "orderId"
+        ]
+      },
+      "ResourceKind": {
+        "type": "string",
+        "enum": [
+          "neon",
+          "insta-db",
+          "s3",
+          "fly",
+          "insta-compute"
+        ]
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "owner",
+          "admin",
+          "member"
+        ]
+      }
+    }
+  }
+}

@@ -2,12 +2,14 @@
 
 CPU-only Whisper large-v3-turbo speech-to-text behind an OpenAI-compatible API.
 
-> **Draft.** The image builds, the deploy is green and the API has been verified end to end. It
-> stays out of the catalog while three calls are open: this ships upstream's *experimental* INT8
-> activations on by default because the FP32 default cannot answer inside the edge's 60 second
-> limit (see [Why INT8 is on by default](#why-int8-is-on-by-default)), `meta.category` is `llm`,
-> which is wrong for a speech recognition model and there is no better category yet, and the
-> server accepts only 16 kHz mono 16-bit WAV, so most people's audio needs converting first.
+> **Draft.** The image builds, the deploy is green and transcription has been verified end to end.
+> It stays out of the catalog while four calls are open: the optional speaker-label path has never
+> been run, because its weights are gated on Hugging Face and nobody has deployed this with a token
+> that has accepted the conditions; this ships upstream's *experimental* INT8 activations on by
+> default because the FP32 default cannot answer inside the edge's 60 second limit (see
+> [Why INT8 is on by default](#why-int8-is-on-by-default)); `meta.category` is `llm`, which is wrong
+> for a speech recognition model and there is no better category yet; and the server accepts only
+> 16 kHz mono 16-bit WAV, so most people's audio needs converting first.
 
 ## Overview
 
@@ -35,6 +37,8 @@ own `Dockerfile.cloud`. See [Why the model is in the image](#why-the-model-is-in
   choose.
 - No cold model download. The converted model is inside the image, so a restart or a
   redeployment comes back with no network fetch and no warm-up step.
+- Optional timestamped speaker labels, once you supply a Hugging Face token for upstream's gated
+  diarization weights. See [Speaker labels](#speaker-labels).
 
 ## What you need before deploying
 
@@ -45,6 +49,9 @@ own `Dockerfile.cloud`. See [Why the model is in the image](#why-the-model-is-in
   converted first, for example with
   `ffmpeg -i input.mp3 -ar 16000 -ac 1 -c:a pcm_s16le output.wav`.
 - An amd64 box. The server compiles against x86 kernels and there is no arm64 image.
+- Only for speaker labels: a Hugging Face account that has accepted the conditions on
+  [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1),
+  and an access token from it.
 
 ## Configuration
 
@@ -54,13 +61,14 @@ own `Dockerfile.cloud`. See [Why the model is in the image](#why-the-model-is-in
 | `OMP_NUM_THREADS` | fixed, `8` | Inference threads. Matches the 8 shared vCPUs a compute machine is configured with; the server clamps it to 1 to 8 |
 | `WHISPER_ACTIVATIONS` | fixed, `int8` | INT8 encoder activations. See [Why INT8 is on by default](#why-int8-is-on-by-default); clearing it makes transcription time out |
 | `WHISPER_DECODER_ACTIVATIONS` | fixed, `int8` | INT8 decoder projections and vocabulary head. Same reason, same section |
+| `HF_TOKEN` | no | A Hugging Face access token, for speaker labels only. See [Speaker labels](#speaker-labels). Blank means transcription only |
+| `WHISPER_DIAR_SIMD` | no | `avx512` selects the FP32 AVX-512 diarization kernels where the CPU has them, with fallback. No effect without `HF_TOKEN` |
+| `WHISPER_DIAR_BATCH_INPUT` | no | `1` batches the diarizer's LSTM input projections. No effect without `HF_TOKEN` |
 | `WHISPER_SIMD` | no | Pin the kernel path to `scalar`, `avx2` or `avx512`. Detected automatically when blank |
-| `WHISPER_REQUEST_TIMEOUT` | no | Seconds allowed for one transcription before the server gives up. Default 3600 |
+| `WHISPER_REQUEST_TIMEOUT` | no | Seconds allowed for one transcription before the server gives up. Default 300, maximum 3600. The edge cuts the connection at 60 seconds regardless |
 
-Diarization (speaker labels) is **not** enabled. Upstream supports it, but it needs the four
-pyannote Community-1 checkpoints, which are gated behind access conditions on Hugging Face and
-so cannot be baked into a public image. Without `WHISPER_DIARIZATION_MODELS` set, the
-`response_format=diarized_json` path is unavailable and plain transcription is unaffected.
+A persistent volume is mounted at `/data`, and the only thing that ever lands on it is the
+diarization checkpoints below. Transcription itself keeps no state.
 
 ## After deploy
 
@@ -93,6 +101,36 @@ There are **no CORS headers**. A cross-origin preflight is answered `401` with n
 `Access-Control-Allow-Origin`, so browser JavaScript cannot call this API directly. Call it from
 your own backend, or put a proxy in front of it.
 
+## Speaker labels
+
+Upstream ships a C port of the pyannote Community-1 diarization pipeline, which labels who spoke
+when. Its four checkpoints are gated on Hugging Face (CC BY 4.0, with access conditions accepted
+per account), so they are **not** in this image and CI cannot fetch them either.
+
+To turn it on: accept the conditions on
+[pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1),
+create an access token, and set it as `HF_TOKEN`. On the next start the entrypoint downloads the
+four files (33 MB), checks each one's SHA-256 against upstream's published values, and leaves them
+on the volume, so later restarts find them already there.
+
+```sh
+curl https://<your-service-url>/v1/audio/transcriptions \
+  -H "Authorization: Bearer $WHISPER_API_KEY" \
+  -F file=@conversation.wav -F model=gpt-4o-transcribe-diarize \
+  -F response_format=diarized_json -F chunking_strategy=auto
+```
+
+The response carries `text`, timestamped `segments` each with a `speaker` label (`A`, `B`, ...),
+and duration `usage`. Labels distinguish voices, not people, and overlapping speech is not
+separated.
+
+A token that does not work is not fatal. The failure is logged, the service still starts, and
+diarized requests keep answering `503` with `Configure WHISPER_DIARIZATION_MODELS to enable
+diarization.` while transcription carries on unaffected. That is deliberate: making a bad token
+fatal would produce a restart loop that never reaches the health gate and reads as a broken
+template. The same 60 second edge limit applies, and diarization is slower than transcription
+alone, so keep diarized clips short.
+
 ## Why INT8 is on by default
 
 `WHISPER_ACTIVATIONS` and `WHISPER_DECODER_ACTIVATIONS` are `int8` in the manifest, and that is
@@ -121,8 +159,9 @@ request and fails long before the port opens. There is no manifest field that ex
 
 So `./Dockerfile` does the download, the SHA-256 check and the conversion in the build stage and
 copies the 808 MiB result into the final image. The trade is a large image and a slow CI build,
-against a deploy that passes its health check on the first try, needs no volume, needs no network
-at boot, and is byte-identical after every restart.
+against a deploy that passes its health check on the first try and is byte-identical after every
+restart. The volume this template does mount carries only the optional diarization checkpoints;
+the Whisper model never touches it.
 
 ## Links
 
@@ -132,6 +171,8 @@ at boot, and is byte-identical after every restart.
 - Image: `ghcr.io/insforge/insta-oss/templates/whisper-turbo`, built from `./Dockerfile`
 - Model checkpoint: `ggml-large-v3-turbo.bin` from
   <https://huggingface.co/ggerganov/whisper.cpp>, pinned by SHA-256 in the Dockerfile
+- Diarization weights: <https://huggingface.co/pyannote/speaker-diarization-community-1>, CC BY 4.0
+  with access conditions. Not distributed in this image; fetched at boot from your own token
 - License: MIT (upstream `baryhuang/whisper-turbo.c`). The Whisper weights are OpenAI's, under
-  MIT. Parts of upstream's diarization port are Apache-2.0, and are not exercised by this
-  template
+  MIT. `src/diarization/network.c` and `src/diarization/cluster.c` are Apache-2.0; see upstream's
+  `THIRD_PARTY_DIARIZATION.md`

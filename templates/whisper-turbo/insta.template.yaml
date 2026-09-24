@@ -1,0 +1,107 @@
+code: whisper-turbo
+version: 1.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+upstream:
+  repo: baryhuang/whisper-turbo.c
+  # No releases and no git tags upstream, so the commit IS the pin. ./Dockerfile fetches this
+  # exact sha; the two must move together.
+  pinned: 54ad979a08e654929186b374d266a4ced291f1be
+  license: MIT
+
+services:
+  whisper:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/whisper-turbo:1.1.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 8080
+    # The only two routes the server has are GET /health and POST /v1/audio/transcriptions.
+    # /health is answered BEFORE the bearer-token check (src/server/http.c), which is what makes
+    # it usable as the gate: every other path returns 401 until a client authenticates.
+    healthcheck: /health
+    # Scale to zero. Every wake is an inbound transcription request; there is no background work,
+    # no scheduler and no outbound connection that an idle machine would need to be up for.
+    alwaysOn: false
+    # The ONLY thing on this disk is the optional diarization checkpoints (see HF_TOKEN below).
+    # Transcription itself is stateless: the INT8 model is baked into the image and mmapped
+    # read-only, uploads live in memory for one request, and transcripts are returned and never
+    # stored. So an ASR-only deployment writes nothing here. It is declared anyway because the
+    # alternative is re-fetching 33 MB of gated weights on every restart, and because it gives an
+    # operator who cannot put a Hugging Face token in a variable somewhere to place the four files
+    # by hand.
+    volume: true
+    env:
+      fixed:
+        # The platform's compute machines are configured with 8 shared vCPUs; the server clamps
+        # this to 1-8 regardless. Also set in the image, repeated here so it is visible and
+        # editable from the console rather than buried in a layer.
+        OMP_NUM_THREADS: "8"
+        # INT8 activations, on by default, and this is NOT a performance preference: it is what
+        # makes the template work at all through its own URL. The edge in front of a compute
+        # service cuts a request off at 60 seconds. Measured on this platform with the canonical
+        # 11-second JFK sample, which pads to one full 30-second encoder window:
+        #
+        #   upstream default (FP32 activations)  >118 s, never returned, edge 502 at 60 s
+        #   these two set to int8                 15.2 s cold, 9.5 s warm, HTTP 200
+        #
+        # So the documented-safe default produces a service that 502s on every transcription it
+        # is asked to do, and no client-side change reaches that. Upstream marks these
+        # experimental and documents accuracy limitations, and its own published benchmarks are
+        # measured with both of them on. The machines this lands on carry AVX-512 VNNI, which is
+        # the path that makes the difference.
+        #
+        # Both are ordinary variables on the service: an operator who would rather have FP32 and
+        # drive the API from something that tolerates a long request can clear them after deploy.
+        WHISPER_ACTIVATIONS: int8
+        WHISPER_DECODER_ACTIVATIONS: int8
+      required:
+        # Neither a `default:` nor a `generate:`, and this is the case the rule exists for: the
+        # operator has to send this exact string back as `Authorization: Bearer <key>` on every
+        # request. A template variable is stored write-only (minted = false, and no endpoint
+        # reads it back), so a generated key would be one NOBODY could ever retrieve, leaving a
+        # running server that refuses its owner. Upstream also refuses to start at all on a
+        # non-loopback bind with this unset, which is exactly the deploy the platform makes.
+        WHISPER_API_KEY:
+          description: "Bearer token clients send as `Authorization: Bearer <key>` on every transcription request. Pick your own strong random string and keep a copy: it cannot be read back after deploy, and the server will not start without it"
+      # One feature switch, then performance and timeout knobs that all have a working default.
+      # Left optional so an empty deploy form still produces a working transcription service.
+      optional:
+        # The switch that turns on speaker labels. The four Community-1 checkpoints are gated on
+        # Hugging Face (CC BY 4.0 plus per-account access conditions), so they cannot be baked
+        # into a public image and CI cannot fetch them either: an anonymous request is a 401
+        # GatedRepo. entrypoint.sh fetches all four at boot when this is set, verifies each
+        # SHA-256 against upstream's documented values, and leaves them on the volume so later
+        # restarts find them. A token that does not work is logged and does NOT stop the service:
+        # transcription is unaffected and diarized requests keep answering 503.
+        HF_TOKEN:
+          description: "Hugging Face access token, needed only for speaker labels. Accept the conditions on pyannote/speaker-diarization-community-1 with the same account first. Leave blank for transcription only, in which case diarized requests answer 503"
+        WHISPER_DIAR_SIMD:
+          description: "Diarization kernel path. `avx512` selects the FP32 AVX-512 diarization kernels where the CPU has them, with fallback. No effect without HF_TOKEN"
+        WHISPER_DIAR_BATCH_INPUT:
+          description: "Set to `1` to batch the diarizer's LSTM input projections. No effect without HF_TOKEN"
+        WHISPER_SIMD:
+          description: "Force a CPU kernel path: `scalar`, `avx2` or `avx512`. Detected automatically when blank; set it only to work around a placement whose CPU features differ from what you benchmarked"
+        WHISPER_REQUEST_TIMEOUT:
+          description: "Seconds the server will spend on one transcription before giving up. Default 300, maximum 3600. The edge in front of the service cuts the connection at 60 seconds regardless, so raising this only helps a client that can tolerate that"
+
+meta:
+  name: whisper-turbo.c
+  tagline: CPU-only Whisper large-v3-turbo speech-to-text behind an OpenAI-compatible API
+  category: llm
+  tags: [llm, ai]
+  # Draft: transcription is verified end to end on prod, but the optional diarization path is not
+  # (its weights need an account that has accepted upstream's conditions, and nobody has run it
+  # with one). The category above is also a poor fit, since this is speech recognition rather than
+  # an LLM, and the WAV-only input limit is a product call. See the pull request.
+  draft: true
+  # amd64 only, and honestly so. `make server` compiles -DWHISPER_X86 against the AVX2/AVX-512
+  # kernels in src/x86; the generic C fallback in the tree is not wired into the server target,
+  # so there is no arm64 build to publish and a box on arm64 is told before it deploys.
+  architectures: [amd64]
+  # Upstream ships no mark: no logo, no icon, no favicon, no product site. `none` rather than a
+  # redrawn one, so consumers fall back to a monogram.
+  logo: none
+  links:
+    upstream: https://github.com/baryhuang/whisper-turbo.c
+    documentation: https://github.com/baryhuang/whisper-turbo.c/blob/main/docs/http-api.md
+    diarization: https://huggingface.co/pyannote/speaker-diarization-community-1

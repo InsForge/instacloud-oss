@@ -1,6 +1,30 @@
 // Pure helpers for publish.mjs, kept separate so they can be tested without running the publisher
 // (which talks to the catalog and calls process.exit).
 
+import { relative, resolve as resolvePath, sep } from "node:path";
+
+/**
+ * A template directory as the repository names it, `templates/<code>`, which is
+ * the only form a CDN url pinned to a commit can use. Accepts the three ways a
+ * caller writes one: relative to the repository, `./`-prefixed, or absolute
+ * inside the checkout.
+ *
+ * Throws for a directory outside the repository. One publish run from such a
+ * path put the publisher's own machine into a url the registry still serves,
+ * `.../insta-oss@8b25847//Users/.../hermes/logo.png`, a permanent 404 that
+ * nobody sees until a gallery draws a torn page where a mark should be. Nothing
+ * outside the repository is published, so no url may point there.
+ */
+export function repoPathOf(dir, root) {
+  // Resolved against the repository, not the process: `templates/hermes` means
+  // the same directory wherever the publisher was invoked from.
+  const rel = relative(root, resolvePath(root, dir)).split(sep).join("/");
+  if (!rel || rel.startsWith("../")) {
+    throw new Error(`${dir} is outside the repository: publish a path within it, such as templates/<code>`);
+  }
+  return rel;
+}
+
 /**
  * Split a `ghcr.io/<owner>/<name...>:<tag>` or `@<digest>` reference.
  * `name` may be multi-segment, and ghcr's API path keeps those slashes:

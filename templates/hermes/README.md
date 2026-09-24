@@ -88,5 +88,5 @@ managed daemon the dashboard's System and Channels pages control.
   adds an entrypoint.
 - Documentation: <https://hermes-agent.nousresearch.com/docs/>
 - Upstream: <https://github.com/NousResearch/hermes-agent>
-- Image: `docker.io/nousresearch/hermes-agent`, pinned to `v2026.8.27`
+- Image: `docker.io/nousresearch/hermes-agent`, pinned to `v2026.9.21`
 - License: MIT (upstream `NousResearch/hermes-agent`).

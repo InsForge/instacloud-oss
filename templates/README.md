@@ -56,7 +56,7 @@ Where the record stands, and what each row rests on:
 | `claude-code` | yes | yes | `node:24-bookworm-slim` is a multi-arch index, the ttyd 1.7.7 release ships an `aarch64` asset with its own pinned checksum, and the npm package is architecture-independent |
 | `codex` | yes | yes | Same base, same ttyd asset. `codex --version` answers inside the arm64 image, so the CLI's platform-specific parts resolved |
 | `dsh` | yes | yes | Same base. `bubblewrap` is in Debian for arm64, and the `@vscode/ripgrep` the harness bundles resolves its arm64 optional package (the Dockerfile asserts the binary exists) |
-| `hermes` | yes | yes | Upstream's `v2026.8.27` index carries both; this image only adds an entrypoint |
+| `hermes` | yes | yes | Upstream's `v2026.9.21` index carries both; this image only adds an entrypoint |
 | `laya` | yes | **no** | amd64 only by declaration rather than by upstream limit. The base and the CPU torch wheels both exist for aarch64, but the build bakes an 842 MB checkpoint by running a real prediction, and nobody has yet run that leg under QEMU or on an arm64 machine. Adding the row means doing that, not editing this one |
 | `n8n` | yes | yes | The official `n8nio/n8n:2.36.5` index carries both. Nothing is rebuilt here |
 | `openclaw` | yes | yes | Upstream's index carries both; this image only adds an entrypoint |

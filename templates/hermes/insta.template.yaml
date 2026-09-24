@@ -1,12 +1,12 @@
 code: hermes
-version: 2.3.2
+version: 2.3.3
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
 upstream:
   repo: NousResearch/hermes-agent
   image: docker.io/nousresearch/hermes-agent
-  pinned: v2026.8.27
+  pinned: v2026.9.21
   license: MIT
 
 # Declare once, reference many: one generated value can be reused across services and vars
@@ -16,7 +16,7 @@ generated:
 services:
   hermes:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/hermes:2.3.2   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/hermes:2.3.3   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
     healthcheck: /api/status
     # Channels arrive on OUTBOUND connections (Telegram long poll, Slack Socket Mode, ...),

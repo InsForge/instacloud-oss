@@ -41,9 +41,9 @@ branch  = a disposable, fully isolated clone of all three
 
 - **Branches are forks of the disk.** `insta branch create` reflink-copies the Postgres data directory and every compute volume, copies the bucket, and redeploys the apps on their own URLs. A sleeping database on a reflink-capable filesystem forks in about a second; an awake or non-reflink source is streamed with `pg_basebackup` and scales with its size.
 - **Serverless on a single machine.** Services scale to zero and wake on the first request in about two seconds; `main` stays always-on by default, other branches opt in.
-- **The same command and API surface as the cloud.** One daemon answers the hosted platform's API, so the `insta` CLI, agent skills and dashboard work the same self-hosted. Cloud-only operations (billing, scaling, domain purchase) answer `501` with guidance.
+- **The same command and API surface as the cloud.** One daemon answers the hosted platform's API, so the `insta` CLI, agent skills and dashboard work the same way when self-hosted. Cloud-only operations (billing, scaling, domain purchase) answer `501` with guidance.
 - **A project is Postgres + S3 + your containers.** The daemon provisions the database, an object-storage bucket and your app containers, and wires their credentials into your environment.
-- **Git push-to-deploy.** Bind a compute service to a GitHub repo, and each push to the tracked branch builds the pushed commit with BuildKit (through an HMAC-verified webhook) and redeploys on the existing port ([usage below](#deploy-from-github)). Self-hosted only: the cloud's GitHub-App connect stays `501`.
+- **Git push-to-deploy.** Bind a compute service to a GitHub repo, and each push to the tracked branch builds the pushed commit with BuildKit (through an HMAC-verified webhook) and redeploys on the existing port ([usage below](#deploy-from-github)). Self-hosted only: the cloud's GitHub-App connect needs a multi-tenant app, so it stays `501`.
 - **Built for coding agents.** Per-branch sandboxes, opt-in approval gates on sensitive actions, and a full audit trail (`insta agent events`): an agent deploys and verifies on its own branch, and you keep the veto.
 - **One-command templates.** Deploy an app from the bundled catalog with `insta template deploy <code>`, served from this box with no internet access.
 

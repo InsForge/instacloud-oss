@@ -6,7 +6,7 @@ description: "The insta_* tools the hosted MCP server exposes, grouped by area."
 The InstaCloud MCP server at `https://mcp.instacloud.com/mcp` (streamable HTTP) exposes the tools below. Authenticate with OAuth or an `insta_` API token; register it with `insta config install-mcp` or as part of [`insta agent setup`](/agents/setup).
 
 <Note>
-The CLI's linked directory does not carry over: project-scoped tools take an explicit `projectId`, and branch-scoped tools take `branch` as well. Agents discover project IDs with `insta_org_list` → `insta_project_list`. The set below grows regularly; the server's own tool listing is always current.
+The CLI's linked directory does not carry over: project-scoped tools take an explicit `projectId`, and branch-scoped tools take `branch` as well. Agents discover project IDs with `insta_list_orgs` → `insta_list_projects`. The set below grows regularly; the server's own tool listing is always current.
 </Note>
 
 ## Identity and orgs
@@ -14,99 +14,128 @@ The CLI's linked directory does not carry over: project-scoped tools take an exp
 | Tool | What it does |
 | --- | --- |
 | `insta_whoami` | Return the authenticated identity and how the token was verified |
-| `insta_org_list` | List the caller's organizations with their role |
-| `insta_org_create` | Create a new organization |
+| `insta_list_orgs` | List the caller's organizations with their role |
+| `insta_create_org` | Create a new organization |
+
+## Agent governance
+
+| Tool | What it does |
+| --- | --- |
+| `insta_get_agent_policy` | Read a project's agent policy: mode, protected branches, rules, and the action catalog |
+| `insta_set_agent_policy` | Change a project's agent policy mode or rules (admin required) |
+| `insta_revoke_agent_sessions` | Revoke all of a project's agent CLI sessions (admin required) |
+| `insta_list_agent_approvals` | List pending and past HITL approval requests |
 
 ## Projects
 
 | Tool | What it does |
 | --- | --- |
-| `insta_project_list` | List projects in an org |
-| `insta_project_create` | Create an empty project (add services afterwards) |
-| `insta_project_get` | Get one project: services, branches, status |
-| `insta_project_delete` | Tear down all of a project's resources |
+| `insta_list_projects` | List projects in an org |
+| `insta_create_project` | Create an empty project (add services afterwards) |
+| `insta_get_project` | Get one project: services, branches, status |
+| `insta_delete_project` | Tear down all of a project's resources |
+| `insta_list_regions` | List the deployment regions the platform offers |
 
 ## Branches
 
 | Tool | What it does |
 | --- | --- |
-| `insta_branch_create` | Create an isolated environment from the project's current services |
-| `insta_branch_list` | List a project's branches |
-| `insta_branch_merge` | Structurally merge services from one branch into another (no data) |
-| `insta_branch_delete` | Tear down a branch by name |
+| `insta_create_branch` | Create an isolated environment from the project's current services |
+| `insta_list_branches` | List a project's branches |
+| `insta_merge_branch` | Structurally merge services from one branch into another (no data) |
+| `insta_delete_branch` | Tear down a branch by name |
 
 ## Services
 
 | Tool | What it does |
 | --- | --- |
-| `insta_service_add` | Provision a service (`postgres`/`storage`/`compute`/`redis`/`mysql`/`mongodb`) |
-| `insta_service_list` | List a project's services, optionally per branch |
-| `insta_service_remove` | Remove a service by type and name |
-| `insta_service_access` | Make a service public or private |
-| `insta_service_scale` | Set a compute service's machine count (paid plans) |
-| `insta_service_upgrade` | Raise a compute or Postgres spec (up-only, paid plans) |
+| `insta_add_service` | Provision a service (`postgres`/`storage`/`compute`/`redis`/`mysql`/`mongodb`) |
+| `insta_list_services` | List a project's services, optionally per branch |
+| `insta_remove_service` | Remove a service by type and name |
+| `insta_set_service_access` | Make a service public or private |
+| `insta_scale_service` | Set a compute service's machine count (paid plans) |
+| `insta_rename_service` | Rename a service, re-keying its bound credential names |
+| `insta_get_service` | Get a service's always-on state, resource limits, start command, and volume |
+| `insta_update_service` | Change a service's always-on state, memory, CPU, start command, or volume |
+| `insta_delete_service_volume` | Permanently delete a compute service's volume and its data |
 
 ## Deploys and compute
 
 | Tool | What it does |
 | --- | --- |
 | `insta_deploy` | Deploy a prebuilt container image to a compute service |
-| `insta_compute_control` | Start, stop, suspend, or restart compute |
-| `insta_compute_status` | A compute service's desired versus actual state |
-| `insta_compute_exec` | Run a single command on a compute service and return the result |
+| `insta_set_compute_state` | Start, stop, suspend, or restart a compute service |
+| `insta_get_service_status` | A service's desired versus actual runtime state |
+| `insta_exec_compute_command` | Run a single command on a compute service and return the result |
 
 ## Secrets
 
 | Tool | What it does |
 | --- | --- |
-| `insta_secrets_list` | Secret key names, grouped by branch and service (names only) |
-| `insta_secrets_set` | Set a user-defined secret, project-wide or branch-scoped |
-| `insta_secrets_unset` | Remove a user-defined secret |
-| `insta_secret_sources` | List provider credential sources available for binding |
-| `insta_secret_bindings` | List a compute service's provider credential bindings |
-| `insta_secret_bind` | Bind a provider credential into a compute env var |
-| `insta_secret_unbind` | Remove a provider credential binding |
+| `insta_list_secrets` | Secret key names, grouped by branch and service (names only) |
+| `insta_set_secret` | Set a user-defined secret, project-wide or branch-scoped |
+| `insta_unset_secret` | Remove a user-defined secret |
+| `insta_list_secret_sources` | List provider credential sources available for binding |
+| `insta_list_secret_bindings` | List a compute service's provider credential bindings |
+| `insta_bind_secret` | Bind a provider credential into a compute env var |
+| `insta_unbind_secret` | Remove a provider credential binding |
 
 ## Storage
 
 | Tool | What it does |
 | --- | --- |
-| `insta_storage_list` | One page of a bucket's objects, with cursor pagination |
-| `insta_storage_download_url` | Presign a short-lived download URL for one object |
-| `insta_storage_delete` | Permanently delete one object |
+| `insta_list_storage_objects` | One page of a bucket's objects, with cursor pagination |
+| `insta_get_storage_download_url` | Presign a short-lived download URL for one object |
+| `insta_delete_storage_object` | Permanently delete one object |
 
 ## Domains
 
 | Tool | What it does |
 | --- | --- |
-| `insta_domain_set` | Attach a custom domain to a branch's compute service |
-| `insta_domain_check` | Re-check a domain's certificate status and required DNS records |
-| `insta_domain_remove` | Detach a custom domain |
+| `insta_attach_domain` | Attach a custom domain to a branch's compute service |
+| `insta_check_domain` | Re-check a domain's certificate status and required DNS records |
+| `insta_detach_domain` | Detach a custom domain |
+| `insta_search_domains` | Search purchasable domain names and their price |
+| `insta_buy_domain` | Buy a domain through InstaCloud (returns a Stripe checkout URL) |
+| `insta_list_domains` | List the domains an org owns |
+| `insta_list_domain_records` | List the DNS records of a domain bought through InstaCloud |
+
+## Database
+
+| Tool | What it does |
+| --- | --- |
+| `insta_get_postgres_stats` | Read-only postgres observability: connections, size, slow queries, locks, live sessions |
+| `insta_query_database` | Run one command or statement against a redis, mysql, or mongodb service |
 
 ## Observability
 
 | Tool | What it does |
 | --- | --- |
-| `insta_metrics` | Metrics for a component |
-| `insta_logs` | Runtime logs for a component |
-| `insta_deploy_events` | Machine lifecycle events (the deploy log) |
-| `insta_events` | The project's audit and agent-event timeline |
-| `insta_manifest` | Agent-legible environment view: branches, services, bound secret names, URLs |
+| `insta_get_service_metrics` | Metrics for a service |
+| `insta_get_service_logs` | Runtime logs for a service |
+| `insta_list_deploy_events` | Machine lifecycle events (the deploy log) |
+| `insta_list_agent_events` | The project's audit and agent-event timeline |
+| `insta_get_agent_manifest` | Agent-legible environment view: branches, services, bound secret names, URLs |
+| `insta_list_service_statuses` | One-shot health view of every service with a runtime on a branch |
+| `insta_list_postgres_operations` | Recent database provider operations, for watching a branch or restore settle |
 
 ## Billing and usage
 
 | Tool | What it does |
 | --- | --- |
-| `insta_usage` | Usage across billing dimensions with cost |
-| `insta_billing_summary` | Current-cycle summary: tier, included credit, used, overage |
-| `insta_billing_checkout` | Start a checkout to subscribe to a paid tier |
-| `insta_billing_portal` | Open the billing portal session |
+| `insta_get_billing_usage` | Usage across billing dimensions with cost |
+| `insta_get_org_usage` | Org-level usage across all projects, for the current cycle or a custom range |
+| `insta_get_billing_summary` | Current-cycle summary: tier, included usage, used, overage |
+| `insta_get_billing_overview` | Current-cycle cost breakdown plus the cycle window |
+| `insta_create_billing_checkout` | Start a checkout to subscribe to a paid tier (`pro` or `team`) |
+| `insta_create_billing_portal` | Open the billing portal session |
 
 ## Templates and feedback
 
 | Tool | What it does |
 | --- | --- |
-| `insta_template_search` | Search the template catalog |
-| `insta_template_deploy` | Deploy a catalog template or raw manifest into a branch |
-| `insta_template_deployment_status` | Poll an async template deployment |
-| `insta_feedback` | Report an InstaCloud-side bug, missing feature, or friction |
+| `insta_search_templates` | Search the template catalog |
+| `insta_get_template` | Get one template's full manifest: services, required and optional variables |
+| `insta_deploy_template` | Deploy a catalog template or raw manifest into a branch |
+| `insta_get_template_deployment` | Poll an async template deployment |
+| `insta_send_feedback` | Report an InstaCloud-side bug, missing feature, or friction |

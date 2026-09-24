@@ -3611,9 +3611,11 @@
             }
           },
           "nextBefore": {
-            "nullable": true,
             "description": "opaque cursor; pass as ?before= for the next page, null when there are no more",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3651,8 +3653,10 @@
             ]
           },
           "subscriptionStatus": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "totals": {
             "type": "object",
@@ -3707,9 +3711,11 @@
                 },
                 "deletedAt": {
                   "format": "date-time",
-                  "nullable": true,
                   "description": "when the project was deleted — its usage history outlives it; null for a live project",
-                  "type": "string"
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "totalCostUsd": {
                   "type": "number"
@@ -3770,9 +3776,11 @@
             ]
           },
           "subscriptionStatus": {
-            "nullable": true,
             "description": "Stripe subscription status (active/past_due/canceled/…); null if no paid subscription.",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "caps": {
             "description": "this plan's resource ceilings for a compute service (vCPU / MB / volume Gi; managed redis/mysql/mongodb read the compute row) and for a postgres service (millicores / MiB / volume Gi) — the same rows the per-service `cap` fields return. A NEW service is born at them (cpu, memory and, since 2026-09-12, its volume), and an existing one may be raised to them. Read them from here to prefill a create form before any service exists; they move with the plan and with env overrides per deployment, so never hardcode a tier's numbers.",
@@ -3853,9 +3861,11 @@
           },
           "expiresAt": {
             "format": "date-time",
-            "nullable": true,
             "description": "the expiry of the grant this row moved, so a reader can see which bucket it came out of; null = never expires",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "ref": {
             "additionalProperties": false,
@@ -3898,9 +3908,11 @@
             }
           },
           "nextBefore": {
-            "nullable": true,
             "description": "opaque cursor; pass as ?before= for the next page, null when there are no more",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4234,16 +4246,22 @@
             "type": "string"
           },
           "email": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "name": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "avatar_url": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -4306,8 +4324,10 @@
             "type": "string"
           },
           "checkout_token": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -4348,9 +4368,11 @@
                 },
                 "deletedAt": {
                   "format": "date-time",
-                  "nullable": true,
                   "description": "when the project was deleted — its usage history outlives it; null for a live project",
-                  "type": "string"
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "dimensions": {
                   "type": "array",

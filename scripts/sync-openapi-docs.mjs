@@ -11,11 +11,15 @@
 // nothing here is hand-typed. What this script adds is (1) the split by which API token can call
 // an operation, mirroring the platform's own route classification (insta-platform
 // src/auth/tokenScope.ts classifyTokenRoute), (2) a curation list that drops browser-only and
-// console-internal transport routes, (3) page titles short enough for a sidebar, and (4) the
-// public base URL, which the platform's own document does not carry.
+// console-internal transport routes, (3) page titles short enough for a sidebar, (4) the public
+// base URL, which the platform's own document does not carry, (5) normalizing the platform's
+// 3.0-style `nullable: true` schemas into 3.1 type unions (this document declares openapi 3.1),
+// and (6) forcing two header parameters that are documented as mandatory and 400 when absent to
+// `required: true`, since the platform's generated flag has not caught up with that route.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { denullify, applyRequiredHeaderFixups } from './openapi-normalize.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DOCS = join(ROOT, 'docs')
@@ -147,7 +151,7 @@ function pruneSchemas(allSchemas, paths) {
 const tagRank = t => { const i = TAG_ORDER.indexOf(t); return i < 0 ? TAG_ORDER.length : i }
 
 // ---- main -------------------------------------------------------------------------------------
-const src = await loadSource()
+const src = denullify(await loadSource())
 const buckets = { account: [], org: [], project: [] }
 const excluded = []
 const unclassified = []
@@ -160,7 +164,9 @@ for (const [path, item] of Object.entries(src.paths)) {
     if (EXCLUDE.some(re => re.test(key))) { excluded.push(key); continue }
     const kind = classify(method, path, op)
     if (!kind) { unclassified.push(key); continue }
-    buckets[LEVEL_OF[kind]].push({ method, path, op: structuredClone(op), kind })
+    const opClone = structuredClone(op)
+    applyRequiredHeaderFixups(method, path, opClone)
+    buckets[LEVEL_OF[kind]].push({ method, path, op: opClone, kind })
   }
 }
 if (unclassified.length) {

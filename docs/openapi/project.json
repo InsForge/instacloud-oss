@@ -3174,8 +3174,10 @@
                         },
                         "next_run_at": {
                           "format": "date-time",
-                          "nullable": true,
-                          "type": "string"
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         },
                         "target": {
                           "description": "Where the job sends its request. An internal target names the SERVICE, never a URL: the worker resolves the live route at send time, so a redeploy or a region move cannot leave a job firing at a dead host.",
@@ -3465,8 +3467,10 @@
                           },
                           "next_run_at": {
                             "format": "date-time",
-                            "nullable": true,
-                            "type": "string"
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "target": {
                             "description": "Where the job sends its request. An internal target names the SERVICE, never a URL: the worker resolves the live route at send time, so a redeploy or a region move cannot leave a job firing at a dead host.",
@@ -3840,8 +3844,10 @@
                         },
                         "next_run_at": {
                           "format": "date-time",
-                          "nullable": true,
-                          "type": "string"
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         },
                         "target": {
                           "description": "Where the job sends its request. An internal target names the SERVICE, never a URL: the worker resolves the live route at send time, so a redeploy or a region move cannot leave a job firing at a dead host.",
@@ -4180,7 +4186,7 @@
             },
             "in": "header",
             "name": "if-match",
-            "required": false,
+            "required": true,
             "description": "the job’s current `revision`"
           }
         ],
@@ -4231,8 +4237,10 @@
                         },
                         "next_run_at": {
                           "format": "date-time",
-                          "nullable": true,
-                          "type": "string"
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         },
                         "target": {
                           "description": "Where the job sends its request. An internal target names the SERVICE, never a URL: the worker resolves the live route at send time, so a redeploy or a region move cannot leave a job firing at a dead host.",
@@ -4565,7 +4573,7 @@
             },
             "in": "header",
             "name": "idempotency-key",
-            "required": false,
+            "required": true,
             "description": "dedupes a retried trigger onto the same run"
           }
         ],
@@ -4747,11 +4755,14 @@
                             ]
                           },
                           "skip_reason": {
-                            "nullable": true,
-                            "type": "string",
+                            "type": [
+                              "string",
+                              "null"
+                            ],
                             "enum": [
                               "overlap",
-                              "late"
+                              "late",
+                              null
                             ]
                           },
                           "skipped_count": {
@@ -4762,8 +4773,10 @@
                           },
                           "dispatched_at": {
                             "format": "date-time",
-                            "nullable": true,
-                            "type": "string"
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "execution_epoch": {
                             "description": "bumped per attempt; a superseded worker’s late result is dropped against it",
@@ -4777,18 +4790,24 @@
                           },
                           "next_attempt_at": {
                             "format": "date-time",
-                            "nullable": true,
-                            "type": "string"
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "started_at": {
                             "format": "date-time",
-                            "nullable": true,
-                            "type": "string"
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "finished_at": {
                             "format": "date-time",
-                            "nullable": true,
-                            "type": "string"
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "created_at": {
                             "format": "date-time",
@@ -5042,11 +5061,14 @@
                           ]
                         },
                         "skip_reason": {
-                          "nullable": true,
-                          "type": "string",
+                          "type": [
+                            "string",
+                            "null"
+                          ],
                           "enum": [
                             "overlap",
-                            "late"
+                            "late",
+                            null
                           ]
                         },
                         "skipped_count": {
@@ -5057,8 +5079,10 @@
                         },
                         "dispatched_at": {
                           "format": "date-time",
-                          "nullable": true,
-                          "type": "string"
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         },
                         "execution_epoch": {
                           "description": "bumped per attempt; a superseded worker’s late result is dropped against it",
@@ -5072,18 +5096,24 @@
                         },
                         "next_attempt_at": {
                           "format": "date-time",
-                          "nullable": true,
-                          "type": "string"
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         },
                         "started_at": {
                           "format": "date-time",
-                          "nullable": true,
-                          "type": "string"
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         },
                         "finished_at": {
                           "format": "date-time",
-                          "nullable": true,
-                          "type": "string"
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         },
                         "created_at": {
                           "format": "date-time",
@@ -5246,41 +5276,56 @@
                           },
                           "finished_at": {
                             "format": "date-time",
-                            "nullable": true,
-                            "type": "string"
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "wake_ms": {
-                            "nullable": true,
                             "description": "time spent waking the target, excluded from the request timeout",
-                            "type": "integer"
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
                           },
                           "request_ms": {
-                            "nullable": true,
-                            "type": "integer"
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
                           },
                           "failure_kind": {
-                            "nullable": true,
-                            "type": "string",
+                            "type": [
+                              "string",
+                              "null"
+                            ],
                             "enum": [
                               "wake_failed",
                               "blocked",
                               "http_error",
                               "timeout",
                               "transport",
-                              "interrupted"
+                              "interrupted",
+                              null
                             ]
                           },
                           "error_code": {
-                            "nullable": true,
-                            "type": "string"
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "http_status": {
-                            "nullable": true,
-                            "type": "integer"
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
                           },
                           "response_excerpt": {
-                            "nullable": true,
-                            "type": "string"
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -7204,9 +7249,6 @@
                                 "dataType": {
                                   "type": "string"
                                 },
-                                "nullable": {
-                                  "type": "boolean"
-                                },
                                 "default": {
                                   "anyOf": [
                                     {
@@ -8040,12 +8082,16 @@
                         },
                         "branchId": {
                           "format": "uuid",
-                          "nullable": true,
-                          "type": "string"
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         },
                         "dedupKey": {
-                          "nullable": true,
-                          "type": "string"
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       }
                     }
@@ -14967,21 +15013,27 @@
           },
           "branch_id": {
             "format": "uuid",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/ApprovalStatus"
           },
           "requested_by": {
             "description": "Better Auth user id (opaque string, not a UUID)",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "decided_by": {
             "description": "Better Auth user id (opaque string, not a UUID)",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "requested_at": {
             "format": "date-time",
@@ -14989,8 +15041,10 @@
           },
           "decided_at": {
             "format": "date-time",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -15055,8 +15109,10 @@
           },
           "branch_id": {
             "format": "uuid",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "source": {
             "type": "string",
@@ -15074,12 +15130,16 @@
           },
           "actor_user_id": {
             "description": "Better Auth user id (opaque string, not a UUID)",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "dedup_key": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "created_at": {
             "format": "date-time",
@@ -15103,8 +15163,10 @@
           },
           "parent_branch_id": {
             "format": "uuid",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "is_default": {
             "type": "boolean"
@@ -16373,14 +16435,18 @@
             "$ref": "#/components/schemas/ComputeProvider"
           },
           "name": {
-            "nullable": true,
             "description": "compute group label for a compute resource (kind=fly | insta-compute)",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "branchId": {
             "format": "uuid",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "type": "string"
@@ -16711,77 +16777,103 @@
             "type": "boolean"
           },
           "websocket": {
-            "nullable": true,
             "description": "compute only — the app speaks WebSocket, so its machines carry connections-based concurrency and a 512 MB guest floor. Re-asserted by any redeploy given no flag, including restart. null: never recorded.",
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "region": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "domain": {
-            "nullable": true,
             "description": "default access domain (postgres/compute)",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "public": {
             "description": "storage only — bucket(s) served with anonymous public-read",
             "type": "boolean"
           },
           "image": {
-            "nullable": true,
             "description": "compute only — container image currently run",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "port": {
-            "nullable": true,
             "description": "compute/managed database — compute image port, or the private database TCP port",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "start_command": {
-            "nullable": true,
             "description": "Runtime startup override via sh -c; null uses the built image default. Stored as readable service settings.",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "volume_applied_mount_path": {
-            "nullable": true,
             "description": "Last successfully confirmed Compute mount path; null means unknown, not proof of a changed path.",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "volume_mount_path": {
-            "nullable": true,
             "description": "Compute volume mount path; null or omitted means /data for legacy volumes. Changes apply on deployment.",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "volume_gib": {
-            "nullable": true,
             "description": "compute/managed database — size (whole Gi) of the persistent data volume; null = no volume. Compute can attach/grow via PUT .../volume; managed databases are platform-managed in v1",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "pg_version": {
-            "nullable": true,
             "description": "postgres only — the Postgres MAJOR version the service runs (e.g. 16), known before the instance is ever connected to or woken. Pick client tooling (pg_dump/pg_restore/psql) of the same major. null: never recorded (a legacy row). The exact server_version of a RUNNING instance is on GET .../database/metrics",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "template_deployment_id": {
             "format": "uuid",
-            "nullable": true,
             "description": "the template deployment that created this service (survives branch clones); null for services created directly",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "template_modified": {
             "description": "true once the service was reconfigured away from its template-deployed spec",
             "type": "boolean"
           },
           "template_code": {
-            "nullable": true,
             "description": "the template this service was deployed from; null for services created directly, and for one whose deployment record has been pruned",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "template_logo_url": {
-            "nullable": true,
             "description": "the template's mark, absolute and pinned to the commit that published it; null when the template is not in the registry (or carries no logo). Joined live rather than stored, because a republish moves it",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "source": {
             "$ref": "#/components/schemas/ServiceSourceSummary"
@@ -16812,15 +16904,19 @@
           },
           "source_id": {
             "format": "uuid",
-            "nullable": true,
             "description": "the service source that queued it; null once that source was disconnected",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "repo_binding_id": {
             "format": "uuid",
-            "nullable": true,
             "description": "DEPRECATED — set only on builds queued before sources existed; null for every new build",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "project_id": {
             "format": "uuid",
@@ -16828,13 +16924,17 @@
           },
           "service_id": {
             "format": "uuid",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "branch_id": {
             "format": "uuid",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "commit_sha": {
             "type": "string"
@@ -16851,12 +16951,16 @@
             ]
           },
           "image_ref": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "error": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "created_at": {
             "format": "date-time",
@@ -16894,9 +16998,11 @@
             ]
           },
           "image": {
-            "nullable": true,
             "description": "type=image — the image the service runs; null when nothing has been deployed yet",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "id": {
             "format": "uuid",
@@ -16913,14 +17019,18 @@
             "type": "string"
           },
           "root_dir": {
-            "nullable": true,
             "description": "subdirectory to build from (monorepo); null = repo root. Also decides which pushes deploy this service: the build context is this directory, so a push that changed nothing under it is skipped",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "watch_paths": {
-            "nullable": true,
             "description": "include list of gitignore patterns, matched against paths relative to the repository root (not to root_dir); a push deploys this service only when it changed a matching path. null/absent falls back to the root-directory rule: a service with root_dir deploys when a push changed something under it, one building from the repo root deploys on every push",
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "type": "string"
             }
@@ -16935,22 +17045,30 @@
           },
           "installation_id": {
             "format": "uuid",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "repo_id": {
-            "nullable": true,
             "description": "GitHub repository id (bigint as string)",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "build_command": {
-            "nullable": true,
             "description": "custom build command for source builds without a Dockerfile; null uses automatic detection",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "start_command": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "created_at": {
             "format": "date-time",
@@ -16961,12 +17079,18 @@
             "type": "string"
           },
           "last_build": {
-            "allOf": [
+            "anyOf": [
               {
-                "$ref": "#/components/schemas/ServiceBuild"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ServiceBuild"
+                  }
+                ]
+              },
+              {
+                "type": "null"
               }
             ],
-            "nullable": true,
             "description": "the newest build of this service (null before the first)"
           }
         },
@@ -17009,28 +17133,38 @@
         "properties": {
           "serviceId": {
             "format": "uuid",
-            "nullable": true,
             "description": "null for the unattributed bucket: spend with no live service to name — its environment was deleted, or the resource predates service attribution (pre-0010, never backfilled). NOT spend of zero",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "name": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "type": {
-            "nullable": true,
             "description": "postgres | storage | compute | redis | mysql | mongodb",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
-            "nullable": true,
             "description": "'deleted' for a service that is gone but still owns history",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "branch": {
-            "nullable": true,
             "description": "the environment it belonged to; null for the unattributed bucket",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "dimensions": {
             "type": "array",

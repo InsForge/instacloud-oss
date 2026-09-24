@@ -789,13 +789,17 @@
           },
           "orgId": {
             "format": "uuid",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "projectId": {
             "format": "uuid",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "access": {
             "description": "read_only accepts GET/HEAD only (it cannot run SQL); invalid means the binding is malformed and the token can never authenticate",
@@ -825,18 +829,24 @@
           },
           "lastUsedAt": {
             "format": "date-time",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "expiresAt": {
             "format": "date-time",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "revokedAt": {
             "format": "date-time",
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "createdAt": {
             "format": "date-time",
@@ -888,8 +898,10 @@
             "type": "string"
           },
           "checkout_token": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -916,16 +928,22 @@
             "type": "string"
           },
           "email": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "name": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "avatarUrl": {
-            "nullable": true,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "emailVerified": {
             "type": "boolean"
@@ -1019,9 +1037,11 @@
             "type": "integer"
           },
           "successRate": {
-            "nullable": true,
             "description": "share of the CONCLUDED deployments of this template that reached succeeded, as a whole percent. Denominator: deployments with status succeeded + failed + partial, EXCLUDING runs abandoned by a platform restart (a platform release must not count against a template) and excluding running deployments (not concluded). A partial deployment counts as a failure. This is a per-DEPLOYMENT rate, not per attempt: an idempotent retry reuses its deployment row. null (never 0) when nothing has concluded — no data is not 0%",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "deploymentCount": {
             "description": "cumulative DEPLOYMENT runs for this code",
@@ -1032,14 +1052,18 @@
             "type": "integer"
           },
           "logoUrl": {
-            "nullable": true,
             "description": "absolute https logo URL, served by the CDN in front of the public registry repo (cdn.jsdelivr.net) and pinned to the publishing merge SHA; null when the template published no logo. See templateManifest.ts TEMPLATE_LOGO_HOST for the enforced host.",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "license": {
-            "nullable": true,
             "description": "the upstream project's license id, from the manifest's upstream.license; null when the manifest declares none",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "updatedAt": {
             "format": "date-time",
@@ -1047,14 +1071,18 @@
             "type": "string"
           },
           "readme": {
-            "nullable": true,
             "description": "the template README as markdown (capped at publish — see templateManifest.ts TEMPLATE_README_MAX_BYTES); null when the template published none. Render with raw HTML disabled: the platform bounds its size, not its contents.",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "documentationUrl": {
-            "nullable": true,
             "description": "the upstream project's own documentation link, from the manifest's meta.links.documentation; null when the manifest declares none",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -1099,9 +1127,11 @@
             "type": "integer"
           },
           "successRate": {
-            "nullable": true,
             "description": "share of the CONCLUDED deployments of this template that reached succeeded, as a whole percent. Denominator: deployments with status succeeded + failed + partial, EXCLUDING runs abandoned by a platform restart (a platform release must not count against a template) and excluding running deployments (not concluded). A partial deployment counts as a failure. This is a per-DEPLOYMENT rate, not per attempt: an idempotent retry reuses its deployment row. null (never 0) when nothing has concluded — no data is not 0%",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "deploymentCount": {
             "description": "cumulative DEPLOYMENT runs for this code (every run ever) — the deployment-unit counterpart of totalProjects",
@@ -1112,14 +1142,18 @@
             "type": "integer"
           },
           "logoUrl": {
-            "nullable": true,
             "description": "absolute https logo URL, served by the CDN in front of the public registry repo (cdn.jsdelivr.net) and pinned to the publishing merge SHA; null when the template published no logo. See templateManifest.ts TEMPLATE_LOGO_HOST for the enforced host.",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "license": {
-            "nullable": true,
             "description": "the upstream project's license id, from the manifest's upstream.license; null when the manifest declares none",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "updatedAt": {
             "format": "date-time",

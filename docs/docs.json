@@ -142,6 +142,304 @@
               "reference/cli/overview",
               "reference/mcp-tools"
             ]
+          },
+          {
+            "group": "API",
+            "icon": "plug",
+            "pages": [
+              "reference/api/overview",
+              {
+                "group": "Account level",
+                "openapi": {
+                  "source": "/openapi/account.json",
+                  "directory": "reference/api/account"
+                },
+                "pages": [
+                  {
+                    "group": "Account",
+                    "pages": [
+                      "GET /me",
+                      "PATCH /me",
+                      "GET /orgs",
+                      "POST /orgs",
+                      "GET /tokens",
+                      "POST /tokens",
+                      "DELETE /tokens/{tokenId}"
+                    ]
+                  },
+                  {
+                    "group": "Catalog",
+                    "pages": [
+                      "GET /regions",
+                      "GET /templates",
+                      "GET /templates/{code}"
+                    ]
+                  }
+                ]
+              },
+              {
+                "group": "Organization level",
+                "openapi": {
+                  "source": "/openapi/org.json",
+                  "directory": "reference/api/org"
+                },
+                "pages": [
+                  {
+                    "group": "Organization",
+                    "pages": [
+                      "GET /orgs/{orgId}",
+                      "PATCH /orgs/{orgId}",
+                      "GET /orgs/{orgId}/invitations",
+                      "POST /orgs/{orgId}/invitations",
+                      "DELETE /orgs/{orgId}/invitations/{invitationId}",
+                      "GET /orgs/{orgId}/members",
+                      "PUT /orgs/{orgId}/members/{userId}",
+                      "DELETE /orgs/{orgId}/members/{userId}"
+                    ]
+                  },
+                  {
+                    "group": "Projects",
+                    "pages": [
+                      "GET /orgs/{orgId}/projects",
+                      "POST /orgs/{orgId}/projects"
+                    ]
+                  },
+                  {
+                    "group": "Audit",
+                    "pages": [
+                      "GET /orgs/{orgId}/events/stream"
+                    ]
+                  },
+                  {
+                    "group": "Domains",
+                    "pages": [
+                      "GET /orgs/{orgId}/domains",
+                      "PATCH /orgs/{orgId}/domains/{domainName}",
+                      "POST /orgs/{orgId}/domains/{domainName}/auth-code",
+                      "POST /orgs/{orgId}/domains/{domainName}/delegate",
+                      "PUT /orgs/{orgId}/domains/{domainName}/nameservers",
+                      "DELETE /orgs/{orgId}/domains/{domainName}/nameservers",
+                      "GET /orgs/{orgId}/domains/{domainName}/records",
+                      "POST /orgs/{orgId}/domains/{domainName}/records",
+                      "PATCH /orgs/{orgId}/domains/{domainName}/records/{recordId}",
+                      "DELETE /orgs/{orgId}/domains/{domainName}/records/{recordId}",
+                      "GET /orgs/{orgId}/domains/orders",
+                      "POST /orgs/{orgId}/domains/orders",
+                      "POST /orgs/{orgId}/domains/orders/{orderId}/checkout",
+                      "GET /orgs/{orgId}/domains/search",
+                      "GET /orgs/{orgId}/zones",
+                      "POST /orgs/{orgId}/zones",
+                      "DELETE /orgs/{orgId}/zones/{domainName}",
+                      "GET /orgs/{orgId}/zones/{domainName}/records",
+                      "POST /orgs/{orgId}/zones/{domainName}/records"
+                    ]
+                  },
+                  {
+                    "group": "Billing",
+                    "pages": [
+                      "GET /orgs/{orgId}/billing",
+                      "POST /orgs/{orgId}/billing/checkout",
+                      "GET /orgs/{orgId}/billing/credits/transactions",
+                      "GET /orgs/{orgId}/billing/cycle",
+                      "GET /orgs/{orgId}/billing/invoices",
+                      "GET /orgs/{orgId}/billing/overview",
+                      "POST /orgs/{orgId}/billing/portal",
+                      "GET /orgs/{orgId}/usage"
+                    ]
+                  }
+                ]
+              },
+              {
+                "group": "Project level",
+                "openapi": {
+                  "source": "/openapi/project.json",
+                  "directory": "reference/api/project"
+                },
+                "pages": [
+                  {
+                    "group": "Projects",
+                    "pages": [
+                      "GET /projects/{projectId}",
+                      "PATCH /projects/{projectId}",
+                      "DELETE /projects/{projectId}"
+                    ]
+                  },
+                  {
+                    "group": "Branches",
+                    "pages": [
+                      "GET /projects/{projectId}/branches",
+                      "POST /projects/{projectId}/branches",
+                      "POST /projects/{projectId}/branches/{branch}/merge",
+                      "PATCH /projects/{projectId}/branches/{branchId}",
+                      "DELETE /projects/{projectId}/branches/{branchId}"
+                    ]
+                  },
+                  {
+                    "group": "Services",
+                    "pages": [
+                      "GET /projects/{projectId}/runtime-health",
+                      "GET /projects/{projectId}/services",
+                      "POST /projects/{projectId}/services",
+                      "PATCH /projects/{projectId}/services/{serviceId}",
+                      "DELETE /projects/{projectId}/services/{serviceId}",
+                      "PUT /projects/{projectId}/services/{serviceId}/access",
+                      "PUT /projects/{projectId}/services/{serviceId}/always-on",
+                      "GET /projects/{projectId}/services/{serviceId}/builds",
+                      "POST /projects/{projectId}/services/{serviceId}/exec",
+                      "GET /projects/{projectId}/services/{serviceId}/limits",
+                      "PUT /projects/{projectId}/services/{serviceId}/limits",
+                      "POST /projects/{projectId}/services/{serviceId}/rename",
+                      "POST /projects/{projectId}/services/{serviceId}/restart",
+                      "POST /projects/{projectId}/services/{serviceId}/scale",
+                      "GET /projects/{projectId}/services/{serviceId}/source",
+                      "PUT /projects/{projectId}/services/{serviceId}/source",
+                      "PATCH /projects/{projectId}/services/{serviceId}/source",
+                      "DELETE /projects/{projectId}/services/{serviceId}/source",
+                      "GET /projects/{projectId}/services/{serviceId}/source/builds",
+                      "POST /projects/{projectId}/services/{serviceId}/source/deploy",
+                      "POST /projects/{projectId}/services/{serviceId}/start",
+                      "GET /projects/{projectId}/services/{serviceId}/state",
+                      "POST /projects/{projectId}/services/{serviceId}/stop",
+                      "POST /projects/{projectId}/services/{serviceId}/suspend",
+                      "POST /projects/{projectId}/services/{serviceId}/upgrade",
+                      "GET /projects/{projectId}/services/{serviceId}/volume",
+                      "PUT /projects/{projectId}/services/{serviceId}/volume",
+                      "DELETE /projects/{projectId}/services/{serviceId}/volume"
+                    ]
+                  },
+                  {
+                    "group": "Deploy",
+                    "pages": [
+                      "POST /projects/{projectId}/deploy"
+                    ]
+                  },
+                  {
+                    "group": "Compute",
+                    "pages": [
+                      "GET /projects/{id}/builds/{source}/{buildId}/logs"
+                    ]
+                  },
+                  {
+                    "group": "Secrets",
+                    "pages": [
+                      "POST /projects/{projectId}/apply",
+                      "GET /projects/{projectId}/secret-bindings",
+                      "PUT /projects/{projectId}/secret-bindings/{name}",
+                      "DELETE /projects/{projectId}/secret-bindings/{name}",
+                      "GET /projects/{projectId}/secret-sources",
+                      "GET /projects/{projectId}/secrets",
+                      "PUT /projects/{projectId}/secrets/{name}",
+                      "DELETE /projects/{projectId}/secrets/{name}",
+                      "GET /projects/{projectId}/secrets/tree",
+                      "GET /projects/{projectId}/services/{serviceId}/credentials",
+                      "GET /projects/{projectId}/services/{serviceId}/secrets"
+                    ]
+                  },
+                  {
+                    "group": "Database",
+                    "pages": [
+                      "GET /projects/{projectId}/database/databases",
+                      "POST /projects/{projectId}/database/databases",
+                      "DELETE /projects/{projectId}/database/databases/{database}",
+                      "GET /projects/{projectId}/database/extensions",
+                      "PATCH /projects/{projectId}/database/extensions",
+                      "GET /projects/{projectId}/database/instance",
+                      "POST /projects/{projectId}/database/password",
+                      "POST /projects/{projectId}/database/query",
+                      "PATCH /projects/{projectId}/database/settings",
+                      "GET /projects/{projectId}/database/tables",
+                      "GET /projects/{projectId}/database/tables/{schema}/{table}/rows"
+                    ]
+                  },
+                  {
+                    "group": "Storage",
+                    "pages": [
+                      "GET /projects/{projectId}/services/{serviceId}/objects",
+                      "DELETE /projects/{projectId}/services/{serviceId}/objects",
+                      "POST /projects/{projectId}/services/{serviceId}/objects/delete",
+                      "GET /projects/{projectId}/services/{serviceId}/objects/download",
+                      "POST /projects/{projectId}/services/{serviceId}/objects/upload"
+                    ]
+                  },
+                  {
+                    "group": "Backups",
+                    "pages": [
+                      "GET /projects/{projectId}/backups",
+                      "POST /projects/{projectId}/backups",
+                      "DELETE /projects/{projectId}/backups/{backupId}",
+                      "POST /projects/{projectId}/backups/{backupId}/restore"
+                    ]
+                  },
+                  {
+                    "group": "Cron",
+                    "pages": [
+                      "GET /projects/{projectId}/cron-jobs",
+                      "POST /projects/{projectId}/cron-jobs",
+                      "GET /projects/{projectId}/cron-jobs/{id}",
+                      "PATCH /projects/{projectId}/cron-jobs/{id}",
+                      "DELETE /projects/{projectId}/cron-jobs/{id}",
+                      "GET /projects/{projectId}/cron-jobs/{id}/runs",
+                      "POST /projects/{projectId}/cron-jobs/{id}/runs",
+                      "GET /projects/{projectId}/cron-jobs/{id}/runs/{runId}",
+                      "POST /projects/{projectId}/cron-jobs/preview"
+                    ]
+                  },
+                  {
+                    "group": "Observability",
+                    "pages": [
+                      "GET /projects/{projectId}/database/activity",
+                      "GET /projects/{projectId}/database/insight",
+                      "GET /projects/{projectId}/database/metrics",
+                      "GET /projects/{projectId}/database/query-stats",
+                      "GET /projects/{projectId}/deploy-events",
+                      "GET /projects/{projectId}/logs",
+                      "GET /projects/{projectId}/metrics",
+                      "GET /projects/{projectId}/operations"
+                    ]
+                  },
+                  {
+                    "group": "Governance",
+                    "pages": [
+                      "GET /projects/{projectId}/agent-policy",
+                      "PUT /projects/{projectId}/agent-policy",
+                      "POST /projects/{projectId}/agent-sessions/revoke",
+                      "GET /projects/{projectId}/approvals",
+                      "POST /projects/{projectId}/approvals/{approvalId}/approve",
+                      "POST /projects/{projectId}/approvals/{approvalId}/deny"
+                    ]
+                  },
+                  {
+                    "group": "Audit",
+                    "pages": [
+                      "GET /projects/{projectId}/events",
+                      "POST /projects/{projectId}/events",
+                      "GET /projects/{projectId}/events/stream"
+                    ]
+                  },
+                  {
+                    "group": "Domains",
+                    "pages": [
+                      "POST /projects/{projectId}/domains/{domainName}/attach"
+                    ]
+                  },
+                  {
+                    "group": "Billing",
+                    "pages": [
+                      "GET /projects/{projectId}/usage",
+                      "GET /projects/{projectId}/usage/daily",
+                      "GET /projects/{projectId}/utilisation"
+                    ]
+                  },
+                  {
+                    "group": "Templates",
+                    "pages": [
+                      "POST /projects/{projectId}/template-deployments",
+                      "GET /template-deployments/{deploymentId}"
+                    ]
+                  }
+                ]
+              }
+            ]
           }
         ]
       }
@@ -218,10 +516,6 @@
     },
     {
       "source": "/reference/cli",
-      "destination": "/reference/cli/overview"
-    },
-    {
-      "source": "/reference/api/overview",
       "destination": "/reference/cli/overview"
     },
     {

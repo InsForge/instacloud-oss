@@ -1,0 +1,121 @@
+---
+title: "API overview"
+description: "Authenticate to the InstaCloud REST API with an insta_ token, and find which endpoints each token scope can call."
+---
+
+The hosted platform is a REST API at `https://api.instacloud.com`. The CLI, the console and the MCP server all speak to it, so anything they can do, a script with a token can do too. This reference is generated from the platform's own OpenAPI document and split by **which API token can call an endpoint**:
+
+- **Account level** — the token's owner: their organizations, their tokens, the public catalog. Creating an organization lives here.
+- **Organization level** — everything under `/orgs/{orgId}`: members, projects, billing, domains. Creating a project lives here.
+- **Project level** — everything under `/projects/{projectId}`: branches, services, deploys, secrets, databases, storage, cron, logs and metrics.
+
+Every endpoint page opens with a **Token scope** line naming the bindings that may call it, and whether a read-only token can.
+
+## Authentication
+
+Send the token as a bearer credential on every request:
+
+```bash
+curl https://api.instacloud.com/me \
+  -H "Authorization: Bearer insta_xxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+A console or CLI session token works on the same header, but sessions expire and belong to a browser or a machine. Integrations, CI and partner systems should use an `insta_` API token.
+
+A missing, expired or revoked token answers `401` with a `WWW-Authenticate: Bearer` header. Requests and responses are JSON; identifiers for organizations, projects, services and tokens are UUIDs, and a branch is addressed by name.
+
+## Token scopes
+
+A token is bound at creation and never widens. Three bindings exist:
+
+| Scope | Bound to | Reaches | Mint with |
+| --- | --- | --- | --- |
+| **Account-wide** | nothing | everything the owner can do, in every organization — including `POST /orgs` | `insta tokens create <name> --account` |
+| **Organization** | one `orgId` | that organization and all of its projects, current and future; can create projects; can mint further tokens inside the organization, never wider than itself | `insta tokens create <name> --org <orgId>` (the CLI's default) |
+| **Project** | one `orgId` + `projectId` | that project only, plus two reads on its organization: `GET /orgs/{orgId}` and `GET /orgs/{orgId}/projects` (filtered to itself). Cannot list organizations or mint tokens | `insta tokens create <name> --project <projectId>` |
+
+Each binding also carries an **access** level: `full` (the default) or `read_only`. A read-only token is accepted on `GET` and `HEAD` only — it cannot run SQL through `POST /projects/{projectId}/database/query` or change anything — and this applies to account-wide tokens too.
+
+A token never exceeds its owner. Organization roles still apply on top of the binding: an endpoint that needs `admin` (deleting a project, changing members) refuses a token whose owner is a `member`, with `403 {"error":"requires admin role"}`.
+
+### Minting a token
+
+Over the API, `POST /tokens` mints a token bounded by the credential that calls it. Omit `orgId` for an account-wide token; give `orgId` for an organization token; give both for a project token:
+
+```bash
+curl -X POST https://api.instacloud.com/tokens \
+  -H "Authorization: Bearer $INSTA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"partner-provisioner","orgId":"0f3c…","access":"full","expiresInDays":90}'
+```
+
+The `201` body carries `token` (shown once) and `record` (id, scope, access, expiry). An organization token can mint only inside its organization, a project token cannot mint at all, and a request for something wider answers `403 token_scope`. The console mints the same tokens from your profile.
+
+From the CLI, `insta tokens create` prints the plaintext alone on stdout, so `$(insta tokens create ci)` captures it:
+
+```bash
+insta tokens create partner-provisioner --org 0f3c…              # organization token, 90 days
+insta tokens create deploy --project 7a91… --expires 1y          # project token
+insta tokens create automation --account                         # account-wide
+insta tokens create dashboard --org 0f3c… --read-only --expires 30d
+insta tokens list
+insta tokens revoke <tokenId>
+```
+
+`--expires` takes `<n>d`, `<n>y` or `never` and defaults to `90d`.
+
+## Provisioning end to end
+
+The three levels compose into one flow. Each step needs a token whose binding covers it; an account-wide token covers all three.
+
+```bash
+API=https://api.instacloud.com
+
+# 1. An organization — account-wide token only
+ORG=$(curl -s -X POST $API/orgs -H "Authorization: Bearer $ACCOUNT_TOKEN" \
+  -H "Content-Type: application/json" -d '{"name":"acme"}' | jq -r .org.id)
+
+# 2. A project in it — account-wide or organization token
+PROJECT=$(curl -s -X POST $API/orgs/$ORG/projects -H "Authorization: Bearer $ORG_TOKEN" \
+  -H "Content-Type: application/json" -d '{"name":"web"}' | jq -r .project.id)
+
+# 3. Services on the project — any token that covers the project
+curl -s -X POST $API/projects/$PROJECT/services -H "Authorization: Bearer $PROJECT_TOKEN" \
+  -H "Content-Type: application/json" -d '{"type":"postgres","name":"db"}'
+curl -s -X POST $API/projects/$PROJECT/services -H "Authorization: Bearer $PROJECT_TOKEN" \
+  -H "Content-Type: application/json" -d '{"type":"compute","name":"api","port":3000}'
+
+# 4. Deploy an image to the compute service
+curl -s -X POST $API/projects/$PROJECT/deploy -H "Authorization: Bearer $PROJECT_TOKEN" \
+  -H "Content-Type: application/json" -d '{"image":"ghcr.io/acme/api:1.4.2","group":"api"}'
+```
+
+A new project provisions nothing until you add services, and a compute service has no credentials until you bind them (`PUT /projects/{projectId}/secret-bindings/{name}`) and deploy again. Both are documented on their endpoint pages.
+
+## Errors
+
+| Status | Body | Meaning |
+| --- | --- | --- |
+| `400` | `{"error": "…"}` | Validation: a missing field, a name that is not a valid DNS label, a size above the plan's ceiling. The message says what to change. |
+| `401` | `{"error": "…"}` + `WWW-Authenticate: Bearer` | No token, or an invalid, expired or revoked one. |
+| `403` | `{"error": "token_scope", "message": "…"}` | The endpoint is outside this token's binding, or the token is read-only. The message names the binding. This is not a permissions problem: the owner may well be a member. |
+| `403` | `{"error": "requires admin role"}` | The owner's organization role is too low. |
+| `404` | `{"error": "org not found"}` / `project not found` | The owner is not a member. Existence is not revealed. |
+| `409` | `{"error": "…"}` | A conflict: a taken name, a teardown that failed and kept its rows, a delete of the default branch. |
+| `503` | `{"error": "…"}` | A provider or billing is not configured on this deployment. |
+
+## Governance and approvals
+
+A request made with an API token is the token's owner acting directly: role checks apply, and the project's **agent policy** does not. The `202 approval_required` envelope some endpoints document is for **agent credentials** — the identity an agent gets from [`insta agent setup`](/agents/setup) or the MCP server's OAuth flow — whose gated actions pass the policy and may wait for a human to approve in the console. An integration that should be governed like an agent should run under an agent credential rather than an API token; see [Agent-native](/agents/overview).
+
+## Payload casing
+
+Account and token payloads use camelCase (`orgId`, `expiresAt`). Organization, project, branch, approval and event rows are returned as stored, in snake_case (`org_id`, `created_at`). Each endpoint's schema shows the exact shape.
+
+## Self-hosted InstaCloud
+
+This reference documents the hosted platform. A self-hosted box implements the same command surface with a subset of these routes, single-tenant, and answers `501` with guidance for cloud-only concepts; the [compatibility table](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md) is the per-command record. Point the CLI at your box with `--api-url` or `INSTA_API_URL`.
+
+## The full document
+
+The platform serves everything it registers, including the browser, console and agent-enrollment routes this reference omits, at `GET https://api.instacloud.com/openapi.json`. The pages here are regenerated from it with `npm run docs:openapi` in the [instacloud-oss](https://github.com/InsForge/instacloud-oss) repository, which also splits the operations by token scope.

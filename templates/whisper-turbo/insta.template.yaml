@@ -1,5 +1,5 @@
 code: whisper-turbo
-version: 1.1.0
+version: 1.1.1
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -13,7 +13,7 @@ upstream:
 services:
   whisper:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/whisper-turbo:1.1.0   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/whisper-turbo:1.1.1   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
     # The only two routes the server has are GET /health and POST /v1/audio/transcriptions.
     # /health is answered BEFORE the bearer-token check (src/server/http.c), which is what makes
@@ -89,11 +89,6 @@ meta:
   tagline: CPU-only Whisper large-v3-turbo speech-to-text behind an OpenAI-compatible API
   category: llm
   tags: [llm, ai]
-  # Draft: transcription is verified end to end on prod, but the optional diarization path is not
-  # (its weights need an account that has accepted upstream's conditions, and nobody has run it
-  # with one). The category above is also a poor fit, since this is speech recognition rather than
-  # an LLM, and the WAV-only input limit is a product call. See the pull request.
-  draft: true
   # amd64 only, and honestly so. `make server` compiles -DWHISPER_X86 against the AVX2/AVX-512
   # kernels in src/x86; the generic C fallback in the tree is not wired into the server target,
   # so there is no arm64 build to publish and a box on arm64 is told before it deploys.

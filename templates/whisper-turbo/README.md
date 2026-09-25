@@ -2,14 +2,7 @@
 
 CPU-only Whisper large-v3-turbo speech-to-text behind an OpenAI-compatible API.
 
-> **Draft.** The image builds, the deploy is green and transcription has been verified end to end.
-> It stays out of the catalog while four calls are open: the optional speaker-label path has never
-> been run, because its weights are gated on Hugging Face and nobody has deployed this with a token
-> that has accepted the conditions; this ships upstream's *experimental* INT8 activations on by
-> default because the FP32 default cannot answer inside the edge's 60 second limit (see
-> [Why INT8 is on by default](#why-int8-is-on-by-default)); `meta.category` is `llm`, which is wrong
-> for a speech recognition model and there is no better category yet; and the server accepts only
-> 16 kHz mono 16-bit WAV, so most people's audio needs converting first.
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/whisper-turbo)
 
 ## Overview
 
@@ -106,6 +99,10 @@ your own backend, or put a proxy in front of it.
 Upstream ships a C port of the pyannote Community-1 diarization pipeline, which labels who spoke
 when. Its four checkpoints are gated on Hugging Face (CC BY 4.0, with access conditions accepted
 per account), so they are **not** in this image and CI cannot fetch them either.
+
+Transcription is verified end to end on this platform. This path is not, because the gating is
+per account and nobody has deployed the template with a token that has accepted the conditions.
+What follows is what upstream documents and what this image wires up.
 
 To turn it on: accept the conditions on
 [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1),

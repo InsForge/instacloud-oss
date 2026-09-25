@@ -45,16 +45,19 @@ branch  = a disposable, fully isolated clone of all three
 
 ## Quick start
 
-On a fresh Ubuntu or Debian VPS, one command brings up the whole platform, TLS and all:
+On a fresh Ubuntu or Debian VPS (2 vCPU, 2 GiB RAM, 15 GiB free disk, with inbound 80 and 443
+open), one command brings up the whole platform, TLS included:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh
 ```
 
-About a minute later you have a live URL, an admin setup page and a CLI token. Prefer to read the
-script first? Pipe it to `less` instead of `sh`. No lock-in: it is plain Docker underneath, so your
-containers keep running even if you stop using InstaCloud. Full walkthrough, your own domain and
-laptop mode are [below](#install-on-a-vps).
+About a minute later you have a live URL and an admin setup page that mints your first CLI token.
+Prefer to read the script first? Download it with `-o install.sh` and page through it before running,
+rather than piping straight to `sudo sh`. No lock-in: it is plain Docker underneath, so your
+containers keep running even if you stop using InstaCloud. Full walkthrough and your own domain are
+in [Install on a VPS](#install-on-a-vps); running with no cloud account is in
+[Run on your laptop](#run-on-your-laptop).
 
 ## Features
 

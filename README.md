@@ -30,6 +30,7 @@
   <a href="#features">Features</a> &middot;
   <a href="#how-it-works">How it works</a> &middot;
   <a href="#deploy-from-github">Deploy from GitHub</a> &middot;
+  <a href="https://github.com/InsForge/instacloud-cli">insta CLI</a> &middot;
   <a href="https://instacloud.com">Hosted InstaCloud</a> &middot;
   <a href="https://discord.com/invite/MPxwj5xVvW">Discord</a>
 </p>
@@ -71,8 +72,8 @@ cloud account, see [Run on your laptop](#run-on-your-laptop).
 
 ## Features
 
-- **Branches fork the disk.** `insta branch create` reflink-copies the Postgres data directory, every volume and the bucket, then redeploys the apps on their own URLs. A sleeping database forks in about a second whether it holds 100 MB or 100 GB, and the source is never touched.
-- **Scale-to-zero.** Idle services stop and free your RAM; the next request wakes them in about two seconds. `main` stays always-on, other branches opt in, and that is what lets one box hold dozens of branches.
+- **Branches fork the disk.** `insta branch create` reflink-copies the Postgres data directory, every volume and the bucket, then redeploys the apps on their own URLs. A sleeping database on a reflink-capable filesystem forks in about a second whether it holds 100 MB or 100 GB; an awake or non-reflink source is streamed with `pg_basebackup` and scales with its size. The source is never touched.
+- **Scale-to-zero.** Idle services stop and free your RAM; the next request wakes them in about two seconds. On the default branch apps and managed databases stay always-on by default while Postgres and branch clones scale to zero, so one box holds dozens of branches. Flip any service with `insta compute always-on off`.
 - **A project is Postgres + S3 + your containers.** The daemon provisions all three and wires their credentials into your environment.
 - **Git push-to-deploy.** Bind a compute service to a GitHub repo; each push builds the commit with BuildKit through an HMAC-verified webhook and redeploys it SHA-pinned ([how](#deploy-from-github)).
 - **Agent-first.** Per-branch sandboxes, allow/deny/approve gates on sensitive actions, and a full audit trail (`insta agent events`): agents propose, you keep the veto.
@@ -95,7 +96,7 @@ flowchart LR
   A --- G["Garage (S3)"]
   A --- C["Compute"]
   A --- M["Managed DB"]
-  R["Router: one port, wakes sleepers"] -.-> A
+  R["Router: one port, wakes sleepers"] -.-> E
 ```
 
 <details>
@@ -115,7 +116,7 @@ Command-by-command CLI and MCP compatibility: [COMPATIBILITY.md](COMPATIBILITY.m
 
 ## Install on a VPS
 
-The [Quick start](#quick-start) command is the whole install. The details:
+The [Quick start](#quick-start) one-liner is the whole install. The details:
 
 <details>
 <summary>Requirements, installer output, upgrades and your own domain</summary>
@@ -262,8 +263,10 @@ MCP server; the dashboard's Quick Start page prints this box's own setup steps. 
 
 </details>
 
+## What it looks like
+
 <details>
-<summary>What a full session looks like</summary>
+<summary>A full session, command by command</summary>
 
 A session against a server-mode box on `example.com`. On a laptop the same commands print
 `http://web-demo-main.localhost:8080` for the app and a `127.0.0.1:<port>` DSN, because local mode
@@ -306,8 +309,8 @@ $ insta branch delete feat          # done with the task: throw the clone away
 ## Dashboard
 
 The daemon serves the web UI at its own URL, one process, same origin. Server mode starts at
-`/setup` (one admin account) and signs in at `/login`; a laptop has no login at all. It mirrors the
-hosted InstaCloud console.
+`/setup` (one admin account), signs in at `/login`, and mints API tokens under Account > API Tokens;
+a laptop has no login at all. It mirrors the hosted InstaCloud console.
 
 <details>
 <summary>What's in it</summary>
@@ -333,7 +336,8 @@ Locally: `npm run build:ui` once, then open http://127.0.0.1:8080. UI developmen
 `insta project create` (or `link`) installs the insta agent skills into your project (gitignored;
 `.claude/skills/` for Claude Code, `.agents/skills/` for Codex), so a coding agent opened in the repo
 already knows the workflow: one task, one branch, deploy, verify, delete. You keep the veto through
-allow/deny/approve gates (Settings > Agent Governance, or `PUT /projects/:id/policy/:action`) and the
+allow/deny/approve gates (Settings > Agent Governance, or `PUT /projects/:id/policy/:action`): a gated
+action parks until you run `insta agent approvals approve`, and every action lands in the
 `insta agent events` audit trail. The insta-mcp server is a thin client over the same endpoints:
 point it at the daemon with `PLATFORM_API_URL=https://api.<domain>` and an `insta_` token.
 

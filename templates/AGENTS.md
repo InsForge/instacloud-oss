@@ -19,7 +19,7 @@ IS the template code. Copying the closest existing template is the fastest way t
   Links (upstream, the image or package, the license). A draft template opens with a note saying
   why it is draft.
 - The **deploy button**, in its own paragraph under the title and tagline, for every publishable
-  template: `[![Deploy on InstaCloud](<cdn>/assets/deploy-button.svg)](https://console.instacloud.com/templates/<code>)`.
+  template: `[![Deploy on InstaCloud](<cdn>/assets/deploy-button.svg)](https://instacloud.com/templates/<code>)`.
   CI rejects a publishable template that omits it, checks that the href names this template's own
   code, and rejects one on a draft, whose gallery page does not exist until it publishes. Since
   copying the nearest template is the fastest way to start, a code carried over from the one you

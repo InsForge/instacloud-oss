@@ -2,7 +2,7 @@
 
 DeepSeek's plugin-composed coding agent, with its browser UI behind an auth gate.
 
-[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/dsh)
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/dsh)
 
 > **This one needs a maintainer watching upstream.** DeepSeek Harness describes itself as a
 > developer preview and says there will be compatibility-breaking changes, and the version pinned

@@ -96,7 +96,7 @@ for (const dir of dirs) {
     // A looser test passes a README carrying something publish will never strip: a fenced sample
     // satisfying the requirement while GitHub shows no button at all, or a neighbouring filename
     // validated as if it were the button. One matcher, so the two cannot drift.
-    const expected = `https://console.instacloud.com/templates/${dir}`;
+    const expected = `https://instacloud.com/templates/${dir}`;
     const buttons = findDeployButtons(text);
     if (buttons.length) {
       if (draft) {

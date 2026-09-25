@@ -10,26 +10,35 @@ than those only because "Deploy on InstaCloud" is four characters longer than "D
 ## Use it
 
 ```markdown
-[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/<code>)
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/<code>)
 ```
 
-Point the link at the console's deploy route, `https://console.instacloud.com/templates/<code>`,
-where `<code>` is the template code (the folder name under `templates/`). That route is the
-one-click path: it mints a project named for the template and opens its deploy configuration, the
-same way Railway's and Zeabur's buttons behave. A visitor who is not signed in reaches sign-in
-first and lands there afterwards.
+Point the link at the gallery page, `https://instacloud.com/templates/<code>`, where `<code>` is
+the template code (the folder name under `templates/`). It carries the description, the variable
+table and the README, needs no account to read, and its own Deploy Now hands off to the console.
 
-The gallery page, `https://instacloud.com/templates/<code>`, is the other defensible target: it
-carries the description, the variable table and the README, needs no account to read, and its own
-Deploy Now goes to the same console route. Point at it instead when the button should introduce
-the template rather than deploy it.
+Two reasons it is the target rather than the console's deploy route, and the first is the one that
+decides it:
+
+- **The badge is a backlink.** These pages are the SEO surface and are prerendered as static HTML
+  for exactly that. The console is behind the auth gate and is not indexed, so a badge pointing
+  there spends the link on a page no crawler can read.
+- **Whoever clicks it has usually never heard of us.** A badge sits in someone's repository, read
+  by people who came for that project. The gallery page tells them what this is before it asks for
+  anything. The console route asks them to sign in first and then mints a project as the first
+  thing that ever happens in their account.
+
+The console route, `https://console.instacloud.com/templates/<code>`, is still the one-click path
+and is where Deploy Now goes: it mints a project named for the template and opens its deploy
+configuration. Point a button straight at it only where the reader is already a customer, such as
+inside our own product surfaces.
 
 jsDelivr serves the file straight from this repository, which is the same CDN the template logos
 go through. `@main` tracks this branch; pin a commit instead of `main` if you would rather the
 button never change under you:
 
 ```markdown
-[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@<sha>/assets/deploy-button.svg)](https://console.instacloud.com/templates/<code>)
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@<sha>/assets/deploy-button.svg)](https://instacloud.com/templates/<code>)
 ```
 
 ## Light and dark

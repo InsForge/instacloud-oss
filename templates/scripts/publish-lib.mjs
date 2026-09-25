@@ -210,11 +210,11 @@ export function findDeployButtons(text) {
  * Drop the "Deploy on InstaCloud" button from a README on its way to the catalog.
  *
  * The button is authored for GitHub, where a template directory has no deploy affordance of its
- * own. The gallery serves this same text on a page whose rail already carries a Deploy Now to the
- * same console deploy route, so republished verbatim the button is a second, identical call to
- * action sitting in the middle of the prose. The gallery's markdown renderer also parses no raw
- * HTML, so there is no <picture> or conditional-comment escape hatch to hide it with. Stripping
- * at publish keeps one README serving both surfaces.
+ * own. The gallery serves this same text on the page the button now POINTS AT, whose rail already
+ * carries a Deploy Now, so republished verbatim it is both a second call to action in the middle
+ * of the prose and a link to the page you are reading. The gallery's markdown renderer also parses
+ * no raw HTML, so there is no <picture> or conditional-comment escape hatch to hide it with.
+ * Stripping at publish keeps one README serving both surfaces.
  *
  * @param {string} text  the README source
  * @returns {string}     the same text with any button line, and the blank line it left behind, gone

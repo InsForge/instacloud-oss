@@ -2,7 +2,7 @@
 
 Anthropic's coding agent: edits files, runs commands, browser terminal.
 
-[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/claude-code)
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/claude-code)
 
 ## Overview
 

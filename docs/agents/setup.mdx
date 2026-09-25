@@ -52,5 +52,5 @@ insta status
 confirms the CLI is authenticated and shows the linked project. Then ask your agent to call `insta_whoami` (MCP) or run `insta status` itself (skill) — if both answer, the agent is wired. In Claude Code, `claude mcp list` should show `insta-cloud` as connected.
 
 <Note>
-MCP tools take explicit `projectId` and `branch` arguments — the CLI's linked directory does not carry over to MCP calls. Agents get the project ID from `insta_project_list` or from you.
+MCP tools take explicit `projectId` and `branch` arguments — the CLI's linked directory does not carry over to MCP calls. Agents get the project ID from `insta_list_projects` or from you.
 </Note>

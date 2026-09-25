@@ -141,7 +141,13 @@ describe('repo slugs', () => {
     )
     const dead = offendersFor(/get\.instacloud\.com/, docs, () => false)
     expect(dead, `get.instacloud.com does not resolve; use the raw URL:\n${dead.join('\n')}`).toEqual([])
-    expect(readFileSync(join(ROOT, 'README.md'), 'utf8'))
-      .toContain('https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh')
+    // The one-liner now appears in two places (Quick start and Install on a VPS), so a single
+    // toContain would stay green while one copy drifts to a pinned or moved path. Require every
+    // raw install.sh URL in the README to be the canonical main one, and at least one to exist.
+    const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+    const CANON = 'https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh'
+    const urls = readme.match(/https:\/\/raw\.githubusercontent\.com\/InsForge\/instacloud-oss\/\S*?install\.sh/g) ?? []
+    expect(urls.length, 'README should document the install command at least once').toBeGreaterThanOrEqual(1)
+    for (const u of urls) expect(u, `install URL must be the canonical main one, not ${u}`).toBe(CANON)
   })
 })

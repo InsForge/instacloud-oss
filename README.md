@@ -8,9 +8,14 @@
 <h1 align="center">InstaCloud OSS</h1>
 
 <p align="center">
-  The open-source InstaCloud runtime: one daemon over your Docker that answers the same API as
-  the hosted platform. Serverless on a single machine, branches that fork the disk, and the same
-  <code>insta</code> CLI, MCP server and agent skills on both sides.
+  <b>The open-source, self-hostable PaaS: your own serverless cloud on a single box.</b>
+</p>
+
+<p align="center">
+  A self-hosted alternative to Railway, Render, Fly and AWS. One daemon over your Docker gives every
+  app a managed Postgres and S3 bucket, git push-to-deploy, disposable branch environments that fork
+  all three, and scale-to-zero, with the same <code>insta</code> CLI, MCP server and agent skills as
+  the hosted platform.
 </p>
 
 <p align="center">
@@ -21,6 +26,7 @@
 </p>
 
 <p align="center">
+  <a href="#quick-start">Quick start</a> &middot;
   <a href="#install-on-a-vps">Install on a VPS</a> &middot;
   <a href="#run-on-your-laptop">Run on your laptop</a> &middot;
   <a href="https://github.com/InsForge/instacloud-cli">insta CLI</a> &middot;
@@ -36,6 +42,22 @@
 project = a Postgres database + an S3 bucket + your app containers
 branch  = a disposable, fully isolated clone of all three
 ```
+
+## Quick start
+
+On a fresh Ubuntu or Debian VPS (2 vCPU, 2 GiB RAM, 15 GiB free disk, with inbound 80 and 443
+open), one command brings up the whole platform, TLS included:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh
+```
+
+About a minute later you have a live URL and an admin setup page that mints your first CLI token.
+Prefer to read the script first? Download it with `-o install.sh` and page through it before running,
+rather than piping straight to `sudo sh`. No lock-in: it is plain Docker underneath, so your
+containers keep running even if you stop using InstaCloud. Full walkthrough and your own domain are
+in [Install on a VPS](#install-on-a-vps); running with no cloud account is in
+[Run on your laptop](#run-on-your-laptop).
 
 ## Features
 

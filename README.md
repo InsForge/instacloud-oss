@@ -73,7 +73,7 @@ cloud account, see [Run on your laptop](#run-on-your-laptop).
 ## Features
 
 - **Branches fork the disk.** `insta branch create` reflink-copies the Postgres data directory, every volume and the bucket, then redeploys the apps on their own URLs. A sleeping database on a reflink-capable filesystem forks in about a second whether it holds 100 MB or 100 GB; an awake or non-reflink source is streamed with `pg_basebackup` and scales with its size. The source is never touched.
-- **Scale-to-zero.** Idle services stop and free your RAM; the next request wakes them in about two seconds. On the default branch apps and managed databases stay always-on by default while Postgres and branch clones scale to zero, so one box holds dozens of branches. Flip any service with `insta compute always-on off`.
+- **Scale-to-zero.** Idle services stop and free your RAM; the next request wakes them in about two seconds. On the default branch apps and managed databases stay always-on by default while Postgres and branch clones scale to zero, so one box holds dozens of branches. Flip a compute group with `insta compute always-on off <group>`, or a database with `insta postgres always-on on`.
 - **A project is Postgres + S3 + your containers.** The daemon provisions all three and wires their credentials into your environment.
 - **Git push-to-deploy.** Bind a compute service to a GitHub repo; each push builds the commit with BuildKit through an HMAC-verified webhook and redeploys it SHA-pinned ([how](#deploy-from-github)).
 - **Agent-first.** Per-branch sandboxes, allow/deny/approve gates on sensitive actions, and a full audit trail (`insta agent events`): agents propose, you keep the veto.

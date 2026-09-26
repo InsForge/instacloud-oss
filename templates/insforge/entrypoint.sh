@@ -50,12 +50,19 @@ deno_pid=""
 # stops them, and their current child is orphaned onto this process and goes when the container
 # does.
 #
-# The app is stopped FIRST, and waited for. It closes its Postgres pool on SIGTERM, and signalling
-# Postgres at the same moment tears those connections out from under it: pg's BoundPool turns the
-# resulting "terminating connection due to administrator command" on an idle client into an
-# unhandled 'error' event, so an ordinary restart printed a 40-line stack trace after the app had
-# already logged "Shutting down gracefully". Postgres shut down cleanly either way; the noise was
-# the whole of it. Postgres goes last, on SIGINT, which is its fast-shutdown signal.
+# The app is stopped FIRST and waited for, then Postgres, on SIGINT, which is its fast-shutdown
+# signal. That is the right order for a plain `docker stop`, where only PID 1 is signalled.
+#
+# It does NOT decide the order on this platform, and a reader chasing the stack trace in the logs
+# should know that before they edit this function. On an `insta compute restart`, Postgres logs
+# "received fast shutdown request" in the same millisecond as this function's first line, before
+# anything here has signalled it: the stop signal reaches every process in the container, not just
+# PID 1. So the app's pool loses its connections mid-shutdown and pg's BoundPool raises the
+# resulting "terminating connection due to administrator command" as an unhandled 'error' event,
+# which is a 40-line trace right after the app has logged "Shutting down gracefully".
+#
+# Cosmetic, and measured rather than assumed: the next boot reports "database system was shut down
+# at <time>" and runs no recovery, so Postgres finished cleanly and nothing was lost.
 stop() {
   trap - TERM INT
   log "shutting down"

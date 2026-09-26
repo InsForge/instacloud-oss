@@ -2,10 +2,11 @@
 
 Typed, calibrated decisions from one forward pass and zero output tokens.
 
-> **Draft.** The template builds and deploys, but the model it serves is a 9.3 GB bf16 backbone
-> and this platform's compute ceiling is 8 GB, so the weights do not fit in memory and are served
-> out of a file mapping instead. What that costs per request is measured on the pull request that
-> added this directory, and it is the call that decides whether this belongs in the catalog.
+> **Draft.** The template deploys and answers: a typed decision comes back in 4 to 6 seconds once
+> the machine is warm. It does that with 9.3 GB of bf16 weights memory-mapped off the volume on a
+> machine whose memory ceiling is 8 GB, which works but means the service has to be always-on and
+> so bills around the clock for a CPU decision. Whether that belongs in the catalog is the call
+> this stays draft for; the measurements are on the pull request that added this directory.
 
 ## Overview
 
@@ -18,9 +19,11 @@ parse and no retry loop: the model cannot return a label outside your option set
 answer space *is* your option set. It can still pick the wrong option; the guarantee is structural,
 not a guarantee of correctness.
 
-The model is a LoRA adapter on `Qwen/Qwen3.5-4B-Base`, published as
+The model is a LoRA adapter published as
 [`interfaze-ai/lev`](https://huggingface.co/interfaze-ai/lev) along with a Mode B head and a
-calibration profile. Upstream reports 68.9% macro accuracy across all 13 S1Bench subsets.
+calibration profile. Its release manifest names `Qwen/Qwen3.5-4B` as the backbone and that
+overrides `lev serve`'s own `Qwen/Qwen3.5-4B-Base` default, so `Qwen/Qwen3.5-4B` is what `/health`
+reports and what gets loaded. Upstream reports 68.9% macro accuracy across all 13 S1Bench subsets.
 
 The wire protocol is TypeSafe's `/v1/systemone`, so any TypeSafe client works against it by
 changing the base URL.
@@ -61,16 +64,24 @@ forward pass here is CPU-bound across all of them), `PORT=8080`, and `USE_TF=0` 
 `TOKENIZERS_PARALLELISM=false`, which keep transformers from probing for TensorFlow at import.
 
 The service is **always-on**. An idle volume-bearing compute service is stopped, so the next
-request would pay a cold start plus a fresh map of the backbone, while the edge in front of the
-service cuts a connection at 60 seconds. Always-on bills continuously.
+request would pay a cold start plus a fresh map of the backbone, and the edge in front of the
+service cuts a connection at 60 seconds: the measured 69 seconds to a loaded engine plus 36
+seconds for the first decision do not fit inside that. Always-on bills continuously.
 
 ## After deploy
 
-The first boot downloads about 9.5 GB from the Hugging Face Hub before it can answer anything. The
+The first boot fetches about 9.5 GB from the Hugging Face Hub before it can answer anything. The
 deploy goes green well before that finishes, which is deliberate: `/health` answers 200 with
 `{"status": "loading"}` from the moment the socket binds, and `/v1/systemone` answers **529** until
 the weights are mapped. Watch the progress at `/status`, which reports `loading`, `ready` or
 `failed` and how long the load took.
+
+What that looked like on one deployment, so you know roughly what to expect: 25 seconds from boot
+to `ready` on the first start, 69 seconds after a restart (no download either time after the
+first, since the cache is on the volume). The first decision after a restart took 36 seconds
+because the forward pass has to fault the weights in off the disk; every one after that took 4 to
+6 seconds. The edge in front of the service cuts a connection at 60 seconds, so give a restarted
+service its first request before you point real traffic at it.
 
 Once `/health` reports `"status": "ok"`, ask it something:
 
@@ -101,7 +112,7 @@ password is your `API_KEY`.
 - Upstream: <https://github.com/Abhinavexists/lev>, pinned at commit
   `cf104b69329302e4eac674a730c71f3511047db8` (the repository publishes no releases and no tags, so
   the commit is the pin). The PyPI name `lev` is an unrelated placeholder package and is not used.
-- Weights: <https://huggingface.co/interfaze-ai/lev>, on `Qwen/Qwen3.5-4B-Base`
+- Weights: <https://huggingface.co/interfaze-ai/lev>, on `Qwen/Qwen3.5-4B`
 - Benchmarks: <https://github.com/Abhinavexists/lev/blob/main/docs/FINDINGS.md>
 - Image: `ghcr.io/insforge/insta-oss/templates/lev`, built from `./Dockerfile`
 - License: Apache-2.0 (upstream `Abhinavexists/lev`, and the adapter weights). The backbone is

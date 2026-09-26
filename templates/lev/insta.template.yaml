@@ -11,7 +11,10 @@ upstream:
   commit: cf104b69329302e4eac674a730c71f3511047db8
   pinned: "0.1.1"
   # The decision quality is the adapter's, not the backbone's, and the two are versioned apart.
-  model: interfaze-ai/lev (LoRA adapter + Mode B head + calibration, on Qwen/Qwen3.5-4B-Base)
+  # Qwen3.5-4B, not -4B-Base: `lev serve` defaults to the base model, and the release's
+  # lev_release.json overrides it, which the server says out loud on every boot ("release manifest
+  # names base 'Qwen/Qwen3.5-4B'; using it instead of 'Qwen/Qwen3.5-4B-Base'").
+  model: interfaze-ai/lev (LoRA adapter + Mode B head + calibration, on Qwen/Qwen3.5-4B)
   license: Apache-2.0
 
 services:
@@ -28,16 +31,19 @@ services:
     # passing it.
     healthcheck: /health
     # Not scale-to-zero, and not a preference. An idle volume-bearing service is STOPPED, so the
-    # next request pays a cold start plus a 9.3 GB map of the backbone off the disk, while the edge
-    # in front of a compute service cuts the connection at 60 seconds. Every first request after an
-    # idle period would fail, which is the shape `alwaysOn` exists for. It bills around the clock:
+    # next request pays a cold start plus a fresh map of the backbone off the disk, and the edge in
+    # front of a compute service cuts the connection at 60 seconds. Measured on a restart of this
+    # template: 69 s from boot to a loaded engine, then 36 s for the first decision while the
+    # forward pass faults the weights in. Either number alone is inside 60 s and the pair is not,
+    # so every first request after an idle period would be cut off. It bills around the clock:
     # see Open questions on the pull request.
     alwaysOn: true
-    # The Hub cache. 9.3 GB of backbone, 170 MB of adapter and a 15 MB Mode B head, fetched once
-    # per deployment instead of once per restart. Baking them into the image instead, the way laya
-    # bakes its 842 MB checkpoint, is not an option at this size: it is an image nothing would
-    # cache and every machine would pull whole on every deploy. Nothing else is written here;
-    # a decision is state in, answer out, and nothing is stored.
+    # The Hub cache, and the reason a restart is cheap. 9.3 GB of backbone, 170 MB of adapter and a
+    # 15 MB Mode B head: 8.9 GiB on the disk, fetched once per deployment instead of once per
+    # restart. Measured on a restart, both fetches were cache hits and nothing touched the Hub.
+    # Baking them into the image instead, the way laya bakes its 842 MB checkpoint, is not an
+    # option at this size: it is an image nothing would cache and every machine would pull whole
+    # on every deploy. Nothing else is written here; a decision is state in, answer out.
     volume: true
     env:
       fixed:
@@ -82,8 +88,10 @@ meta:
   # kernels are exactly what would have to be proved there. See the Architectures table in
   # ../README.md for what adding the second row would take.
   architectures: [amd64]
-  # Draft: what a machine within this platform's ceiling actually does with a 9.3 GB bf16 backbone
-  # is the open question on the pull request, and it decides whether this belongs in the gallery.
+  # Draft. It deploys and answers: a typed decision comes back in 4 to 6 seconds warm, with the
+  # 9.3 GB of bf16 weights memory-mapped off the volume rather than resident, on a machine whose
+  # ceiling is 8 GB. What is unsettled is whether an always-on machine billing around the clock
+  # for a 4 to 6 second CPU decision is a thing to put in the gallery. See the pull request.
   draft: true
   # Upstream ships no mark: no logo, no icon and no favicon in the repository, and interfaze.ai
   # publishes none for lev either. Declared `none` so consumers fall back to a monogram, rather

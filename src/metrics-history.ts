@@ -141,7 +141,7 @@ export class MetricsHistory {
     const prev = i - FIELDS
     const dt = arr[i]! - arr[prev]!
     return arr[i + 5] === arr[prev + 5]
-      && arr[i + 2]! > 0 && arr[prev + 2]! > 0
+      && (arr[i + 2]! > 0) === (arr[prev + 2]! > 0)
       && dt > 0 && dt <= MAX_RATE_GAP_SEC
       && arr[i + 3]! >= arr[prev + 3]! && arr[i + 4]! >= arr[prev + 4]!
   }

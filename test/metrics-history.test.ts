@@ -293,6 +293,18 @@ describe('a paused container (regression: resume replayed lifetime counters as o
     h.record(90, [sample(APP.container, 0.1, 100, 5e9 + 3_000, 4e9 + 3_000)])
     expect(named(h.query([APP], 0, 120, 30), 'egress_bytes_rate')[0]!.points).toEqual([[90, 100]])
   })
+
+  test('an asleep-then-asleep pair yields a 0 rate bucket, while pause and resume pairs yield none', () => {
+    const h = new MetricsHistory()
+    h.record(0, [sample(APP.container, 0.1, 100, 1_000, 1_000)]) // running
+    h.record(30, [sample(APP.container, 0, 0, 0, 0)])            // pause transition (running -> stopped)
+    h.record(60, [sample(APP.container, 0, 0, 0, 0)])            // asleep-then-asleep (stopped -> stopped)
+    h.record(90, [sample(APP.container, 0.1, 100, 2_000, 2_000)]) // resume transition (stopped -> running)
+    h.record(120, [sample(APP.container, 0.1, 100, 5_000, 5_000)])// running-then-running (running -> running)
+
+    const egress = named(h.query([APP], 0, 150, 30), 'egress_bytes_rate')[0]!
+    expect(egress.points).toEqual([[60, 0], [120, 100]])
+  })
 })
 
 describe('MAX_POINTS counts the inclusive endpoint (regression: 2,001 buckets)', () => {

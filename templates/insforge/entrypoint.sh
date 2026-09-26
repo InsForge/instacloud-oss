@@ -48,18 +48,28 @@ deno_pid=""
 
 # The two restart loops are subshells, so a flag set here would never reach them: SIGKILL is what
 # stops them, and their current child is orphaned onto this process and goes when the container
-# does. Postgres gets SIGINT (its fast-shutdown signal) and the time to finish, because it is the
-# only one of the four holding state.
+# does.
+#
+# The app is stopped FIRST, and waited for. It closes its Postgres pool on SIGTERM, and signalling
+# Postgres at the same moment tears those connections out from under it: pg's BoundPool turns the
+# resulting "terminating connection due to administrator command" on an idle client into an
+# unhandled 'error' event, so an ordinary restart printed a 40-line stack trace after the app had
+# already logged "Shutting down gracefully". Postgres shut down cleanly either way; the noise was
+# the whole of it. Postgres goes last, on SIGINT, which is its fast-shutdown signal.
 stop() {
   trap - TERM INT
   log "shutting down"
   [ -n "$pgrst_pid" ] && kill -KILL "$pgrst_pid" 2>/dev/null
   [ -n "$deno_pid" ] && kill -KILL "$deno_pid" 2>/dev/null
-  [ -n "$app_pid" ] && kill -TERM "$app_pid" 2>/dev/null
+  if [ -n "$app_pid" ]; then
+    kill -TERM "$app_pid" 2>/dev/null
+    wait "$app_pid" 2>/dev/null
+  fi
   if [ -n "$pg_pid" ]; then
     kill -INT "$pg_pid" 2>/dev/null
-    for _i in $(seq 1 30); do kill -0 "$pg_pid" 2>/dev/null || break; sleep 1; done
+    wait "$pg_pid" 2>/dev/null
   fi
+  log "stopped"
   exit 0
 }
 trap stop TERM INT
@@ -171,5 +181,7 @@ app_pid=$!
 wait -n "$pg_pid" "$app_pid"
 log "postgres or the server exited; stopping so the platform restarts the machine"
 kill -TERM "$app_pid" 2>/dev/null
+wait "$app_pid" 2>/dev/null
 kill -INT "$pg_pid" 2>/dev/null
+wait "$pg_pid" 2>/dev/null
 exit 1

@@ -1,0 +1,101 @@
+code: insforge
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/instacloud-oss
+
+upstream:
+  repo: InsForge/InsForge
+  pinned: "2.3.2"
+  license: Apache-2.0
+  # The overlay does not reference ghcr.io/insforge/insforge-oss. That image is Alpine and the
+  # database this stack needs is Debian, so the app is rebuilt from the same tag against glibc.
+  # See ./Dockerfile for why the stack has to share one container at all.
+  images:
+    - ghcr.io/insforge/postgres:v15.13.4
+    - github.com/PostgREST/postgrest v12.2.12 (linux-static-x86-64 release asset)
+    - github.com/denoland/deno v2.0.6 (x86_64-unknown-linux-gnu release asset)
+
+generated:
+  # Signs the tokens the dashboard, the SDK and PostgREST all verify. PostgREST is handed the same
+  # value, and it is also written to the database as app.settings.jwt_secret for RLS policies.
+  jwt_secret: secret:48
+  # Encrypts secrets at rest, both the ones the Secrets page stores and the ones edge functions
+  # read back. Nobody ever needs to see it, which is what makes it a generator rather than a
+  # required variable: a required one would be stored write-only and lost.
+  encryption_key: secret:48
+  # The embedded Postgres superuser password. Reachable on loopback only.
+  postgres_password: secret:32
+
+services:
+  insforge:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/insforge:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 7130
+    # Upstream's own liveness route, and the one its Zeabur template uses. It answers 200 with a
+    # JSON body carrying the version. `/` serves the dashboard's index.html, which is also a 200,
+    # but it is served by the same Express app either way and this one says something.
+    healthcheck: /api/health
+    # Postgres lives in this container: its data directory, the uploaded files of the local
+    # storage backend and the app's log files are all under /data.
+    volume: true
+    # Not a preference. pg_cron runs inside the bundled Postgres, the schedules feature exists to
+    # fire jobs nobody requested, and realtime holds websockets open. None of those would survive
+    # an idle stop, and stopping a machine that is the database is a different risk from stopping
+    # a stateless one.
+    alwaysOn: true
+    env:
+      fixed:
+        PORT: "7130"
+        PROJECT_ROOT: /app
+        # The externally reachable base. OAuth callbacks and the emailed verify/reset links are
+        # built from API_BASE_URL, and the storage S3-compatible endpoint from VITE_API_BASE_URL,
+        # so both have to be the routed hostname rather than localhost.
+        API_BASE_URL: ${services.insforge.url}
+        VITE_API_BASE_URL: ${services.insforge.url}
+        # Where the stack keeps state. The platform mounts the volume at /data and nothing else
+        # survives a restart.
+        PGDATA: /data/postgres
+        STORAGE_DIR: /data/storage
+        LOGS_DIR: /data/logs
+        # Named here because postgresql.conf pins cron.database_name to it: renaming the database
+        # without renaming that setting leaves pg_cron pointed at a database that does not exist.
+        POSTGRES_DB: insforge
+        POSTGRES_USER: postgres
+        INSFORGE_DEPLOYMENT_METHOD: instacloud-template
+      generated:
+        JWT_SECRET: ${jwt_secret}
+        ENCRYPTION_KEY: ${encryption_key}
+        POSTGRES_PASSWORD: ${postgres_password}
+      required:
+        # Neither a default nor a generator, matching every other credentialed template here. This
+        # pair is the root account of a backend that owns a database, an object store and an API
+        # key issuer; a value written into the manifest would be the same one on every deploy in
+        # the world, and a generated one would be stored write-only where nobody could read it
+        # back. The console renders two empty fields and will not submit until they are filled.
+        ADMIN_USERNAME:
+          description: "Sign-in name for the InsForge dashboard's root account. An email address works and is what the sign-in form expects, but any string is accepted"
+        ADMIN_PASSWORD:
+          description: "Password for that root account. Pick your own; it is not recoverable from the platform afterwards, since template variables are stored write-only"
+      optional:
+        OPENROUTER_API_KEY: Enables the AI page's model gateway; get one at openrouter.ai/keys. Leave empty and the rest of InsForge still works
+        INSFORGE_TELEMETRY_DISABLED: Set to 1 to turn off upstream's anonymous usage telemetry
+
+meta:
+  name: InsForge
+  tagline: Open-source backend platform your coding agent can operate
+  # The closest of the three categories this registry defines. InsForge is not itself an agent: it
+  # is the database, auth, storage and functions an agent drives over MCP. A `backend` category
+  # would fit better, and AGENTS.md asks for that to be proposed in the pull request rather than
+  # invented here.
+  category: ai-agent
+  tags: [ai, backend, database]
+  # amd64 only, declared rather than hoped for. Both upstream images publish arm64, but the
+  # PostgREST asset pinned here is the x86-64 static build and the arm64 leg would compile the
+  # whole Node monorepo under QEMU. Neither has been done, so the row says one architecture. See
+  # the Architectures table in ../README.md for what winning the second row would take.
+  architectures: [amd64]
+  draft: true
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/InsForge/InsForge
+    documentation: https://docs.insforge.dev

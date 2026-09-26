@@ -58,6 +58,7 @@ Where the record stands, and what each row rests on:
 | `dsh` | yes | yes | Same base. `bubblewrap` is in Debian for arm64, and the `@vscode/ripgrep` the harness bundles resolves its arm64 optional package (the Dockerfile asserts the binary exists) |
 | `hermes` | yes | yes | Upstream's `v2026.8.27` index carries both; this image only adds an entrypoint |
 | `laya` | yes | **no** | amd64 only by declaration rather than by upstream limit. The base and the CPU torch wheels both exist for aarch64, but the build bakes an 842 MB checkpoint by running a real prediction, and nobody has yet run that leg under QEMU or on an arm64 machine. Adding the row means doing that, not editing this one |
+| `lev` | yes | **no** | amd64 only by declaration rather than by upstream limit, the same call `laya` made. The `python:3.12-slim-bookworm` base and the CPU torch wheels both exist for aarch64, but what this image is for is a 4B bf16 forward pass, and its kernels are exactly the part nobody has run on arm64. Adding the row means running one there, not editing this one |
 | `n8n` | yes | yes | The official `n8nio/n8n:2.36.5` index carries both. Nothing is rebuilt here |
 | `openclaw` | yes | yes | Upstream's index carries both; this image only adds an entrypoint |
 | `pi` | yes | yes | Same base and ttyd asset as the other terminal templates |
@@ -86,6 +87,7 @@ because an RGBA file can still be fully opaque.
 | `laya` | `logo.svg` 1.3 KB | yes (vector) | fixed `#2a78d6` | Laya's own mark, `assets/logo-mark.svg` in the original repository, NandhaKishorM/laya. Paths and circles, no `<text>`. The repo also ships `logo-mark-mono.svg` and a dark lockup, but no single file that adapts on its own |
 | `openclaw` | `logo.svg` 4.6 KB | yes (vector) | fixed; includes a near-black `#050810` element | OpenClaw's mark |
 | `9router` | `logo.png` 500x500 | yes (corner alpha 0) | fixed orange `#F34E21` | 9router's own mark, taken from the copy at `i.imgur.com/yjb5HvR.png`. Upstream's repo PNG (`images/9router.png`) is a 2940x2594 screenshot of the app, not this mark, so that copy is the only place the asset is available. Please do not "correct" this row to the repo URL |
+| `lev` | `meta.logo: none` | n/a | n/a | Upstream has no mark: no logo, icon or favicon in the repository, and the `hf/assets` directory holds only README artwork (a hero banner, charts, a social card), none of which is a mark. Interfaze's site publishes one for Interfaze, not for lev, and borrowing it would label the model with the company. Declared `none` so consumers fall back to a monogram |
 | `whisper-turbo` | `meta.logo: none` | n/a | n/a | Upstream has no mark at all: no logo or icon in the repository, no favicon, and no product site outside GitHub. Declared `none` so consumers fall back to a monogram, rather than drawing one, which the rules below forbid. Revisit if upstream ever publishes one |
 
 Logos are served to the gallery from jsDelivr, pinned to the commit that published the template:

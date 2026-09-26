@@ -134,11 +134,13 @@ pgrst_pid=$!
 # rest of InsForge still works and only the Functions pages stop.
 # ---------------------------------------------------------------------------------------------
 (
-  cd /app || exit 0
+  # /opt/insforge-functions, not /app/functions: see the COPY comment in the Dockerfile. Deno
+  # would otherwise find /app/package.json, read it as an npm workspace root and refuse to start.
+  cd /opt/insforge-functions || exit 0
   while :; do
     PORT=7133 DENO_ENV=production \
       deno run --unstable-worker-options --allow-net --allow-env \
-        --allow-read=./functions/worker-template.js functions/server.ts
+        --allow-read=./worker-template.js server.ts
     log "deno runtime exited, restarting in 5s"
     sleep 5
   done

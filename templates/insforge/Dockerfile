@@ -92,10 +92,10 @@ RUN curl -fsSL -o deno.zip \
 FROM debian:trixie-slim AS deno-cache
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=binaries /out/deno /usr/local/bin/deno
-COPY --from=source /src/functions /app/functions
+COPY --from=source /src/functions /opt/insforge-functions
 ENV DENO_DIR=/deno-dir
-WORKDIR /app
-RUN deno cache functions/server.ts
+WORKDIR /opt/insforge-functions
+RUN deno cache server.ts
 
 # ---------------------------------------------------------------------------------------------
 # Stage 6: the runtime image. Upstream's Postgres, plus everything else the stack needs.
@@ -130,7 +130,14 @@ COPY --from=build /src/package.json ./package.json
 COPY --from=build /src/packages/shared-schemas/package.json ./packages/shared-schemas/package.json
 COPY --from=build /src/packages/shared-schemas/dist ./packages/shared-schemas/dist
 COPY --from=build /src/packages/shared-schemas/src ./packages/shared-schemas/src
-COPY --from=build /src/functions ./functions
+
+# Deliberately NOT under /app. Deno 2 walks up from its entry point looking for a workspace root,
+# and /app/package.json declares npm workspaces (backend, frontend, packages/*) whose members this
+# image does not ship. With the functions tree inside /app, every `deno run` died on
+# "Could not find package.json for workspace member in 'file:///app/frontend/'" before it bound a
+# port. Upstream never hits this because its Deno runtime is a separate container with only
+# functions/ mounted. One directory up, out of the workspace, is that separation.
+COPY --from=build /src/functions /opt/insforge-functions
 
 # tsx is a devDependency upstream, but `migrate:bootstrap` runs a script through it at every boot,
 # so the runtime image needs it globally. Same line upstream's own runner stage carries.

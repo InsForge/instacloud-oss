@@ -39,6 +39,31 @@ const splitPin = (pin) => {
 };
 
 /**
+ * A Dockerfile with its line continuations joined, because an instruction is not a line.
+ *
+ * `FROM --platform=linux/amd64 \` continued on the next line is one instruction to docker and was
+ * two to a scanner reading physical lines, which is a way for the reference that actually builds to
+ * sit somewhere this never looked.
+ */
+const instructions = (dockerfile) => String(dockerfile ?? '').replace(/\\[ \t]*\r?\n[ \t]*/g, ' ');
+
+/**
+ * Does `pin` appear in `text` as a value rather than as part of a longer one?
+ *
+ * Plain containment reads `1.2.3` as present in `1.2.30`, so a template pinned one release behind
+ * its Dockerfile would pass. A digit or a dot on either side means the match is the middle of
+ * something else; every real separator here is `@`, `:`, `=`, `v` or whitespace.
+ */
+function names(text, pin) {
+  for (let i = text.indexOf(pin); i >= 0; i = text.indexOf(pin, i + 1)) {
+    const before = text[i - 1] ?? '';
+    const after = text[i + pin.length] ?? '';
+    if (!/[0-9.]/.test(before) && !/[0-9.]/.test(after)) return true;
+  }
+  return false;
+}
+
+/**
  * Where a template builds on the upstream's own image, does its FROM still name the pinned tag?
  *
  * Three templates do this, and all three pin twice over: `FROM <image>:<tag>@sha256:<digest>`. The
@@ -59,7 +84,7 @@ export function checkUpstreamFrom(upstream, dockerfile) {
   // EVERY matching stage, not the first. A multi-stage build takes its final stage by default, so
   // `FROM upstream:1.2.3 AS old` followed by `FROM upstream:9.9.9` would otherwise pass on the
   // strength of a stage the image never uses, while the one it does use has drifted.
-  for (const line of String(dockerfile ?? '').split('\n')) {
+  for (const line of instructions(dockerfile).split('\n')) {
     // `FROM [--platform=... --flag=...] <ref> [AS name]`. Skipping the flags matters: reading the
     // first token as the image made a standard `FROM --platform=linux/amd64 <ref>` invisible.
     const m = /^\s*FROM\s+((?:--\S+\s+)*)(\S+)/i.exec(line);
@@ -87,7 +112,7 @@ export function checkUpstreamFrom(upstream, dockerfile) {
  * @returns {{error: string} | null}                       null when they agree
  */
 export function checkDockerfilePin(upstream, dockerfile) {
-  const text = String(dockerfile ?? '');
+  const text = instructions(dockerfile);
   // An absent pin must not count as a match: `"anything".includes("")` is true, which would let
   // every Dockerfile pass and make this decoration rather than a check.
   const pins = [upstream?.pinned, upstream?.commit]
@@ -97,7 +122,7 @@ export function checkDockerfilePin(upstream, dockerfile) {
   if (!pins.length) {
     return { error: 'has a Dockerfile but declares no upstream.pinned or upstream.commit for it to be checked against' };
   }
-  if (pins.some((pin) => text.includes(pin))) return null;
+  if (pins.some((pin) => names(text, pin))) return null;
   return {
     error: `Dockerfile names none of ${pins.map((p) => `'${p}'`).join(' or ')}: the manifest and the Dockerfile have drifted, `
       + 'so the image would be built from a different version than the catalog advertises',

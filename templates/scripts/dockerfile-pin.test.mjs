@@ -47,6 +47,18 @@ describe('checkDockerfilePin', () => {
     expect(checkDockerfilePin({}, 'FROM scratch\n')?.error).toBeTruthy();
   });
 
+  it('does not read a pin as present inside a longer version', () => {
+    // Plain containment reads 1.2.3 as present in 1.2.30, so a template pinned one release behind
+    // its Dockerfile passed. A digit or a dot on either side means the match is the middle of
+    // something else.
+    expect(checkDockerfilePin({ pinned: '1.2.3' }, 'RUN npm i -g x@1.2.30\n')?.error).toBeTruthy();
+    expect(checkDockerfilePin({ pinned: '1.2.3' }, 'RUN npm i -g x@11.2.3\n')?.error).toBeTruthy();
+    // And the separators a real Dockerfile puts around a version still count as a match.
+    for (const line of ['RUN x@1.2.3\n', 'FROM y:1.2.3\n', 'ARG V=1.2.3\n', 'ARG V=v1.2.3\n', 'RUN x 1.2.3\n']) {
+      expect(checkDockerfilePin({ pinned: '1.2.3' }, line), line).toBeNull();
+    }
+  });
+
   it('accepts whatever shape a pin happens to be', () => {
     // Seven shapes live in the registry today: plain semver, a prerelease, a v-prefixed date, a
     // floating tag with a digest, and a bare sha. The rule asks whether the string is in the file
@@ -112,6 +124,15 @@ describe('checkUpstreamFrom', () => {
     const up = { image: 'example/upstream', pinned: '1.2.3' };
     expect(checkUpstreamFrom(up, 'FROM --platform=linux/amd64 example/upstream:9.9.9\n')?.error).toMatch(/9\.9\.9/);
     expect(checkUpstreamFrom(up, 'FROM --platform=$BUILDPLATFORM example/upstream:1.2.3 AS b\n')).toBeNull();
+  });
+
+  it('joins a continued FROM, because an instruction is not a line', () => {
+    // `FROM --platform=... \\` continued on the next line is one instruction to docker and was two
+    // to a scanner reading physical lines, so the reference that actually builds sat somewhere
+    // this never looked.
+    const up = { image: 'example/upstream', pinned: '1.2.3' };
+    const df = ['FROM --platform=linux/amd64 \\', '    example/upstream:9.9.9', ''].join('\n');
+    expect(checkUpstreamFrom(up, df)?.error).toMatch(/9\.9\.9/);
   });
 
   it('says so when the upstream image is built on without any pin at all', () => {

@@ -133,25 +133,34 @@ export function planBump({ manifest, dockerfile, drift }) {
     const pkg = (/^ {2}package:[ \t]*"?([^"\s]+)"?/m.exec(text) ?? [])[1] ?? '';
     const found = dockerfilePin({ pkg, image: tracked, build, noComments, drift });
     if (found.error) return { error: found.error };
-    edits.push(found.edit);
+    edits.push(...found.edits);
   }
 
   return { version: { from: version, to: next }, edits };
 }
 
 /**
- * The one replacement that moves the upstream pin in a Dockerfile, or the reason there is none.
+ * Every replacement that moves the upstream pin in a Dockerfile, or the reason there is none.
  *
  * Anchored per kind, because a version on its own identifies nothing: `2.1.235` in an ENV, in a
- * label, in a checksum and in an install line all look alike to a substring search, and only one of
- * them is the pin. What names the upstream is the package written beside its version, the build arg
- * the install line reads, or a FROM on the repository the manifest tracks.
+ * LABEL, in a checksum and in an install line all look alike to a substring search, and only one of
+ * them is the pin. What names the upstream is the package installed beside its version, the build
+ * arg an install line reads, or a FROM on the repository the manifest tracks.
  */
 function dockerfilePin({ pkg, image, build, noComments, drift }) {
+  // Instructions that build something. A LABEL recording `@anthropic-ai/claude-code@2.1.235` beside
+  // an install of 9.9.9 was accepted as the pin: the label moved, the manifest and our image tag
+  // moved, the installed package did not, and the run reported it applied.
+  const runs = build.split('\n').filter((l) => /^\s*RUN\s/i.test(l)).join('\n');
+
   if (drift.kind === 'docker-tag' || drift.kind === 'docker-digest') {
     if (!image) return { error: 'the drift is an image move and the manifest declares no upstream.image, so there is no FROM this can be sure of' };
+    // EVERY stage that builds on it, not the first. Docker takes the final stage by default, so
+    // returning at the first match moved `FROM upstream:2.36.5 AS base` and left the stage the image
+    // actually comes from on the old tag, with the manifest claiming otherwise.
+    const found = [];
     for (const line of noComments.split('\n')) {
-      const m = /^(\s*FROM\s+(?:--\S+\s+)*)(\S+)/i.exec(line);
+      const m = /^(\s*FROM\s+(?:--\S+\s+)*)(\S+)(.*)$/i.exec(line);
       if (!m) continue;
       const { repo, tag, digest } = splitTag(m[2]);
       if (!sameImage(repo, image) || tag !== drift.from) continue;
@@ -161,18 +170,21 @@ function dockerfilePin({ pkg, image, build, noComments, drift }) {
         return { error: `${repo} pins a digest beside its tag in the Dockerfile and the drift carries none, so moving the tag alone would ship the old image` };
       }
       const to = `${repo}:${drift.to}${digest ? `@${drift.digest}` : ''}`;
-      return { edit: edit('dockerfile', m[0], `${m[1]}${to}`, 'the Dockerfile builds on the image the manifest tracks') };
+      // The whole line is the target, so two stages written differently are two distinct edits and
+      // two written identically are one ambiguous target, which applyEdits refuses.
+      found.push(edit('dockerfile', line, `${m[1]}${to}${m[3]}`, 'the Dockerfile builds on the image the manifest tracks'));
     }
+    if (found.length) return { edits: found };
     return { error: `no FROM builds on ${image} at '${drift.from}', so the manifest cannot move without leaving the image built from the old version` };
   }
 
   if (drift.kind === 'npm') {
     if (!pkg) return { error: 'the drift is an npm move and the manifest declares no upstream.package, so there is nothing to anchor a Dockerfile edit to' };
     const direct = `${pkg}@${drift.from}`;
-    if (build.includes(direct)) return { edit: edit('dockerfile', direct, `${pkg}@${drift.to}`, 'the Dockerfile installs the pinned version') };
-    // Or a build arg the install line reads, which is how dsh pins it.
-    const held = argHolding(noComments, drift, (name) => new RegExp(`${esc(pkg)}@\\$\\{?${name}\\b`).test(build));
-    return held ?? { error: `the Dockerfile neither installs ${direct} nor holds '${drift.from}' in a build arg that the install line reads, so the manifest cannot move without leaving the image built from the old version` };
+    if (runs.includes(direct)) return { edits: [edit('dockerfile', direct, `${pkg}@${drift.to}`, 'the Dockerfile installs the pinned version')] };
+    // Or a build arg an install line reads, which is how dsh pins it.
+    const held = argHolding(noComments, drift, (name) => new RegExp(`${esc(pkg)}@\\$\\{?${name}\\b`).test(runs));
+    return held ?? { error: `no RUN installs ${direct}, and no build arg holding '${drift.from}' is read by one, so the manifest cannot move without leaving the image built from the old version` };
   }
 
   // A commit. Forty hex characters identify themselves, so the build arg carrying one is the pin and
@@ -186,7 +198,7 @@ function argHolding(noComments, drift, uses) {
   for (const line of noComments.split('\n')) {
     const m = new RegExp(`^(\\s*ARG\\s+([A-Za-z_]\\w*)=)("?)${esc(drift.from)}\\3([ \\t]*)$`).exec(line);
     if (m && uses(m[2])) {
-      return { edit: edit('dockerfile', m[0], `${m[1]}${m[3]}${drift.to}${m[3]}${m[4]}`, 'the Dockerfile builds from a pin held in a build arg') };
+      return { edits: [edit('dockerfile', m[0], `${m[1]}${m[3]}${drift.to}${m[3]}${m[4]}`, 'the Dockerfile builds from a pin held in a build arg')] };
     }
   }
   return null;

@@ -162,7 +162,7 @@ describe('planBump: what it refuses', () => {
       dockerfile: 'FROM node:24\nRUN npm install -g @anthropic-ai/claude-code@0.0.0\n',
       drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
     });
-    expect(out.error).toMatch(/neither installs @anthropic-ai\/claude-code@2\.1\.235/);
+    expect(out.error).toMatch(/no RUN installs @anthropic-ai\/claude-code@2\.1\.235/);
   });
 
   it('refuses when the old pin is only in a comment', () => {
@@ -175,7 +175,7 @@ describe('planBump: what it refuses', () => {
       dockerfile: `# previously pinned at ${PKG}@2.1.235\nRUN npm install -g ${PKG}@2.0.0\n`,
       drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
     });
-    expect(out.error).toMatch(/neither installs/);
+    expect(out.error).toMatch(/no RUN installs/);
   });
 
   it('refuses when the old pin is only in an INLINE comment', () => {
@@ -188,7 +188,7 @@ describe('planBump: what it refuses', () => {
       dockerfile: `RUN npm install -g ${PKG}@9.9.9 # previously pinned at ${PKG}@2.1.235\n`,
       drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
     });
-    expect(out.error).toMatch(/neither installs/);
+    expect(out.error).toMatch(/no RUN installs/);
   });
 
   it('refuses when the pin is in both a comment and the instruction', () => {
@@ -303,7 +303,7 @@ describe('planBump: the Dockerfile edit is anchored to what names the upstream',
       dockerfile: `ENV UNRELATED=2.1.235\nRUN npm install -g ${PKG}@9.9.9\n`,
       drift: npm,
     });
-    expect(out.refused).toMatch(/neither installs/);
+    expect(out.refused).toMatch(/no RUN installs/);
     expect(out.files).toBeUndefined();
   });
 
@@ -337,7 +337,38 @@ services:
   it('refuses a build arg the install line never reads', () => {
     // An ARG carrying the same number is not the pin unless something installs the upstream from it.
     const dockerfile = `ARG SOMETHING_ELSE=2.1.235\nRUN npm install -g ${PKG}@9.9.9\n`;
-    expect(applyBump({ manifest: NPM_MANIFEST, dockerfile, drift: npm }).refused).toMatch(/neither installs/);
+    expect(applyBump({ manifest: NPM_MANIFEST, dockerfile, drift: npm }).refused).toMatch(/no RUN installs/);
+  });
+
+  it('refuses an exact package reference that no RUN installs', () => {
+    // A LABEL recording the upstream is a note, not the build. It carries the same
+    // `<package>@<version>` the install line would, and moving it left the image on 9.9.9 while the
+    // manifest, our tag and the report all said otherwise.
+    const out = applyBump({
+      manifest: NPM_MANIFEST,
+      dockerfile: `LABEL upstream="${PKG}@2.1.235"\nRUN npm install -g ${PKG}@9.9.9\n`,
+      drift: npm,
+    });
+    expect(out.refused).toMatch(/no RUN installs/);
+    expect(out.files).toBeUndefined();
+  });
+
+  it('refuses a build arg no RUN reads, however it is spelled elsewhere', () => {
+    const dockerfile = `ARG V=2.1.235\nLABEL upstream="${PKG}@\${V}"\nRUN npm install -g ${PKG}@9.9.9\n`;
+    expect(applyBump({ manifest: NPM_MANIFEST, dockerfile, drift: npm }).refused).toMatch(/no RUN installs/);
+  });
+
+  it('moves every stage that builds on the tracked image, not the first', () => {
+    // Docker takes the final stage by default, so stopping at the first match moved
+    // `FROM upstream:2.36.5 AS base` and left the stage the image actually comes from behind.
+    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/x:1.3.2');
+    const tag = { kind: 'docker-tag', from: '2.36.5', to: '2.41.3', level: 'minor' };
+    const out = applyBump({ manifest, dockerfile: 'FROM docker.io/n8nio/n8n:2.36.5 AS base\nFROM --platform=linux/amd64 docker.io/n8nio/n8n:2.36.5\n', drift: tag });
+    expect(out.refused).toBeUndefined();
+    expect(out.files.dockerfile).toBe('FROM docker.io/n8nio/n8n:2.41.3 AS base\nFROM --platform=linux/amd64 docker.io/n8nio/n8n:2.41.3\n');
+    // Two stages written identically are one ambiguous target, and an ambiguous target is refused.
+    const same = 'FROM docker.io/n8nio/n8n:2.36.5\nRUN true\nFROM docker.io/n8nio/n8n:2.36.5\n';
+    expect(applyBump({ manifest, dockerfile: same, drift: tag }).refused).toMatch(/appears 2 times/);
   });
 
   it('will not rewrite a base image whose tag happens to match', () => {

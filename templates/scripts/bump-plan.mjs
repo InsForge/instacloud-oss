@@ -148,10 +148,8 @@ export function planBump({ manifest, dockerfile, drift }) {
  * arg an install line reads, or a FROM on the repository the manifest tracks.
  */
 function dockerfilePin({ pkg, image, build, noComments, drift }) {
-  // Instructions that build something. A LABEL recording `@anthropic-ai/claude-code@2.1.235` beside
-  // an install of 9.9.9 was accepted as the pin: the label moved, the manifest and our image tag
-  // moved, the installed package did not, and the run reported it applied.
-  const runs = build.split('\n').filter((l) => /^\s*RUN\s/i.test(l)).join('\n');
+  // What the RUN instructions actually run, without the `RUN` keyword.
+  const runs = build.split('\n').filter((l) => /^\s*RUN\s/i.test(l)).map((l) => l.replace(/^\s*RUN\s+/i, '')).join('\n');
 
   if (drift.kind === 'docker-tag' || drift.kind === 'docker-digest') {
     if (!image) return { error: 'the drift is an image move and the manifest declares no upstream.image, so there is no FROM this can be sure of' };
@@ -181,16 +179,43 @@ function dockerfilePin({ pkg, image, build, noComments, drift }) {
   if (drift.kind === 'npm') {
     if (!pkg) return { error: 'the drift is an npm move and the manifest declares no upstream.package, so there is nothing to anchor a Dockerfile edit to' };
     const direct = `${pkg}@${drift.from}`;
-    if (runs.includes(direct)) return { edits: [edit('dockerfile', direct, `${pkg}@${drift.to}`, 'the Dockerfile installs the pinned version')] };
-    // Or a build arg an install line reads, which is how dsh pins it.
-    const held = argHolding(noComments, drift, (name) => new RegExp(`${esc(pkg)}@\\$\\{?${name}\\b`).test(runs));
-    return held ?? { error: `no RUN installs ${direct}, and no build arg holding '${drift.from}' is read by one, so the manifest cannot move without leaving the image built from the old version` };
+    if (installsSuch(runs, (w) => w === direct)) {
+      return { edits: [edit('dockerfile', direct, `${pkg}@${drift.to}`, 'the Dockerfile installs the pinned version')] };
+    }
+    // Or a build arg an install command reads, which is how dsh pins it.
+    const reads = new RegExp(`^${esc(pkg)}@\\$\\{?([A-Za-z_]\\w*)\\}?$`);
+    const held = argHolding(noComments, drift, (name) => installsSuch(runs, (w) => reads.exec(w)?.[1] === name));
+    return held ?? { error: `no command installs ${direct}, and no build arg holding '${drift.from}' is installed from, so the manifest cannot move without leaving the image built from the old version` };
   }
 
   // A commit. Forty hex characters identify themselves, so the build arg carrying one is the pin and
   // nothing else in a Dockerfile plausibly repeats it.
   const held = argHolding(noComments, drift, () => true);
   return held ?? { error: `the Dockerfile does not hold '${drift.from}' in a build arg, so there is nothing here this can move confidently` };
+}
+
+/**
+ * Does some command in these RUN instructions install an argument the predicate accepts?
+ *
+ * Being somewhere in a RUN is not being installed by one. `RUN echo "previously foo@1.0.0" && npm
+ * install -g foo@9.9.9` moved the echoed NOTE and left the install alone, and reported the two as
+ * moved together. So the text is cut into commands at the operators that separate them, each
+ * command's quoted strings are dropped because a shell only prints those, and the pin has to be an
+ * argument of one whose command word is a package manager.
+ *
+ * Nothing here is a shell parser, and it is not trying to be. Every shape it does not recognize,
+ * exec-form RUN among them, falls through to a refusal rather than to a replacement.
+ */
+function installsSuch(runs, accepts) {
+  for (const command of runs.split(/&&|\|\||[;|\n]/)) {
+    const words = command.replace(/"[^"]*"|'[^']*'/g, ' ').trim().split(/\s+/).filter(Boolean);
+    // `sudo`, `env` and leading VAR=value assignments come before the command, and are not it.
+    let i = 0;
+    while (i < words.length && (/^[A-Za-z_]\w*=/.test(words[i]) || words[i] === 'sudo' || words[i] === 'env')) i += 1;
+    if (!/^(?:npm|npx|yarn|pnpm|bun)$/.test(words[i] ?? '')) continue;
+    if (words.slice(i + 1).some(accepts)) return true;
+  }
+  return false;
 }
 
 /** `ARG NAME=<pin>`, when `uses` recognizes NAME as the one the upstream is actually built from. */

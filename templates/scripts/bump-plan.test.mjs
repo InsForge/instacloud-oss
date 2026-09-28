@@ -162,7 +162,7 @@ describe('planBump: what it refuses', () => {
       dockerfile: 'FROM node:24\nRUN npm install -g @anthropic-ai/claude-code@0.0.0\n',
       drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
     });
-    expect(out.error).toMatch(/no RUN installs @anthropic-ai\/claude-code@2\.1\.235/);
+    expect(out.error).toMatch(/no command installs @anthropic-ai\/claude-code@2\.1\.235/);
   });
 
   it('refuses when the old pin is only in a comment', () => {
@@ -175,7 +175,7 @@ describe('planBump: what it refuses', () => {
       dockerfile: `# previously pinned at ${PKG}@2.1.235\nRUN npm install -g ${PKG}@2.0.0\n`,
       drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
     });
-    expect(out.error).toMatch(/no RUN installs/);
+    expect(out.error).toMatch(/no command installs/);
   });
 
   it('refuses when the old pin is only in an INLINE comment', () => {
@@ -188,7 +188,7 @@ describe('planBump: what it refuses', () => {
       dockerfile: `RUN npm install -g ${PKG}@9.9.9 # previously pinned at ${PKG}@2.1.235\n`,
       drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
     });
-    expect(out.error).toMatch(/no RUN installs/);
+    expect(out.error).toMatch(/no command installs/);
   });
 
   it('refuses when the pin is in both a comment and the instruction', () => {
@@ -303,7 +303,7 @@ describe('planBump: the Dockerfile edit is anchored to what names the upstream',
       dockerfile: `ENV UNRELATED=2.1.235\nRUN npm install -g ${PKG}@9.9.9\n`,
       drift: npm,
     });
-    expect(out.refused).toMatch(/no RUN installs/);
+    expect(out.refused).toMatch(/no command installs/);
     expect(out.files).toBeUndefined();
   });
 
@@ -337,7 +337,7 @@ services:
   it('refuses a build arg the install line never reads', () => {
     // An ARG carrying the same number is not the pin unless something installs the upstream from it.
     const dockerfile = `ARG SOMETHING_ELSE=2.1.235\nRUN npm install -g ${PKG}@9.9.9\n`;
-    expect(applyBump({ manifest: NPM_MANIFEST, dockerfile, drift: npm }).refused).toMatch(/no RUN installs/);
+    expect(applyBump({ manifest: NPM_MANIFEST, dockerfile, drift: npm }).refused).toMatch(/no command installs/);
   });
 
   it('refuses an exact package reference that no RUN installs', () => {
@@ -349,13 +349,38 @@ services:
       dockerfile: `LABEL upstream="${PKG}@2.1.235"\nRUN npm install -g ${PKG}@9.9.9\n`,
       drift: npm,
     });
-    expect(out.refused).toMatch(/no RUN installs/);
+    expect(out.refused).toMatch(/no command installs/);
     expect(out.files).toBeUndefined();
   });
 
   it('refuses a build arg no RUN reads, however it is spelled elsewhere', () => {
     const dockerfile = `ARG V=2.1.235\nLABEL upstream="${PKG}@\${V}"\nRUN npm install -g ${PKG}@9.9.9\n`;
-    expect(applyBump({ manifest: NPM_MANIFEST, dockerfile, drift: npm }).refused).toMatch(/no RUN installs/);
+    expect(applyBump({ manifest: NPM_MANIFEST, dockerfile, drift: npm }).refused).toMatch(/no command installs/);
+  });
+
+  it('refuses a reference a RUN only prints', () => {
+    // Being somewhere in a RUN is not being installed by one. The echoed note moved and the install
+    // stayed on 9.9.9, and the two were reported as having moved together.
+    const out = applyBump({
+      manifest: NPM_MANIFEST,
+      dockerfile: `RUN echo "previously ${PKG}@2.1.235" && npm install -g ${PKG}@9.9.9\n`,
+      drift: npm,
+    });
+    expect(out.refused).toMatch(/no command installs/);
+    // Unquoted and in a command that installs nothing, it is still only a word being printed.
+    expect(applyBump({ manifest: NPM_MANIFEST, dockerfile: `RUN echo previously ${PKG}@2.1.235 && npm install -g ${PKG}@9.9.9\n`, drift: npm }).refused)
+      .toMatch(/no command installs/);
+  });
+
+  it('still finds the install when it shares its RUN with other commands', () => {
+    // The commands a real Dockerfile chains: a shell setting, the install, a cleanup.
+    const out = applyBump({
+      manifest: NPM_MANIFEST,
+      dockerfile: `RUN set -eux; npm install -g ${PKG}@2.1.235 && npm cache clean --force\n`,
+      drift: npm,
+    });
+    expect(out.refused).toBeUndefined();
+    expect(out.files.dockerfile).toContain(`npm install -g ${PKG}@2.1.274`);
   });
 
   it('moves every stage that builds on the tracked image, not the first', () => {

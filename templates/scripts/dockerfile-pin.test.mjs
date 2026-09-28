@@ -58,6 +58,21 @@ describe('checkDockerfilePin', () => {
     expect(checkUpstreamFrom(up, '# FROM example/upstream:1.2.3\nFROM example/upstream:9.9.9\n')?.error).toMatch(/9\.9\.9/);
   });
 
+  it('does not count an inline comment as naming the pin either', () => {
+    // The same sentence, one line up instead of on its own line. Docker keeps it and hands the whole
+    // line to the shell, which throws away everything from the ` #` on, so the manifest advertised
+    // 2.1.235 while the image installed 9.9.9 and this said they agreed.
+    expect(checkDockerfilePin({ pinned: '2.1.235' }, 'RUN npm install -g x@9.9.9 # previously pinned at 2.1.235\n')?.error).toBeTruthy();
+    // A continued instruction is ONE line by the time the shell sees it, so a `#` opened before the
+    // backslash comments out what follows as well.
+    expect(checkDockerfilePin({ pinned: '2.1.235' }, 'RUN true # note \\\n    && npm install -g x@2.1.235\n')?.error).toBeTruthy();
+    // A comment LINE inside a continuation is the other way round: docker removes it before joining,
+    // so the instruction after it does build and does count.
+    expect(checkDockerfilePin({ pinned: '2.1.235' }, 'RUN true \\\n    # a note\n    && npm install -g x@2.1.235\n')).toBeNull();
+    // And a `#` that is not a word of its own starts no comment, to the shell or to this.
+    expect(checkDockerfilePin({ pinned: '1.2.3' }, 'RUN curl -o x https://example.com/v/1.2.3#sig\n')).toBeNull();
+  });
+
   it('does not read a pin as present inside a longer version', () => {
     // Plain containment reads 1.2.3 as present in 1.2.30, so a template pinned one release behind
     // its Dockerfile passed. A digit or a dot on either side means the match is the middle of
@@ -144,6 +159,20 @@ describe('checkUpstreamFrom', () => {
     const up = { image: 'example/upstream', pinned: '1.2.3' };
     const df = ['FROM --platform=linux/amd64 \\', '    example/upstream:9.9.9', ''].join('\n');
     expect(checkUpstreamFrom(up, df)?.error).toMatch(/9\.9\.9/);
+  });
+
+  it('reads a short Docker Hub name as the image it resolves to', () => {
+    // `decolua/9router` and `docker.io/decolua/9router` are one image to docker and were two strings
+    // here, so a FROM written short matched nothing, the instruction was skipped, and the drifted tag
+    // behind it was invisible while an unrelated ARG satisfied the substring rule on its own.
+    const up = { image: 'docker.io/decolua/9router', pinned: '0.5.55' };
+    expect(checkUpstreamFrom(up, 'ARG EXPECTED=0.5.55\nFROM decolua/9router:9.9.9\n')?.error).toMatch(/9\.9\.9/);
+    expect(checkUpstreamFrom(up, from('decolua/9router:0.5.55'))).toBeNull();
+    expect(checkUpstreamFrom(up, from('index.docker.io/decolua/9router:0.5.55'))).toBeNull();
+    // An official image carries an implicit `library` namespace, so both spellings are one image too.
+    expect(checkUpstreamFrom({ image: 'docker.io/library/postgres', pinned: '17.2' }, from('postgres:9.9'))?.error).toMatch(/17\.2/);
+    // A host-looking first segment is still a host, so this is not the same image as the one above.
+    expect(checkUpstreamFrom(up, from('ghcr.io/decolua/9router:9.9.9'))).toBeNull();
   });
 
   it('says so when the upstream image is built on without any pin at all', () => {

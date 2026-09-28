@@ -39,20 +39,51 @@ const splitPin = (pin) => {
 };
 
 /**
- * The instructions a Dockerfile actually carries: comments dropped, continuations joined.
+ * The image half of a reference, spelled the one way docker resolves it.
  *
- * Comments first, then continuations, which is the order docker itself uses. Both matter and each
- * was a way past this check. A comment counted as naming the pin, so
- * `# previously pinned at 2.1.235` over `RUN npm install -g x@2.0.0` passed while the image built
- * a different version than the manifest advertised. And `FROM --platform=... \` continued on the
- * next line is one instruction to docker and was two to a scanner reading physical lines, so the
- * reference that actually builds could sit somewhere this never looked.
+ * `decolua/9router` and `docker.io/decolua/9router` are the same image, and comparing the two
+ * strings said they were not: a FROM written short simply did not match the manifest's fully
+ * qualified name, so the whole instruction was skipped and a drifted tag behind it was invisible.
+ * A first segment counts as a registry only when it looks like a host, which is docker's own rule
+ * and the reason `decolua/9router` is a namespace rather than a machine called `decolua`.
+ */
+function canonicalImage(image) {
+  const parts = String(image).split('/');
+  const host = parts.length > 1 && (/[.:]/.test(parts[0]) || parts[0] === 'localhost')
+    ? parts.shift().toLowerCase()
+    : 'docker.io';
+  const registry = host === 'index.docker.io' || host === 'registry-1.docker.io' ? 'docker.io' : host;
+  const path = parts.join('/');
+  // Docker Hub's official images live under an implicit `library` namespace, so `node` is
+  // `docker.io/library/node` and a manifest may reasonably write either.
+  return `${registry}/${registry === 'docker.io' && !path.includes('/') ? `library/${path}` : path}`;
+}
+
+/**
+ * The instructions a Dockerfile actually runs: comment lines dropped, continuations joined, then the
+ * comments the shell drops as well.
+ *
+ * Three steps in docker's own order, and every one of them was a way past this check. A whole
+ * comment line counted as naming the pin, so `# previously pinned at 2.1.235` over
+ * `RUN npm install -g x@2.0.0` passed while the image built a version the manifest did not
+ * advertise. `FROM --platform=... \` continued on the next line is one instruction to docker and was
+ * two to a scanner reading physical lines, so the reference that actually builds could sit somewhere
+ * this never looked. And the same sentence written INLINE survived both, because docker keeps it and
+ * only the shell throws it away.
+ *
+ * Inline stripping comes last, once continuations are joined, because that is the single line the
+ * shell is handed: `RUN a # note \` continued onto `install x@1.2.3` comments out the install too.
+ * It is deliberately blunt about a `#` inside quotes, which a shell would keep. That direction
+ * refuses a pin rather than passing one, and no Dockerfile in the registry has an inline `#` at all.
  */
 const instructions = (dockerfile) => String(dockerfile ?? '')
   .split('\n')
   .filter((l) => !/^\s*#/.test(l))
   .join('\n')
-  .replace(/\\[ \t]*\r?\n[ \t]*/g, ' ');
+  .replace(/\\[ \t]*\r?\n[ \t]*/g, ' ')
+  .split('\n')
+  .map((l) => l.replace(/\s#.*$/, ''))
+  .join('\n');
 
 /**
  * Does `pin` appear in `text` as a value rather than as part of a longer one?
@@ -97,7 +128,7 @@ export function checkUpstreamFrom(upstream, dockerfile) {
     const m = /^\s*FROM\s+((?:--\S+\s+)*)(\S+)/i.exec(line);
     if (!m) continue;
     const got = splitRef(m[2]);
-    if (got.image !== image) continue;
+    if (canonicalImage(got.image) !== canonicalImage(image)) continue;
     if (!got.tag) return { error: `Dockerfile builds on ${image} with no tag, so nothing pins which version it gets` };
     if (got.tag !== want.tag) {
       return { error: `Dockerfile builds on ${image}:${got.tag} but the manifest pins '${want.tag}': the two have drifted` };

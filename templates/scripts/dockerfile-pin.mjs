@@ -73,6 +73,10 @@ function canonicalImage(image) {
  *
  * Inline stripping comes last, once continuations are joined, because that is the single line the
  * shell is handed: `RUN a # note \` continued onto `install x@1.2.3` comments out the install too.
+ * A `#` opens a comment wherever a WORD may start, which is after an operator as much as after a
+ * space: `RUN npm install x@9.9.9;# previously pinned at 1.2.3` installs 9.9.9 and was read as
+ * naming 1.2.3, because the rule asked only for whitespace in front.
+ *
  * It is deliberately blunt about a `#` inside quotes, which a shell would keep. That direction
  * refuses a pin rather than passing one, and no Dockerfile in the registry has an inline `#` at all.
  */
@@ -84,7 +88,7 @@ const instructions = (dockerfile) => {
     .join('\n')
     .replace(cont, ' ')
     .split('\n')
-    .map((l) => l.replace(/\s#.*$/, ''))
+    .map((l) => l.replace(/(?:^|[\s;&|()<>])#.*$/, ''))
     .join('\n');
 };
 

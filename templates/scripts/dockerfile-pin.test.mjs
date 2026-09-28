@@ -69,6 +69,12 @@ describe('checkDockerfilePin', () => {
     // A comment LINE inside a continuation is the other way round: docker removes it before joining,
     // so the instruction after it does build and does count.
     expect(checkDockerfilePin({ pinned: '2.1.235' }, 'RUN true \\\n    # a note\n    && npm install -g x@2.1.235\n')).toBeNull();
+    // A word may start after an operator as much as after a space, and a `#` there opens a comment
+    // just the same. Asking only for whitespace let `;#` through while the shell ignored all of it.
+    for (const sep of [';', '&&', '||', '|', ')', '>']) {
+      const df = `RUN npm install x@9.9.9${sep}# previously pinned at 1.2.3\n`;
+      expect(checkDockerfilePin({ pinned: '1.2.3' }, df)?.error, sep).toBeTruthy();
+    }
     // And a `#` that is not a word of its own starts no comment, to the shell or to this.
     expect(checkDockerfilePin({ pinned: '1.2.3' }, 'RUN curl -o x https://example.com/v/1.2.3#sig\n')).toBeNull();
   });

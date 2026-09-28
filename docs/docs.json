@@ -110,6 +110,13 @@
             ]
           },
           {
+            "group": "Integrations",
+            "icon": "handshake",
+            "pages": [
+              "integrations/overview"
+            ]
+          },
+          {
             "group": "Self-hosting",
             "icon": "server",
             "pages": [

@@ -1,0 +1,36 @@
+---
+title: "Multi-tenant & integrations"
+description: "Run InstaCloud underneath your own product: a project per customer, provisioned and operated over the REST API. Access is by application."
+---
+
+Everything the console and CLI do runs over the [REST API](/reference/api/overview), so a platform can do it too: provision infrastructure for its own customers, from its own backend, and never show them an InstaCloud screen. That is what a multi-tenant setup is: your product on top, one InstaCloud project per tenant underneath.
+
+Integration and multi-tenant access is onboarded by application, so we can size limits and billing to your fleet before your first customer lands on it. [Apply below](#apply-for-access).
+
+## The shape of a multi-tenant setup
+
+One organization belongs to your platform; each of your customers gets a project inside it. The token model is built for exactly this split:
+
+- Your control plane holds an **organization token**. It creates a project per tenant (`POST /orgs/{orgId}/projects`) and can [mint narrower tokens](/reference/api/overview#minting-a-token), never wider than itself.
+- Each tenant's runtime gets a **project token**, bound to that one project. It can add services, deploy, and read its own logs and metrics. It cannot reach other tenants' projects or mint anything.
+- Per-tenant usage comes from `GET /projects/{projectId}/usage`, so you can meter and bill your customers however you like.
+- The organization's audit stream (`GET /orgs/{orgId}/events/stream`) gives you one timeline of everything every tenant's infrastructure did.
+
+Branches work per project, so a tenant's preview and agent environments ([branch per task](/agents/branch-per-task)) come free with the setup. The [API overview](/reference/api/overview#provisioning-end-to-end) walks the whole flow, from organization to running deploy, in four curl calls.
+
+## Apply for access
+
+Tell us what you are building: the product, roughly how many tenants you expect, and what each tenant's project needs to run. We answer within one business day, and set you up with limits and billing sized to it:
+
+- Email [founders@insforge.dev](mailto:founders@insforge.dev), or
+- use the [contact form](https://www.instacloud.com/contact).
+
+Nothing stops you prototyping first: any account can [mint an API token](/reference/api/overview#minting-a-token) today, and the free tier is enough to stand up a tenant or two. Apply before you put real customers on it.
+
+## The API design
+
+The full API design is published, split by which token scope can call each endpoint:
+
+- [API overview](/reference/api/overview): authentication, token scopes, errors, and the end-to-end provisioning flow.
+- [Account](/reference/api/account), [organization](/reference/api/org) and [project](/reference/api/project) endpoint pages, generated from the platform's own OpenAPI document.
+- `GET https://api.instacloud.com/openapi.json`: the machine-readable spec, if you would rather generate a client.

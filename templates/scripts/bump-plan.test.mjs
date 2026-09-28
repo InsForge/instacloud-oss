@@ -24,6 +24,7 @@ services:
     image: ghcr.io/insforge/insta-oss/templates/claude-code:0.8.3   # built from ./Dockerfile
     port: 7681
 `;
+const PKG = '@anthropic-ai/claude-code';
 const NPM_DOCKERFILE = `FROM node:24-bookworm-slim@sha256:3638d9a6
 RUN npm install -g @anthropic-ai/claude-code@2.1.235
 `;
@@ -161,7 +162,7 @@ describe('planBump: what it refuses', () => {
       dockerfile: 'FROM node:24\nRUN npm install -g @anthropic-ai/claude-code@0.0.0\n',
       drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
     });
-    expect(out.error).toMatch(/does not name '2\.1\.235'/);
+    expect(out.error).toMatch(/neither installs @anthropic-ai\/claude-code@2\.1\.235/);
   });
 
   it('refuses when the old pin is only in a comment', () => {
@@ -171,10 +172,10 @@ describe('planBump: what it refuses', () => {
     // on the other version with nothing disagreeing.
     const out = planBump({
       manifest: NPM_MANIFEST,
-      dockerfile: '# previously pinned at 2.1.235\nRUN npm install -g @anthropic-ai/claude-code@2.0.0\n',
+      dockerfile: `# previously pinned at ${PKG}@2.1.235\nRUN npm install -g ${PKG}@2.0.0\n`,
       drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
     });
-    expect(out.error).toMatch(/in any instruction/);
+    expect(out.error).toMatch(/neither installs/);
   });
 
   it('refuses when the old pin is only in an INLINE comment', () => {
@@ -184,17 +185,17 @@ describe('planBump: what it refuses', () => {
     // not happened, with the build left on 9.9.9.
     const out = planBump({
       manifest: NPM_MANIFEST,
-      dockerfile: 'RUN npm install -g @anthropic-ai/claude-code@9.9.9 # previously pinned at 2.1.235\n',
+      dockerfile: `RUN npm install -g ${PKG}@9.9.9 # previously pinned at ${PKG}@2.1.235\n`,
       drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
     });
-    expect(out.error).toMatch(/in any instruction/);
+    expect(out.error).toMatch(/neither installs/);
   });
 
   it('refuses when the pin is in both a comment and the instruction', () => {
     // Two occurrences, and replacing either blind is a guess. applyEdits is what says so.
     const out = applyBump({
       manifest: NPM_MANIFEST,
-      dockerfile: '# pinned at 2.1.235\nRUN npm install -g @anthropic-ai/claude-code@2.1.235\n',
+      dockerfile: `# pinned at ${PKG}@2.1.235\nRUN npm install -g ${PKG}@2.1.235\n`,
       drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
     });
     expect(out.refused).toMatch(/appears 2 times/);
@@ -289,6 +290,68 @@ describe('planBump: every service image, or none of it', () => {
   });
 });
 
+describe('planBump: the Dockerfile edit is anchored to what names the upstream', () => {
+  // A version on its own identifies nothing. `2.1.235` in an ENV, in a label, in a checksum and in
+  // an install line look alike to a substring search, and accepting it anywhere and then replacing
+  // the bare string rewrote the wrong one: the env moved, the manifest and our image tag moved, the
+  // install line stayed where it was, and the run said it was applied.
+  const npm = { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' };
+
+  it('refuses when the version is elsewhere in the file and not on the install line', () => {
+    const out = applyBump({
+      manifest: NPM_MANIFEST,
+      dockerfile: `ENV UNRELATED=2.1.235\nRUN npm install -g ${PKG}@9.9.9\n`,
+      drift: npm,
+    });
+    expect(out.refused).toMatch(/neither installs/);
+    expect(out.files).toBeUndefined();
+  });
+
+  it('moves a pin the install line reads out of a build arg, and nothing else that mentions it', () => {
+    // dsh's shape: the version is an ARG and `${DSH_VERSION}` appears again in messages the build
+    // prints. Only the declaration is the pin.
+    const manifest = `code: dsh
+version: 0.4.2
+
+upstream:
+  package: "@deepseek-ai/dsh"
+  pinned: "0.1.1-rc.2"
+
+services:
+  dsh:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/dsh:0.4.2
+`;
+    const dockerfile = [
+      'ARG DSH_VERSION=0.1.1-rc.2',
+      'RUN npm install -g @deepseek-ai/dsh@${DSH_VERSION}',
+      'RUN echo "all documented env names are read by dsh ${DSH_VERSION}"',
+      '',
+    ].join('\n');
+    const out = applyBump({ manifest, dockerfile, drift: { kind: 'npm', from: '0.1.1-rc.2', to: '0.1.7-rc.2', level: 'patch' } });
+    expect(out.refused).toBeUndefined();
+    expect(out.files.dockerfile).toContain('ARG DSH_VERSION=0.1.7-rc.2');
+    expect(out.files.dockerfile).toContain('npm install -g @deepseek-ai/dsh@${DSH_VERSION}');
+  });
+
+  it('refuses a build arg the install line never reads', () => {
+    // An ARG carrying the same number is not the pin unless something installs the upstream from it.
+    const dockerfile = `ARG SOMETHING_ELSE=2.1.235\nRUN npm install -g ${PKG}@9.9.9\n`;
+    expect(applyBump({ manifest: NPM_MANIFEST, dockerfile, drift: npm }).refused).toMatch(/neither installs/);
+  });
+
+  it('will not rewrite a base image whose tag happens to match', () => {
+    // The FROM branch took any image carrying the drifting tag. A base image that shares it by
+    // coincidence would have been moved to a tag of the upstream's that does not exist for it.
+    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/x:1.3.2');
+    const tag = { kind: 'docker-tag', from: '2.36.5', to: '2.41.3', level: 'minor' };
+    expect(applyBump({ manifest, dockerfile: 'FROM someone/else:2.36.5\n', drift: tag }).refused).toMatch(/no FROM builds on docker\.io\/n8nio\/n8n/);
+    // And with both present, only the one the manifest tracks moves.
+    const out = applyBump({ manifest, dockerfile: 'FROM someone/else:2.36.5 AS base\nFROM docker.io/n8nio/n8n:2.36.5\n', drift: tag });
+    expect(out.files.dockerfile).toBe('FROM someone/else:2.36.5 AS base\nFROM docker.io/n8nio/n8n:2.41.3\n');
+  });
+});
+
 describe('applyBump', () => {
   // One refusal path, because there used to be two and the caller only handled one. planBump
   // returned an error that got reported; applyEdits threw and escaped the runner mid loop, leaving
@@ -308,7 +371,8 @@ services:
     type: web
     image: ghcr.io/insforge/insta-oss/templates/pi:1.0.0
 `;
-    const dockerfile = 'RUN npm i -g pi@0.84.2\n# pinned at 0.84.2 for now\n';
+    const pi = '@earendil-works/pi-coding-agent';
+    const dockerfile = `RUN npm i -g ${pi}@0.84.2\n# pinned at ${pi}@0.84.2 for now\n`;
     const out = applyBump({ manifest, dockerfile, drift: { kind: 'npm', from: '0.84.2', to: '0.87.1', level: 'minor' } });
     expect(out.refused).toMatch(/appears 2 times/);
     expect(out.files).toBeUndefined();

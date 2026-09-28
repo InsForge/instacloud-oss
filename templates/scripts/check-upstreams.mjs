@@ -27,10 +27,15 @@ const asJson = args.includes("--json");
 const apply = args.includes("--apply");
 const only = args.filter((a) => !a.startsWith("--"));
 
-const codes = readdirSync(root)
-  .filter((c) => existsSync(join(root, c, "insta.template.yaml")))
-  .filter((c) => !only.length || only.includes(c))
-  .sort();
+const registry = readdirSync(root).filter((c) => existsSync(join(root, c, "insta.template.yaml")));
+// A typo used to read as a filter that matched nothing, so `-- n88n` printed a clean report over
+// zero templates and exited 0, which looks exactly like a check that ran and found nothing wrong.
+const unknown = only.filter((c) => !registry.includes(c));
+if (unknown.length) {
+  console.error(`no such template: ${unknown.join(", ")}`);
+  process.exit(2);
+}
+const codes = registry.filter((c) => !only.length || only.includes(c)).sort();
 
 const rows = [];
 for (const code of codes) {

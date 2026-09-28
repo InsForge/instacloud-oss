@@ -89,6 +89,46 @@ describe('planBump: what moves, by kind', () => {
   });
 });
 
+describe('planBump: the pin lives in whichever field holds it', () => {
+  // laya keeps a commit AND a PyPI release, so only the commit moves. whisper-turbo has no
+  // `commit` at all and keeps its sha in `pinned`, and hard-coding `commit` for the git kind
+  // refused it outright, which is one of the templates this is supposed to serve.
+  const WHISPER = `code: whisper-turbo
+version: 0.1.0
+
+upstream:
+  repo: baryhuang/whisper-turbo.c
+  pinned: 54ad979a08e654929186b374d266a4ced291f1be
+`;
+  const OLD = '54ad979a08e654929186b374d266a4ced291f1be';
+  const NEW = 'ffff979a08e654929186b374d266a4ced291f1be';
+
+  it('moves a sha that lives in pinned, because whisper-turbo has no commit field', () => {
+    const plan = planBump({ manifest: WHISPER, dockerfile: `ARG C=${OLD}\n`, drift: { kind: 'git-commit', from: OLD, to: NEW, level: null } });
+    expect(plan.error).toBeUndefined();
+    const out = applyEdits({ manifest: WHISPER, dockerfile: `ARG C=${OLD}\n` }, plan.edits);
+    expect(out.manifest).toContain(`pinned: ${NEW}`);
+    expect(out.dockerfile).toBe(`ARG C=${NEW}\n`);
+  });
+
+  it('moves the commit and leaves the release alone when both are there', () => {
+    // laya's release number is what upstream published, and a new commit does not mean they cut
+    // one, so inventing a bump for it would be putting a number in that nobody released.
+    const laya = `code: laya
+version: 0.2.0
+
+upstream:
+  repo: tonychang04/laya-template
+  commit: ${OLD}
+  pinned: "0.3.4"
+`;
+    const plan = planBump({ manifest: laya, dockerfile: `ARG LAYA_COMMIT=${OLD}\n`, drift: { kind: 'git-commit', from: OLD, to: NEW, level: null } });
+    const out = applyEdits({ manifest: laya, dockerfile: `ARG LAYA_COMMIT=${OLD}\n` }, plan.edits);
+    expect(out.manifest).toContain(`commit: ${NEW}`);
+    expect(out.manifest).toContain('pinned: "0.3.4"');
+  });
+});
+
 describe('planBump: what it refuses', () => {
   it('refuses a drift it was not given enough to apply', () => {
     expect(planBump({ manifest: NPM_MANIFEST, drift: null })?.error).toBeTruthy();
@@ -100,6 +140,18 @@ describe('planBump: what it refuses', () => {
     // answer is to do nothing and be re-run, not to edit around the surprise.
     const out = planBump({ manifest: NPM_MANIFEST, dockerfile: NPM_DOCKERFILE, drift: { kind: 'npm', from: '2.0.0', to: '2.1.274', level: 'patch' } });
     expect(out.error).toMatch(/2\.0\.0/);
+  });
+
+  it('refuses when a Dockerfile is present and does not name the old pin', () => {
+    // Bumping the manifest alone leaves the image built from the old upstream while the catalog
+    // advertises the new one. It used to skip the Dockerfile quietly and report the bump applied,
+    // which is the exact outcome the rest of this exists to prevent.
+    const out = planBump({
+      manifest: NPM_MANIFEST,
+      dockerfile: 'FROM node:24\nRUN npm install -g @anthropic-ai/claude-code@0.0.0\n',
+      drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
+    });
+    expect(out.error).toMatch(/does not name '2\.1\.235'/);
   });
 
   it('refuses a docker-tag move with no digest when the Dockerfile pins one', () => {

@@ -81,6 +81,14 @@ describe('resolveUpstream: npm', () => {
     expect(await resolveUpstream({ package: '@openai/codex', pinned: '0.148.0' }, deps)).toMatchObject({ current: '0.157.1' });
   });
 
+  it('refuses a dist-tag that is not a version it can order', async () => {
+    // A dist-tag holds whatever the maintainer wrote. Something unorderable would otherwise pass
+    // as a "changed, not comparable" move and be pasted into a manifest as a version.
+    const deps = { fetchImpl: npm({ latest: 'nightly-20260927' }) };
+    expect(await resolveUpstream({ package: 'x', pinned: '1.0.0' }, deps))
+      .toMatchObject({ unknown: expect.stringMatching(/not a version/) });
+  });
+
   it('is unknown, not wrong, when the registry answers nothing usable', async () => {
     expect(await resolveUpstream({ package: 'x', pinned: '1.0.0' }, { fetchImpl: serving({ 'registry.npmjs.org': 404 }) })).toHaveProperty('unknown');
     expect(await resolveUpstream({ package: 'x', pinned: '1.0.0' }, { fetchImpl: npm({}) })).toHaveProperty('unknown');
@@ -88,13 +96,39 @@ describe('resolveUpstream: npm', () => {
 });
 
 describe('resolveUpstream: docker', () => {
-  const hub = (names) => serving({ 'hub.docker.com': { results: names.map((name) => ({ name })) } });
+  // The registry API: a pull token, then the whole tag list in one answer. Docker Hub's browse
+  // endpoint is still where a single tag's digest is read, so a fixture needs both.
+  const hub = (names, digest = `sha256:${'a'.repeat(64)}`) => serving({
+    'auth.docker.io': { token: 'anonymous' },
+    '/tags/list': { tags: names },
+    'hub.docker.com': { digest },
+  });
 
   it('keeps only strict X.Y.Z and takes the highest', async () => {
     // Sorted by last_updated, n8n's newest 25 tags are all nightlies. Only the filter saves this.
     const tags = ['v3-nightly-20260927', 'v3-nightly-pc-arm64', 'nightly', 'latest', '2.36.5', '2.37.0', '2.36', '2.37.0-rc.1'];
     expect(await resolveUpstream({ image: 'docker.io/n8nio/n8n', pinned: '2.36.5' }, { fetchImpl: hub(tags) }))
       .toMatchObject({ current: '2.37.0' });
+  });
+
+  it('sees a release Docker Hub would have buried', async () => {
+    // Hub paginates by recent activity and refuses an anonymous caller at page 11 with a 403, and
+    // n8n has 5531 tags of which only three in the first hundred are plain versions. The registry
+    // list is complete in one answer, so a nightly burst cannot hide a release behind it.
+    const nightlies = Array.from({ length: 300 }, (_, i) => `v3-nightly-${i}`);
+    expect(await resolveUpstream({ image: 'docker.io/n8nio/n8n', pinned: '2.36.5' }, { fetchImpl: hub([...nightlies, '2.41.3', '2.36.5']) }))
+      .toMatchObject({ current: '2.41.3' });
+  });
+
+  it('is unknown when the registry will not list, rather than answering from nothing', async () => {
+    const fetchImpl = serving({ 'auth.docker.io': { token: 't' }, '/tags/list': 404 });
+    expect(await resolveUpstream({ image: 'docker.io/x/y', pinned: '0.9.0' }, { fetchImpl })).toHaveProperty('unknown');
+  });
+
+  it('drops a digest that is not one', async () => {
+    // Whatever the remote says goes into a Dockerfile, so it has to look like a digest first.
+    expect(await resolveUpstream({ image: 'docker.io/x/y', pinned: '1.0.0' }, { fetchImpl: hub(['2.0.0'], 'not-a-digest') }))
+      .toMatchObject({ current: '2.0.0', digest: null });
   });
 
   it('is unknown when no tag is a plain version', async () => {
@@ -131,8 +165,8 @@ describe('resolveUpstream: git', () => {
 
 describe('tagDigest', () => {
   it('answers what a named tag points at', async () => {
-    const deps = { fetchImpl: serving({ '/tags/0.5.55': { digest: 'sha256:f00fe389' } }) };
-    expect(await tagDigest('docker.io/decolua/9router', '0.5.55', deps)).toEqual({ digest: 'sha256:f00fe389' });
+    const deps = { fetchImpl: serving({ '/tags/0.5.55': { digest: `sha256:${'f'.repeat(64)}` } }) };
+    expect(await tagDigest('docker.io/decolua/9router', '0.5.55', deps)).toEqual({ digest: `sha256:${'f'.repeat(64)}` });
   });
 
   it('is unknown off docker.io rather than a guess', async () => {
@@ -160,7 +194,7 @@ describe('upstreamDrift', () => {
 
   it('carries the bump level, because a major is not a routine update', async () => {
     expect(await upstreamDrift({ image: 'docker.io/n8nio/n8n', pinned: '2.36.5' },
-      { fetchImpl: serving({ 'hub.docker.com': { results: [{ name: '3.0.0' }, { name: '2.36.5' }] } }) }))
+      { fetchImpl: serving({ 'auth.docker.io': { token: 't' }, '/tags/list': { tags: ['3.0.0', '2.36.5'] }, 'hub.docker.com': { digest: `sha256:${'a'.repeat(64)}` } }) }))
       .toMatchObject({ level: 'major', to: '3.0.0' });
     expect(await upstreamDrift({ package: 'x', pinned: '2.1.235' }, npmAt('2.1.283'))).toMatchObject({ level: 'patch' });
   });
@@ -182,9 +216,9 @@ describe('upstreamDrift', () => {
     // leaving the digest is the worst outcome available: docker prefers the digest, so the build
     // succeeds and ships the old image while the manifest and the catalog claim the new version.
     const out = await upstreamDrift({ image: 'docker.io/decolua/9router', pinned: '0.5.55' }, {
-      fetchImpl: serving({ 'hub.docker.com': { results: [{ name: '0.5.91', digest: 'sha256:efc6e88c' }, { name: '0.5.55', digest: 'sha256:f00fe389' }] } }),
+      fetchImpl: serving({ 'auth.docker.io': { token: 't' }, '/tags/list': { tags: ['0.5.91', '0.5.55'] }, 'hub.docker.com': { digest: `sha256:${'e'.repeat(64)}` } }),
     });
-    expect(out).toMatchObject({ to: '0.5.91', digest: 'sha256:efc6e88c' });
+    expect(out).toMatchObject({ to: '0.5.91', digest: `sha256:${'e'.repeat(64)}` });
   });
 
   it('passes an unresolvable upstream through as unknown, and proposes nothing', async () => {

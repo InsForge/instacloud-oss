@@ -20,6 +20,8 @@ const SHA = /^[0-9a-f]{40}$/i;
 const SEMVER = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
 /** A docker tag we will consider: a plain version and nothing else. No nightly, no -arm64, no rc. */
 const PLAIN_TAG = /^v?\d+\.\d+\.\d+$/;
+/** A digest as a registry writes one. Anything else from a remote is not a digest we will paste. */
+const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 /**
  * How this template is pinned, which decides where to look.
@@ -90,6 +92,28 @@ function bumpLevel(from, to) {
   return 'patch';
 }
 
+/**
+ * Every tag an image has, from the registry rather than from Docker Hub's website API.
+ *
+ * Two calls: an anonymous pull token, then the list. The token is free and unauthenticated in the
+ * sense that matters, it just has to be asked for, and in exchange the answer is complete instead
+ * of a page at a time behind a rate limit.
+ */
+async function registryTags(ns, name, fetchImpl) {
+  try {
+    const auth = await json(fetchImpl, `https://auth.docker.io/token?service=registry.docker.io&scope=repository:${ns}/${name}:pull`);
+    if (!auth?.token) return { unknown: `the registry issued no pull token for ${ns}/${name}` };
+    const res = await fetchImpl(`https://registry-1.docker.io/v2/${ns}/${name}/tags/list`, {
+      headers: { accept: 'application/json', authorization: `Bearer ${auth.token}` },
+    });
+    if (!res?.ok) return { unknown: `the registry answered ${res?.status ?? 'nothing'} for ${ns}/${name}` };
+    const body = await res.json();
+    return Array.isArray(body?.tags) ? { names: body.tags.filter((t) => typeof t === 'string') } : { unknown: `${ns}/${name} listed no tags` };
+  } catch (e) {
+    return { unknown: `could not list tags for ${ns}/${name}: ${e.message}` };
+  }
+}
+
 const json = async (fetchImpl, url) => {
   const res = await fetchImpl(url, { headers: { accept: 'application/json' } });
   if (!res?.ok) throw new Error(`${url} answered ${res?.status ?? 'nothing'}`);
@@ -114,7 +138,12 @@ export async function resolveUpstream(upstream, deps = {}) {
       const body = await json(fetchImpl, `https://registry.npmjs.org/${String(upstream.package).replace('/', '%2F')}`);
       const tags = body?.['dist-tags'] ?? {};
       const current = tags.stable ?? tags.latest;
-      return current ? { kind: k.kind, current: String(current) } : unknown('the registry published no stable or latest dist-tag');
+      if (!current) return unknown('the registry published no stable or latest dist-tag');
+      // A dist-tag is whatever the maintainer wrote there. One that is not a version cannot be
+      // ordered against the pin, and an unorderable npm value would otherwise flow through as a
+      // "changed, not comparable" move and get pasted into a manifest.
+      if (!SEMVER.test(String(current))) return unknown(`the ${tags.stable ? 'stable' : 'latest'} dist-tag is '${current}', which is not a version this can order`);
+      return { kind: k.kind, current: String(current) };
     }
 
     if (k.kind === 'docker-tag') {
@@ -123,16 +152,21 @@ export async function resolveUpstream(upstream, deps = {}) {
       // dance, so a ghcr-hosted upstream answers unknown rather than being guessed at.
       const m = /^docker\.io\/([^/]+)\/([^/:]+)$/.exec(ref);
       if (!m) return unknown(`${ref} is not on docker.io, and only Docker Hub can be read anonymously`);
-      const body = await json(fetchImpl, `https://hub.docker.com/v2/repositories/${m[1]}/${m[2]}/tags?page_size=100`);
-      const results = body?.results ?? [];
-      const plain = results.map((r) => r?.name).filter((n) => n && PLAIN_TAG.test(n));
+      // The registry's OWN tag list, not Docker Hub's browse endpoint. Hub paginates by recent
+      // activity and refuses an anonymous caller at page 11 with a 403, and n8n has 5531 tags of
+      // which only three in the first hundred are plain versions, so a partial list there reads as
+      // a confident "up to date" the moment a burst of nightlies lands. The registry answers with
+      // all 5531 in one call, for a token anyone can mint.
+      const listed = await registryTags(m[1], m[2], fetchImpl);
+      if (listed.unknown) return unknown(listed.unknown);
+      const plain = listed.names.filter((n) => PLAIN_TAG.test(n));
       if (!plain.length) return unknown('no tag on that image is a plain version');
       const current = plain.reduce((a, b) => ((compareVersions(a, b) ?? 0) < 0 ? b : a));
-      // The digest of the tag we just chose, because three templates write BOTH into their FROM
+      // And the digest of the tag just chosen, because three templates write BOTH into their FROM
       // and moving the tag without it is the worst kind of wrong: docker prefers the digest, so the
-      // build succeeds and ships the old image while everything claims the new version. Whatever
-      // applies this edit needs both halves, so both are reported.
-      return { kind: k.kind, current, digest: results.find((r) => r?.name === current)?.digest ?? null };
+      // build succeeds and ships the old image while everything claims the new version.
+      const picked = await tagDigest(ref, current, deps);
+      return { kind: k.kind, current, digest: picked.digest ?? null };
     }
 
     if (k.kind === 'git-commit') {
@@ -197,7 +231,9 @@ export async function tagDigest(image, tag, deps = {}) {
   if (!m) return { unknown: `${image} is not on docker.io, and only Docker Hub can be read anonymously` };
   try {
     const body = await json(fetchImpl, `https://hub.docker.com/v2/repositories/${m[1]}/${m[2]}/tags/${tag}`);
-    return body?.digest ? { digest: String(body.digest) } : { unknown: `${image}:${tag} reports no digest` };
+    const d = body?.digest ? String(body.digest) : '';
+    // Whatever a remote says goes into a Dockerfile, so it has to look like a digest first.
+    return DIGEST.test(d) ? { digest: d } : { unknown: `${image}:${tag} reports no usable digest` };
   } catch (e) {
     return { unknown: `could not read ${image}:${tag}: ${e.message}` };
   }

@@ -13,12 +13,14 @@ Your backend keeps one **master token**: an organization token, minted once (`in
 
 <CardGroup cols={2}>
   <Card title="A project per customer" icon="folder-tree" href="/integrations/project-per-customer">
-    Hard isolation: each customer gets their own Postgres, buckets, compute and branches, under a project token that reaches nothing else. Per-customer usage is built in.
+    Recommended. Each customer gets their own Postgres, buckets, compute and branches, under a project token that reaches nothing else. Per-customer usage is built in.
   </Card>
   <Card title="An app per customer" icon="cubes" href="/integrations/app-per-customer">
     One project, a compute service per customer. Cheaper per tenant: the apps can share a database, and logs and metrics still read per app.
   </Card>
 </CardGroup>
+
+In doubt, take **a project per customer**. It is the shape the platform's isolation, metering, governance and offboarding are built around, and idle tenants stay cheap: a customer's [Postgres suspends by default](/postgres/overview) and bills only for storage, and their compute can [scale to zero](/compute/overview) the same way. Reserve an app per customer for fleets of small, uniform tenants where sharing one database is a feature, not a compromise.
 
 Either way, the organization's audit stream (`GET /orgs/{orgId}/events/stream`) gives you one timeline of everything every customer's infrastructure did.
 

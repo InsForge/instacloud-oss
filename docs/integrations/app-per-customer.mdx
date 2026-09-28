@@ -3,7 +3,7 @@ title: "An app per customer"
 description: "One project, a compute service per customer: cheaper per tenant, a shared database, and logs and metrics that still read per app."
 ---
 
-When tenants are lighter, keep one project and make every customer an **app**: a compute service of their own, deployed, scaled and stopped independently of the rest. One [project token](/reference/api/overview#token-scopes), minted once from the [master token](/integrations/overview#the-recommended-setup), drives the whole fleet.
+When tenants are many, small and uniform, keep one project and make every customer an **app**: a compute service of their own, deployed, scaled and stopped independently of the rest. For anything heavier, [a project per customer](/integrations/project-per-customer) is the recommended shape. One [project token](/reference/api/overview#token-scopes), minted once from the [master token](/integrations/overview#the-recommended-setup), drives the whole fleet.
 
 ## The flow
 

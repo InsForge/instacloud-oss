@@ -3,7 +3,7 @@ title: "A project per customer"
 description: "The master token creates a project and mints a project token per customer: hard isolation, with per-customer usage built in."
 ---
 
-The strongest shape: when a customer signs up, your backend creates a project for them and mints a **project token** bound to it. Everything that runs for that customer runs under that token, and each customer gets their own Postgres, buckets and compute, plus their own branches for previews and agent runs ([branch per task](/agents/branch-per-task)).
+The recommended shape: when a customer signs up, your backend creates a project for them and mints a **project token** bound to it. Everything that runs for that customer runs under that token, and each customer gets their own Postgres, buckets and compute, plus their own branches for previews and agent runs ([branch per task](/agents/branch-per-task)).
 
 ## The flow
 

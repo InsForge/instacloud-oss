@@ -1,21 +1,21 @@
 ---
 title: "Multi-tenant & integrations"
-description: "Run InstaCloud underneath your own product: a master token in your backend, a project per customer over the REST API. Available on every plan."
+description: "Multi-tenancy out of the box: a master token for your backend, then a project or an app per customer, all over the REST API."
 ---
 
-Everything the console and CLI do runs over the [REST API](/reference/api/overview), so a platform can do it too: provision infrastructure for its own customers, from its own backend, and never show them an InstaCloud screen. Your product on top, InstaCloud underneath.
+InstaCloud supports multi-tenancy out of the box. As a cloud provider, or any product that provisions resources for its own customers, you run your product on top and InstaCloud underneath: everything the console and CLI do runs over the [REST API](/reference/api/overview), so your backend provisions each customer's resources itself and never shows them an InstaCloud screen.
 
 The API is directly available: [mint a token](/reference/api/overview#minting-a-token) on any account and start building. When you are ready to put a real fleet on it, [contact us](#enterprise-plans) for an Enterprise plan with custom restrictions.
 
-## The recommended setup
+## 1. Provision the master token
 
-Your backend keeps one **master token**: an organization token, minted once (`insta tokens create master --org <orgId>`). It is the credential that creates projects and [mints narrower tokens](/reference/api/overview#minting-a-token), never wider than itself, and it never leaves your backend. From there, two shapes work: **a project per customer**, or one project where **every customer is an app**.
+Your backend keeps one **master token**: an organization-scoped API token, minted once (`insta tokens create master --org <orgId>`). It acts as your backend's master key: it is the credential that creates projects and [mints narrower tokens](/reference/api/overview#minting-a-token), never wider than itself, and it never leaves your backend.
 
-In doubt, take a project per customer. It is the shape the platform's isolation, metering, governance and offboarding are built around, and idle tenants stay cheap: a customer's [Postgres suspends by default](/postgres/overview) and bills only for storage, and their compute can [scale to zero](/compute/overview) the same way. Reserve an app per customer for fleets of small, uniform tenants where sharing one database is a feature, not a compromise.
+From there, give each customer an isolation boundary that matches how much they touch.
 
-## A project per customer
+## 2. A project per customer
 
-When a customer signs up, the master token creates a project for them and mints a **project token** bound to it. Everything that runs for that customer runs under that token:
+Every customer gets a separate project, for token isolation. This is the shape to pick when customers freely create apps and use resources: mint a **project-level token** per customer, and everything that runs for them runs under it, inside their own project.
 
 ```bash
 API=https://api.instacloud.com
@@ -48,9 +48,11 @@ curl -s -X POST $API/projects/$PROJECT/deploy -H "Authorization: Bearer $TOKEN" 
 
 The project token is the isolation boundary, so hand it to the customer's runtime without worry: it reaches its own project only (any endpoint outside the binding answers `403 token_scope`), it cannot mint tokens, and a `"access":"read_only"` sibling serves customer-facing dashboards. Each customer gets their own branches for previews and agent runs ([branch per task](/agents/branch-per-task)), `GET /projects/{projectId}/usage` is that customer's bill, and offboarding is two calls: `DELETE /projects/{projectId}` and `DELETE /tokens/{tokenId}`.
 
-## An app per customer
+Idle customers stay cheap: a project's [Postgres suspends by default](/postgres/overview) and bills only for storage, and its compute can [scale to zero](/compute/overview) the same way.
 
-When tenants are many, small and uniform, keep one project and make every customer an **app**: a compute service of their own (`POST /projects/{projectId}/services`), wired to the shared database with a secret binding, deployed under its own `group`, and scaled, restarted or stopped without touching the rest. Logs and metrics still read per app (`GET /projects/{projectId}/logs?group=<app>`), and a database per customer inside the shared Postgres keeps separation clean (`POST /projects/{projectId}/database/databases`). Usage is reported for the whole project though, so per-customer billing needs your own accounting, and a growing fleet hits the plan's per-branch service caps first. When a customer outgrows the shared project, promote them to a project of their own.
+## 3. An app per customer
+
+If all a customer interacts with is a single unit of resources, one app, you can skip the per-customer project: keep one shared project and make every customer a **compute service** of their own (`POST /projects/{projectId}/services`), wired to the shared database with a secret binding, deployed under its own `group`, and scaled, restarted or stopped without touching the rest. Logs and metrics still read per app (`GET /projects/{projectId}/logs?group=<app>`), and a database per customer inside the shared Postgres keeps separation clean (`POST /projects/{projectId}/database/databases`). Usage is reported for the whole project though, so per-customer billing needs your own accounting, and a growing fleet hits the plan's per-branch service caps first. When a customer outgrows the shared project, promote them to a project of their own.
 
 Either way, the organization's audit stream (`GET /orgs/{orgId}/events/stream`) gives you one timeline of everything every customer's infrastructure did.
 

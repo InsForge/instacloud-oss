@@ -7,7 +7,7 @@ import yaml from "js-yaml";
 import { FIXED_REF_RE, checkFixedRef, MANAGED_TYPES } from "./manifest-refs.mjs";
 import { DEPLOY_BUTTON_ASSET, findDeployButtons } from "./publish-lib.mjs";
 import { ARCHITECTURES } from "./build-targets.mjs";
-import { checkDockerfilePin } from "./dockerfile-pin.mjs";
+import { checkDockerfilePin, checkUpstreamFrom } from "./dockerfile-pin.mjs";
 
 // Template dirs live beside this script's parent (templates/<code>/): runs from any cwd.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -43,8 +43,14 @@ for (const dir of dirs) {
   // published drift the day it ships. Templates that deploy an upstream image (n8n) have no
   // Dockerfile and nothing to compare.
   if (existsSync(join(root, dir, "Dockerfile"))) {
-    const drift = checkDockerfilePin(m?.upstream ?? {}, readFileSync(join(root, dir, "Dockerfile"), "utf8"));
+    const dockerfile = readFileSync(join(root, dir, "Dockerfile"), "utf8");
+    const drift = checkDockerfilePin(m?.upstream ?? {}, dockerfile);
     if (drift) err(dir, drift.error);
+    // And where the image is built ON the upstream's own, the FROM has to name the pinned tag
+    // outright. Whether that tag still resolves to the digest beside it is a question only the
+    // registry can answer, so check-upstreams asks it and this stays offline.
+    const stale = checkUpstreamFrom(m?.upstream ?? {}, dockerfile);
+    if (stale) err(dir, stale.error);
   }
 
   // Which CPU architectures the deployable image is published for. Mandatory, drafts included:

@@ -9,7 +9,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
-import { checkDockerfilePin } from './dockerfile-pin.mjs';
+import { checkDockerfilePin, checkUpstreamFrom } from './dockerfile-pin.mjs';
 
 const templates = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -57,6 +57,52 @@ describe('checkDockerfilePin', () => {
   });
 });
 
+describe('checkUpstreamFrom', () => {
+  // Three templates build on top of the upstream's own image, and all three pin it twice over in
+  // the FROM line: a tag and a digest. Moving the manifest and leaving that line behind is the
+  // drift the substring rule above already catches, but only by luck of the old value vanishing.
+  // This one names the FROM explicitly, and it is scoped to the image the manifest declares so a
+  // base image, which every other Dockerfile pins by digest too, is none of its business.
+  const from = (ref) => `FROM ${ref}\nRUN true\n`;
+
+  it('passes when the FROM tag is the pinned one', () => {
+    const up = { image: 'docker.io/decolua/9router', pinned: '0.5.55' };
+    expect(checkUpstreamFrom(up, from('docker.io/decolua/9router:0.5.55@sha256:f00fe389ef41'))).toBeNull();
+  });
+
+  it('passes when the pin carries the digest too, and both halves agree', () => {
+    // openclaw's shape: the pin IS `latest@sha256:...`, because a floating tag alone would drift.
+    const up = { image: 'ghcr.io/openclaw/openclaw', pinned: 'latest@sha256:2f5ce8848a1a' };
+    expect(checkUpstreamFrom(up, from('ghcr.io/openclaw/openclaw:latest@sha256:2f5ce8848a1a'))).toBeNull();
+  });
+
+  it('fails when the manifest moved and the FROM did not', () => {
+    const up = { image: 'docker.io/decolua/9router', pinned: '0.5.91' };
+    const out = checkUpstreamFrom(up, from('docker.io/decolua/9router:0.5.55@sha256:f00fe389ef41'));
+    expect(out?.error).toMatch(/0\.5\.55/);
+    expect(out?.error).toMatch(/0\.5\.91/);
+  });
+
+  it('fails when the two digests disagree', () => {
+    const up = { image: 'ghcr.io/openclaw/openclaw', pinned: 'latest@sha256:2f5ce8848a1a' };
+    expect(checkUpstreamFrom(up, from('ghcr.io/openclaw/openclaw:latest@sha256:999999999999'))?.error)
+      .toMatch(/digest/i);
+  });
+
+  it('ignores a Dockerfile that never builds on the upstream image', () => {
+    // Every other template starts FROM node or debian, pinned by digest. Those are base images and
+    // have nothing to do with upstream.pinned, so a rule that looked at any digest-bearing FROM
+    // would fail seven templates for being careful.
+    expect(checkUpstreamFrom({ package: '@x/y', pinned: '1.0.0' }, from('node:24-bookworm-slim@sha256:3638d9a6'))).toBeNull();
+    expect(checkUpstreamFrom({ image: 'docker.io/decolua/9router', pinned: '0.5.55' }, from('debian:bookworm-slim@sha256:3783cc01'))).toBeNull();
+  });
+
+  it('says so when the upstream image is built on without any pin at all', () => {
+    const up = { image: 'docker.io/decolua/9router', pinned: '0.5.55' };
+    expect(checkUpstreamFrom(up, from('docker.io/decolua/9router'))?.error).toMatch(/no tag/i);
+  });
+});
+
 describe('the registry as it stands', () => {
   const dirs = readdirSync(templates)
     .filter((t) => existsSync(join(templates, t, 'insta.template.yaml')))
@@ -70,6 +116,12 @@ describe('the registry as it stands', () => {
     const m = yaml.load(readFileSync(join(templates, t, 'insta.template.yaml'), 'utf8'));
     const df = readFileSync(join(templates, t, 'Dockerfile'), 'utf8');
     expect(checkDockerfilePin(m?.upstream ?? {}, df)).toBeNull();
+  });
+
+  it.each(dirs)('%s: and its FROM agrees with the manifest where it builds on the upstream', (t) => {
+    const m = yaml.load(readFileSync(join(templates, t, 'insta.template.yaml'), 'utf8'));
+    const df = readFileSync(join(templates, t, 'Dockerfile'), 'utf8');
+    expect(checkUpstreamFrom(m?.upstream ?? {}, df)).toBeNull();
   });
 
   it.each(dirs)('%s: and would notice if that Dockerfile drifted', (t) => {

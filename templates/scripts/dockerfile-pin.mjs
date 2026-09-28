@@ -15,6 +15,67 @@
 // since `pip install laya==0.3.4` does not carry the deploy/app.py the image runs.
 
 /**
+ * `image:tag@sha256:...`, `image:tag`, or `image`, split into the three parts a FROM can carry.
+ *
+ * The colon has to be after the last slash to be a tag separator, or a registry written with a
+ * port (`host:5000/x/y`) would read its own port as the tag.
+ */
+function splitRef(ref) {
+  const [head, digest] = String(ref).split('@');
+  const slash = head.lastIndexOf('/');
+  const colon = head.lastIndexOf(':');
+  const tagged = colon > slash;
+  return { image: tagged ? head.slice(0, colon) : head, tag: tagged ? head.slice(colon + 1) : '', digest: digest ?? '' };
+}
+
+/**
+ * A manifest pin, which is NOT a ref: it is the part a FROM puts after the image, so `0.5.55` or
+ * `latest@sha256:...`. Parsing it as a ref reads `0.5.55` as an image name with no tag, which is
+ * how the first version of this compared an empty string against every tag and passed nothing.
+ */
+const splitPin = (pin) => {
+  const [tag, digest] = String(pin ?? '').split('@');
+  return { tag, digest: digest ?? '' };
+};
+
+/**
+ * Where a template builds on the upstream's own image, does its FROM still name the pinned tag?
+ *
+ * Three templates do this, and all three pin twice over: `FROM <image>:<tag>@sha256:<digest>`. The
+ * substring rule above would catch a manifest that moved without the FROM, but only because the old
+ * value happens to vanish. This says it outright, and it is the half of the problem that can be
+ * checked without a network: whether the digest still belongs to that tag is a question only the
+ * registry can answer, and check-upstreams asks it.
+ *
+ * Scoped to the image the manifest declares. Every other Dockerfile here starts FROM node or
+ * debian pinned by digest, and a rule that looked at any digest-bearing FROM would fail seven
+ * templates for being careful.
+ */
+export function checkUpstreamFrom(upstream, dockerfile) {
+  const image = String(upstream?.image ?? '');
+  if (!image) return null;
+  const want = splitPin(upstream?.pinned);
+
+  for (const line of String(dockerfile ?? '').split('\n')) {
+    const m = /^\s*FROM\s+(\S+)/i.exec(line);
+    if (!m) continue;
+    const got = splitRef(m[1]);
+    if (got.image !== image) continue;
+    if (!got.tag) return { error: `Dockerfile builds on ${image} with no tag, so nothing pins which version it gets` };
+    if (got.tag !== want.tag) {
+      return { error: `Dockerfile builds on ${image}:${got.tag} but the manifest pins '${want.tag}': the two have drifted` };
+    }
+    // Only when the manifest carries one of its own. 9router and hermes pin a tag and let the
+    // Dockerfile add the digest, which is a choice about where the digest lives, not a mismatch.
+    if (want.digest && got.digest !== want.digest) {
+      return { error: `Dockerfile pins ${image}:${got.tag} at a different digest than the manifest does` };
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
  * Does this Dockerfile name the version its manifest claims?
  *
  * @param {{pinned?: unknown, commit?: unknown}} upstream  the manifest's `upstream` block

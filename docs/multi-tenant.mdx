@@ -1,9 +1,9 @@
 ---
 title: "Multi-tenant & integrations"
-description: "Multi-tenancy out of the box: a master token for your backend, then a project or an app per customer, all over the REST API."
+description: "Provision apps for your users, out of the box: a master token for your backend, then a project or an app per user, all over the REST API."
 ---
 
-InstaCloud supports multi-tenancy out of the box. As a cloud provider, or any product that provisions resources for its own customers, you run your product on top and InstaCloud underneath: everything the console and CLI do runs over the [REST API](/reference/api/overview), so your backend provisions each customer's resources itself and never shows them an InstaCloud screen.
+InstaCloud supports multi-tenancy out of the box, and the common shape is **provisioning apps for your users**: an AI app builder whose users each get a running app, an agent platform that spins up an environment per user, or a cloud provider reselling infrastructure to its customers. You run your product on top and InstaCloud underneath: your user clicks create, your backend calls the [REST API](/reference/api/overview), and their app comes up with its own database, storage and compute. Your users never see an InstaCloud screen.
 
 The API is directly available: [mint a token](/reference/api/overview#minting-a-token) on any account and start building. When you are ready to put a real fleet on it, [contact us](#enterprise-plans) for an Enterprise plan with custom restrictions.
 
@@ -15,7 +15,7 @@ From there, give each customer an isolation boundary that matches how much they 
 
 ## 2. A project per customer
 
-Every customer gets a separate project, for token isolation. This is the shape to pick when customers freely create apps and use resources: mint a **project-level token** per customer, and everything that runs for them runs under it, inside their own project.
+Every customer, whether that is a user of your builder or a tenant of your SaaS, gets a separate project, for token isolation. This is the shape to pick when customers freely create apps and use resources, or when each user's app carries its own database: mint a **project-level token** per customer, and everything that runs for them runs under it, inside their own project.
 
 ```bash
 API=https://api.instacloud.com
@@ -52,7 +52,7 @@ Idle customers stay cheap: a project's [Postgres suspends by default](/postgres/
 
 ## 3. An app per customer
 
-If all a customer interacts with is a single unit of resources, one app, you can skip the per-customer project: keep one shared project and make every customer a **compute service** of their own (`POST /projects/{projectId}/services`), wired to the shared database with a secret binding, deployed under its own `group`, and scaled, restarted or stopped without touching the rest. Logs and metrics still read per app (`GET /projects/{projectId}/logs?group=<app>`), and a database per customer inside the shared Postgres keeps separation clean (`POST /projects/{projectId}/database/databases`). Usage is reported for the whole project though, so per-customer billing needs your own accounting, and a growing fleet hits the plan's per-branch service caps first. When a customer outgrows the shared project, promote them to a project of their own.
+If all a customer interacts with is a single unit of resources, one app, say one generated app per user without a database of its own, you can skip the per-customer project: keep one shared project and make every customer a **compute service** of their own (`POST /projects/{projectId}/services`), wired to the shared database with a secret binding, deployed under its own `group`, and scaled, restarted or stopped without touching the rest. Logs and metrics still read per app (`GET /projects/{projectId}/logs?group=<app>`), and a database per customer inside the shared Postgres keeps separation clean (`POST /projects/{projectId}/database/databases`). Usage is reported for the whole project though, so per-customer billing needs your own accounting, and a growing fleet hits the plan's per-branch service caps first. When a customer outgrows the shared project, promote them to a project of their own.
 
 Either way, the organization's audit stream (`GET /orgs/{orgId}/events/stream`) gives you one timeline of everything every customer's infrastructure did.
 

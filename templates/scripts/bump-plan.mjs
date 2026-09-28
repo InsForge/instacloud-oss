@@ -26,6 +26,25 @@ function bumpVersion(version, level) {
 const esc = (v) => String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const edit = (file, find, replace, why) => ({ file, find, replace, why });
 
+/** Where templates-build-images.yml pushes the images we build ourselves. */
+const OURS = 'ghcr.io/insforge/insta-oss/templates/';
+
+/** `image`, `image:tag` or `image:tag@sha256:...`. The tag's colon is the one after the last slash. */
+function splitTag(ref) {
+  const [head, digest] = String(ref).split('@');
+  const slash = head.lastIndexOf('/');
+  const colon = head.lastIndexOf(':');
+  const tagged = colon > slash;
+  return { repo: tagged ? head.slice(0, colon) : head, tag: tagged ? head.slice(colon + 1) : '', digest: digest ?? '' };
+}
+
+// `n8nio/n8n` and `docker.io/n8nio/n8n` are one image, and Docker Hub is the only registry a
+// reference may leave out, so dropping that host from both sides is the whole comparison. Anything
+// this does not recognize falls through as a sidecar and, if it was the only image, the plan is
+// refused for having nothing to move rather than passing with the service left behind.
+const bare = (image) => String(image).replace(/^(?:index\.|registry-1\.)?docker\.io\//, '');
+const sameImage = (a, b) => bare(a) === bare(b);
+
 /**
  * Every file change one upstream move implies, or a refusal.
  *
@@ -38,10 +57,17 @@ export function planBump({ manifest, dockerfile, drift }) {
   const df = dockerfile === undefined ? null : String(dockerfile);
   // Two readings of the same Dockerfile. `noComments` drops comment lines and leaves every other
   // line byte for byte, so a match in it is a string applyEdits can still find in the real file.
-  // `build` also joins continuations, which is what docker actually executes and therefore what
-  // decides whether the pin is genuinely in the build at all.
+  // `build` goes on to join continuations and then drop the comments a shell drops, which is what
+  // docker actually executes and therefore what decides whether the pin is in the build at all.
+  // An INLINE comment is the same trap as a comment line and survived the first fix: with
+  // `RUN npm install -g x@9.9.9 # previously pinned at 2.1.235` this rewrote the comment, bumped the
+  // manifest, and reported a synchronized move that had not happened.
   const noComments = df === null ? '' : df.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
-  const build = noComments.replace(/\\[ \t]*\r?\n[ \t]*/g, ' ');
+  const build = noComments
+    .replace(/\\[ \t]*\r?\n[ \t]*/g, ' ')
+    .split('\n')
+    .map((l) => l.replace(/\s#.*$/, ''))
+    .join('\n');
 
   const version = (/^version:\s*(\S+)/m.exec(text) ?? [])[1];
   const next = bumpVersion(version, drift.level);
@@ -61,14 +87,39 @@ export function planBump({ manifest, dockerfile, drift }) {
   if (!quoted) return { error: `the manifest does not pin '${drift.from}' under upstream.${pinField}, so the drift was read from a different file than this one` };
   edits.push(edit('manifest', quoted[0], `  ${pinField}: ${quoted[1]}${drift.to}${quoted[1]}${quoted[2]}`, `the upstream moved to ${drift.to}`));
 
-  // The deployed image. Ours carries the TEMPLATE version, theirs carries the upstream's, and the
-  // two are different numbers: getting this backwards publishes a ghcr tag nobody expects.
-  const ours = new RegExp(`^(\\s*image:\\s*ghcr\\.io/insforge/insta-oss/templates/[^:\\s]+):${esc(version)}`, 'm').exec(text);
-  if (ours) {
-    edits.push(edit('manifest', ours[0], `${ours[1]}:${next}`, 'our published tag is the template version'));
-  } else {
-    const theirs = new RegExp(`^(\\s*image:\\s*\\S+):${esc(drift.from)}\\s*$`, 'm').exec(text);
-    if (theirs) edits.push(edit('manifest', theirs[0], `${theirs[1]}:${drift.to}`, 'this template deploys the upstream image directly'));
+  // The deployed images. Ours carries the TEMPLATE version, theirs carries the upstream's, and the
+  // two are different numbers: getting that backwards publishes a ghcr tag nobody expects.
+  //
+  // Every service image line is accounted for, or the plan is refused. Adding an edit only where a
+  // regex happened to match let an unrecognized line pass in silence, so
+  // `image: docker.io/n8nio/n8n:2.36.5 # official image` kept the deployed image on the old version
+  // while the manifest version and the pin both moved, and the run reported it as applied: the
+  // catalog/runtime mismatch the rest of this exists to prevent, announced as a success.
+  //
+  // Two spaces of indent is `upstream.image`, which declares what we TRACK. Four or more is a
+  // service, which declares what we DEPLOY. Anything else in there is a sidecar and is left alone.
+  const tracked = (/^ {2}image:[ \t]*(\S+)/m.exec(text) ?? [])[1] ?? '';
+  let images = 0;
+  for (const [line, lead, ref] of text.matchAll(/^( {4,}image:[ \t]*)(\S+)/gm)) {
+    const { repo, tag, digest } = splitTag(ref);
+    const mine = repo.startsWith(OURS);
+    if (!mine && !(tracked && sameImage(repo, tracked))) continue;
+    const want = mine ? version : drift.from;
+    if (tag !== want) {
+      return { error: `a service deploys ${repo} at '${tag || 'no tag'}' where this bump expects '${want}', so the manifest is not the file this drift was read from` };
+    }
+    // A tag beside a digest is one pin, exactly as in a FROM: docker prefers the digest, so moving
+    // the tag alone would redeploy the OLD image under the new number.
+    if (digest && !(!mine && drift.digest)) {
+      return { error: `a service pins ${repo} at a digest beside its tag and there is none to move it to, so changing the tag alone would deploy the old image` };
+    }
+    const to = mine ? next : `${drift.to}${digest ? `@${drift.digest}` : ''}`;
+    const why = mine ? 'our published tag is the template version' : 'this template deploys the upstream image directly';
+    edits.push(edit('manifest', line, `${lead}${repo}:${to}`, why));
+    images += 1;
+  }
+  if (!images) {
+    return { error: 'no service deploys our image or the upstream one, so this bump would move the catalog and leave every running service on the old version' };
   }
 
   if (df !== null) {

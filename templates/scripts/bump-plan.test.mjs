@@ -99,6 +99,11 @@ version: 0.1.0
 upstream:
   repo: baryhuang/whisper-turbo.c
   pinned: 54ad979a08e654929186b374d266a4ced291f1be
+
+services:
+  whisper-turbo:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/whisper-turbo:0.1.0
 `;
   const OLD = '54ad979a08e654929186b374d266a4ced291f1be';
   const NEW = 'ffff979a08e654929186b374d266a4ced291f1be';
@@ -121,6 +126,11 @@ upstream:
   repo: tonychang04/laya-template
   commit: ${OLD}
   pinned: "0.3.4"
+
+services:
+  laya:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/laya:0.2.0
 `;
     const plan = planBump({ manifest: laya, dockerfile: `ARG LAYA_COMMIT=${OLD}\n`, drift: { kind: 'git-commit', from: OLD, to: NEW, level: null } });
     const out = applyEdits({ manifest: laya, dockerfile: `ARG LAYA_COMMIT=${OLD}\n` }, plan.edits);
@@ -167,6 +177,19 @@ describe('planBump: what it refuses', () => {
     expect(out.error).toMatch(/in any instruction/);
   });
 
+  it('refuses when the old pin is only in an INLINE comment', () => {
+    // The same sentence written at the end of the install line instead of over it. Docker keeps it
+    // and only the shell throws it away, so the first fix did not cover it: this rewrote the
+    // comment, bumped the manifest and our image tag, and reported a synchronized move that had
+    // not happened, with the build left on 9.9.9.
+    const out = planBump({
+      manifest: NPM_MANIFEST,
+      dockerfile: 'RUN npm install -g @anthropic-ai/claude-code@9.9.9 # previously pinned at 2.1.235\n',
+      drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
+    });
+    expect(out.error).toMatch(/in any instruction/);
+  });
+
   it('refuses when the pin is in both a comment and the instruction', () => {
     // Two occurrences, and replacing either blind is a guess. applyEdits is what says so.
     const out = applyBump({
@@ -206,6 +229,66 @@ describe('planBump: what it refuses', () => {
   });
 });
 
+describe('planBump: every service image, or none of it', () => {
+  // The image edit used to be added only where one of two regexes happened to match, and a line
+  // neither recognized passed in silence: the manifest version and the pin moved, the deployed
+  // image did not, and the run reported it applied. That is the catalog/runtime mismatch the
+  // Dockerfile rules exist to prevent, announced as a success. Now every service image is ours,
+  // the one we track, or a sidecar, and anything else refuses the plan.
+  const tag = { kind: 'docker-tag', from: '2.36.5', to: '2.41.3', level: 'minor', comparable: true };
+  const service = (line) => UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', line);
+
+  it('moves an image line that carries a trailing comment, and keeps the comment', () => {
+    // The reported shape. `\\s*$` anchored the old regex to the value, so a note after it was
+    // enough to make the whole line invisible.
+    const out = applyBump({ manifest: service('image: docker.io/n8nio/n8n:2.36.5 # official image'), drift: tag });
+    expect(out.refused).toBeUndefined();
+    expect(out.files.manifest).toContain('image: docker.io/n8nio/n8n:2.41.3 # official image');
+  });
+
+  it('reads a short Docker Hub name as the image the manifest tracks', () => {
+    const out = applyBump({ manifest: service('image: n8nio/n8n:2.36.5'), drift: tag });
+    expect(out.files.manifest).toContain('image: n8nio/n8n:2.41.3');
+  });
+
+  it('leaves a sidecar alone while the tracked image moves', () => {
+    const both = `${UPSTREAM_IMAGE_MANIFEST}  db:\n    type: worker\n    image: docker.io/library/postgres:17.2\n`;
+    const out = applyBump({ manifest: both, drift: tag });
+    expect(out.files.manifest).toContain('image: docker.io/n8nio/n8n:2.41.3');
+    expect(out.files.manifest).toContain('image: docker.io/library/postgres:17.2');
+  });
+
+  it('refuses when nothing deployed is ours or the one we track', () => {
+    // A sidecar is none of our business, but a manifest whose only image is one would publish a
+    // release that changed no running service.
+    expect(applyBump({ manifest: service('image: docker.io/library/postgres:17.2'), drift: tag }).refused)
+      .toMatch(/no service deploys/);
+  });
+
+  it('refuses a service sitting on some other version of the tracked image', () => {
+    expect(applyBump({ manifest: service('image: docker.io/n8nio/n8n:2.30.0'), drift: tag }).refused).toMatch(/2\.30\.0/);
+    expect(applyBump({ manifest: service('image: docker.io/n8nio/n8n'), drift: tag }).refused).toMatch(/no tag/);
+  });
+
+  it('refuses our own image tagged with anything but the template version', () => {
+    // The ghcr tag is what templates-build-images.yml pushes. If it is not the version this
+    // manifest declares, the two were out of step before the bump and moving one is a guess.
+    const out = applyBump({
+      manifest: NPM_MANIFEST.replace('claude-code:0.8.3', 'claude-code:latest'),
+      dockerfile: NPM_DOCKERFILE,
+      drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
+    });
+    expect(out.refused).toMatch(/latest/);
+  });
+
+  it('treats a tag beside a digest as one pin, here as in a FROM', () => {
+    const digested = service('image: docker.io/n8nio/n8n:2.36.5@sha256:aaaa');
+    expect(applyBump({ manifest: digested, drift: tag }).refused).toMatch(/digest/i);
+    const out = applyBump({ manifest: digested, drift: { ...tag, digest: 'sha256:bbbb' } });
+    expect(out.files.manifest).toContain('image: docker.io/n8nio/n8n:2.41.3@sha256:bbbb');
+  });
+});
+
 describe('applyBump', () => {
   // One refusal path, because there used to be two and the caller only handled one. planBump
   // returned an error that got reported; applyEdits threw and escaped the runner mid loop, leaving
@@ -219,6 +302,11 @@ version: 1.0.0
 upstream:
   package: "@earendil-works/pi-coding-agent"
   pinned: "0.84.2"
+
+services:
+  pi:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/pi:1.0.0
 `;
     const dockerfile = 'RUN npm i -g pi@0.84.2\n# pinned at 0.84.2 for now\n';
     const out = applyBump({ manifest, dockerfile, drift: { kind: 'npm', from: '0.84.2', to: '0.87.1', level: 'minor' } });

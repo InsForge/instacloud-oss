@@ -107,16 +107,6 @@ function escapeChar(lines) {
   return '\\';
 }
 
-/**
- * The ARG and ENV defaults a Dockerfile declares, so a reference written with a variable can be
- * compared against a version rather than against the literal text `${VERSION}`.
- */
-function declared(text) {
-  const vars = new Map();
-  for (const m of text.matchAll(/^\s*(?:ARG|ENV)\s+([A-Za-z_]\w*)=("?)([^"\s]*)\2/gim)) vars.set(m[1], m[3]);
-  return vars;
-}
-
 /** `${NAME}` and `$NAME` replaced by what the file declares, and left alone when it declares nothing. */
 const expand = (ref, vars) => String(ref).replace(
   /\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)/g,
@@ -160,14 +150,25 @@ export function checkUpstreamFrom(upstream, dockerfile) {
   // EVERY matching stage, not the first. A multi-stage build takes its final stage by default, so
   // `FROM upstream:1.2.3 AS old` followed by `FROM upstream:9.9.9` would otherwise pass on the
   // strength of a stage the image never uses, while the one it does use has drifted.
-  const text = instructions(dockerfile);
-  const vars = declared(text);
-  for (const line of text.split('\n')) {
+  // Only an ARG declared BEFORE the first FROM reaches a FROM at all. Docker calls those global; an
+  // ARG inside a stage belongs to that stage and cannot reach back out. Reading the whole file into
+  // one map applied a later declaration retroactively, so `ARG V=9.9.9` / `FROM upstream:${V}` /
+  // `ARG V=1.2.3` built from 9.9.9 and was checked against 1.2.3 and passed. ENV is not collected
+  // for the same reason: it is stage-scoped, and a FROM cannot read one.
+  const global = new Map();
+  let staged = false;
+
+  for (const line of instructions(dockerfile).split('\n')) {
+    if (!staged) {
+      const a = /^\s*ARG\s+([A-Za-z_]\w*)=("?)([^"\s]*)\2/i.exec(line);
+      if (a) { global.set(a[1], a[3]); continue; }
+    }
     // `FROM [--platform=... --flag=...] <ref> [AS name]`. Skipping the flags matters: reading the
     // first token as the image made a standard `FROM --platform=linux/amd64 <ref>` invisible.
     const m = /^\s*FROM\s+((?:--\S+\s+)*)(\S+)/i.exec(line);
     if (!m) continue;
-    const got = splitRef(expand(m[2], vars));
+    staged = true;
+    const got = splitRef(expand(m[2], global));
     if (canonicalImage(got.image) !== canonicalImage(image)) continue;
     // `ARG VERSION=1.2.3` above `FROM example/upstream:${VERSION}` is an ordinary way to write a
     // Dockerfile and was read as a literal tag called `${VERSION}`, so the rule reported drift on a

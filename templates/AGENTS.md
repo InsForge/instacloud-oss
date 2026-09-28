@@ -64,7 +64,7 @@ IS the template code. Copying the closest existing template is the fastest way t
    `${services.<name>.host}`, naming a service the manifest declares that is not a managed
    database and not a worker. A managed database has no address: its credentials belong under
    `env.platform` as `${{services.<name>.<KEY>}}`, with doubled braces, and putting that form in
-   `fixed` is rejected. A worker has no address either, see rule 11. So is a generator ref, even a
+   `fixed` is rejected. A worker has no address either, see rule 12. So is a generator ref, even a
    declared one: composed into a fixed string it is stored only as the final value, so a retry
    could not recover it and would silently rotate the secret. Declare the variable under
    `env.generated` instead. `npm run lint` mirrors the platform's check.

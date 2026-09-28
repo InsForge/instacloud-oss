@@ -200,6 +200,22 @@ describe('checkUpstreamFrom', () => {
     expect(checkUpstreamFrom(up, 'ARG VERSION\nFROM example/upstream:${VERSION}\n')?.error).toMatch(/build time/);
   });
 
+  it('only lets a build arg declared before the first FROM decide a FROM', () => {
+    // Docker calls those global. An ARG inside a stage belongs to that stage and cannot reach back
+    // out, so reading the whole file into one map applied a later declaration retroactively: this
+    // builds from 9.9.9 and was checked against the 1.2.3 declared underneath it.
+    const up = { image: 'example/upstream', pinned: '1.2.3' };
+    const after = 'ARG VERSION=9.9.9\nFROM example/upstream:${VERSION}\nARG VERSION=1.2.3\n';
+    expect(checkUpstreamFrom(up, after)?.error).toMatch(/9\.9\.9/);
+    // Redeclared before the first FROM, the last one is what the FROM gets.
+    expect(checkUpstreamFrom(up, 'ARG VERSION=9.9.9\nARG VERSION=1.2.3\nFROM example/upstream:${VERSION}\n')).toBeNull();
+    // A stage may shadow the name for itself without changing what a later FROM resolves to.
+    const shadowed = 'ARG VERSION=1.2.3\nFROM debian AS a\nARG VERSION=9.9.9\nFROM example/upstream:${VERSION}\n';
+    expect(checkUpstreamFrom(up, shadowed)).toBeNull();
+    // And ENV is stage-scoped too, so it never decides a FROM.
+    expect(checkUpstreamFrom(up, 'ARG VERSION=1.2.3\nFROM debian AS a\nENV VERSION=9.9.9\nFROM example/upstream:${VERSION}\n')).toBeNull();
+  });
+
   it('says so when the upstream image is built on without any pin at all', () => {
     const up = { image: 'docker.io/decolua/9router', pinned: '0.5.55' };
     expect(checkUpstreamFrom(up, from('docker.io/decolua/9router'))?.error).toMatch(/no tag/i);

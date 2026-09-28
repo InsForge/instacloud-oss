@@ -46,31 +46,36 @@ IS the template code. Copying the closest existing template is the fastest way t
 3. `code`, `version` (semver), `maintainer`, `upstream.pinned` and `meta.category` are mandatory.
 4. A changed template must bump its `version`. The canonical image tag is derived from it, so
    editing a template without bumping would overwrite an image that published instances pull.
-5. A service may not carry both `image:` and `build:`.
-6. `constraints[].oneOf` and `allOf` may only name variables the manifest declares.
-7. A manifest never sizes a service. There is no `spec:`, and `volume:` is the boolean `true`, not
+5. A template with a `Dockerfile` names its pin there too: `upstream.pinned` or `upstream.commit`
+   has to appear in it, and where the `FROM` builds on `upstream.image`, that instruction's tag has
+   to be the pinned one and its digest, if the manifest carries one, has to match. The version is
+   written twice and nothing else notices when the two disagree: the image would be built from one
+   version while the catalog advertises another, and the build would succeed.
+6. A service may not carry both `image:` and `build:`.
+7. `constraints[].oneOf` and `allOf` may only name variables the manifest declares.
+8. A manifest never sizes a service. There is no `spec:`, and `volume:` is the boolean `true`, not
    a size. CPU, memory and disk are the platform's to choose and are capped for the org's plan, so
    a number here could only drift from it: every template once carried `size: 1` because that was
    the free cap the day it was written. `npm run lint` refuses both, and so does publish.
-8. Never commit `index.json`. CI generates it.
-9. `meta.architectures` is mandatory, drafts included: a non-empty list of `amd64`, `arm64`, or
+9. Never commit `index.json`. CI generates it.
+10. `meta.architectures` is mandatory, drafts included: a non-empty list of `amd64`, `arm64`, or
    both. See [Architectures](#architectures).
-10. A `${...}` inside an `env.fixed` value may only be `${services.<name>.url}` or
+11. A `${...}` inside an `env.fixed` value may only be `${services.<name>.url}` or
    `${services.<name>.host}`, naming a service the manifest declares that is not a managed
    database and not a worker. A managed database has no address: its credentials belong under
    `env.platform` as `${{services.<name>.<KEY>}}`, with doubled braces, and putting that form in
-   `fixed` is rejected. A worker has no address either, see rule 11. So is a generator ref, even a
+   `fixed` is rejected. A worker has no address either, see rule 12. So is a generator ref, even a
    declared one: composed into a fixed string it is stored only as the final value, so a retry
    could not recover it and would silently rotate the secret. Declare the variable under
    `env.generated` instead. `npm run lint` mirrors the platform's check.
-11. A `type: worker` service is portless. The platform runs it with no routed port: nothing is
+12. A `type: worker` service is portless. The platform runs it with no routed port: nothing is
    routed to it, nothing probes it, and it stays always-on because no request could wake it. So
    it carries no `port`, no `healthcheck` and no `alwaysOn: false`, and no other service may
    reference its `url` or `host`. Its health is the machine's state (started and not crashed). Use
    it for queue consumers, schedulers and bots that only make outbound connections, and give it a
    `volume: true` if it keeps state, since a restart clears the root filesystem. `npm run lint`
    refuses the four shapes, and so does publish.
-12. A service is `web`, `worker`, or one of the managed datastores `postgres`, `redis`, `mysql` and
+13. A service is `web`, `worker`, or one of the managed datastores `postgres`, `redis`, `mysql` and
    `mongodb`. A managed datastore is declared **bare**, as `{ type: redis }` and nothing else: the
    platform owns its image, port, version, sizing and credentials, and a manifest that named any of
    them could only drift from the platform's catalog. Consume it through `env.platform` with

@@ -92,6 +92,10 @@ function bumpLevel(from, to) {
   return 'patch';
 }
 
+/** How long any one registry read may take. A stalled host must not hang a scheduled run. */
+const REQUEST_TIMEOUT_MS = 20000;
+const timeout = () => (typeof AbortSignal?.timeout === 'function' ? { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } : {});
+
 /**
  * Every tag an image has, from the registry rather than from Docker Hub's website API.
  *
@@ -105,6 +109,7 @@ async function registryTags(ns, name, fetchImpl) {
     if (!auth?.token) return { unknown: `the registry issued no pull token for ${ns}/${name}` };
     const res = await fetchImpl(`https://registry-1.docker.io/v2/${ns}/${name}/tags/list`, {
       headers: { accept: 'application/json', authorization: `Bearer ${auth.token}` },
+      ...timeout(),
     });
     if (!res?.ok) return { unknown: `the registry answered ${res?.status ?? 'nothing'} for ${ns}/${name}` };
     const body = await res.json();
@@ -115,7 +120,7 @@ async function registryTags(ns, name, fetchImpl) {
 }
 
 const json = async (fetchImpl, url) => {
-  const res = await fetchImpl(url, { headers: { accept: 'application/json' } });
+  const res = await fetchImpl(url, { headers: { accept: 'application/json' }, ...timeout() });
   if (!res?.ok) throw new Error(`${url} answered ${res?.status ?? 'nothing'}`);
   return res.json();
 };

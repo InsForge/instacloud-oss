@@ -7,7 +7,7 @@
 // comment why it pins a commit instead of the PyPI release, and a round trip through js-yaml would
 // delete that and every other sentence in the file.
 import { describe, it, expect } from 'vitest';
-import { applyEdits, planBump } from './bump-plan.mjs';
+import { applyBump, applyEdits, planBump } from './bump-plan.mjs';
 
 const NPM_MANIFEST = `code: claude-code
 version: 0.8.3
@@ -169,6 +169,40 @@ describe('planBump: what it refuses', () => {
     const plan = planBump({ manifest, dockerfile, drift: { kind: 'docker-tag', from: '2.36.5', to: '2.41.3', level: 'minor', digest: 'sha256:bbbb' } });
     const out = applyEdits({ manifest, dockerfile }, plan.edits);
     expect(out.dockerfile).toBe('FROM docker.io/n8nio/n8n:2.41.3@sha256:bbbb\n');
+  });
+});
+
+describe('applyBump', () => {
+  // One refusal path, because there used to be two and the caller only handled one. planBump
+  // returned an error that got reported; applyEdits threw and escaped the runner mid loop, leaving
+  // the templates it had already written on disk and printing no report at all.
+  it('reports an ambiguous target as a refusal, not by throwing', () => {
+    // pi's shape after someone adds `# pinned at 0.84.2 for now` to the Dockerfile: the version
+    // is now in there twice and neither occurrence is safe to replace blind.
+    const manifest = `code: pi
+version: 1.0.0
+
+upstream:
+  package: "@earendil-works/pi-coding-agent"
+  pinned: "0.84.2"
+`;
+    const dockerfile = 'RUN npm i -g pi@0.84.2\n# pinned at 0.84.2 for now\n';
+    const out = applyBump({ manifest, dockerfile, drift: { kind: 'npm', from: '0.84.2', to: '0.87.1', level: 'minor' } });
+    expect(out.refused).toMatch(/appears 2 times/);
+    expect(out.files).toBeUndefined();
+  });
+
+  it('passes a planner refusal through unchanged', () => {
+    const out = applyBump({ manifest: 'version: 1.0.0\n', dockerfile: 'FROM x\n', drift: { kind: 'npm', from: '9.9.9', to: '9.9.10', level: 'patch' } });
+    expect(out.refused).toBeTruthy();
+    expect(out.files).toBeUndefined();
+  });
+
+  it('returns the files and the version when it can', () => {
+    const out = applyBump({ manifest: NPM_MANIFEST, dockerfile: NPM_DOCKERFILE, drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' } });
+    expect(out.refused).toBeUndefined();
+    expect(out.version).toEqual({ from: '0.8.3', to: '0.8.4' });
+    expect(out.files.manifest).toContain('pinned: "2.1.274"');
   });
 });
 

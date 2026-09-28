@@ -19,7 +19,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 import { upstreamDrift, kindOf } from "./upstream-check.mjs";
-import { planBump, applyEdits } from "./bump-plan.mjs";
+import { applyBump } from "./bump-plan.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -43,16 +43,16 @@ for (const code of codes) {
 
   if (apply && drift && !drift.unknown) {
     const dockerfile = existsSync(dockerfilePath) ? readFileSync(dockerfilePath, "utf8") : undefined;
-    const plan = planBump({ manifest, dockerfile, drift });
-    if (plan.error) {
-      // Refused, not failed. A plan that no longer matches the files is the one case where doing
-      // nothing IS the correct edit, and the reason belongs beside the move it declined.
-      row.refused = plan.error;
+    // Refused, not failed. An edit that no longer matches its files is the one case where doing
+    // nothing IS the correct edit, and the reason belongs beside the move it declined rather than
+    // ending the run and leaving whatever was already written behind.
+    const done = applyBump({ manifest, dockerfile, drift });
+    if (done.refused) {
+      row.refused = done.refused;
     } else {
-      const out = applyEdits({ manifest, ...(dockerfile !== undefined ? { dockerfile } : {}) }, plan.edits);
-      writeFileSync(manifestPath, out.manifest);
-      if (out.dockerfile !== undefined) writeFileSync(dockerfilePath, out.dockerfile);
-      row.applied = plan.version;
+      writeFileSync(manifestPath, done.files.manifest);
+      if (done.files.dockerfile !== undefined) writeFileSync(dockerfilePath, done.files.dockerfile);
+      row.applied = done.version;
     }
   }
   rows.push(row);

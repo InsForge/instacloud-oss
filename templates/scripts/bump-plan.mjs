@@ -89,6 +89,24 @@ export function planBump({ manifest, dockerfile, drift }) {
 }
 
 /**
+ * Plan and apply in one step, and refuse in one way.
+ *
+ * Both halves can decline, and they used to decline differently: planBump returned an error the
+ * caller reported, applyEdits threw and escaped, so an ambiguous target ended the whole run mid
+ * loop with the templates it had already written left on disk and no report printed at all. A
+ * refusal is a result here, not an exception, so a caller cannot forget to handle one.
+ */
+export function applyBump({ manifest, dockerfile, drift }) {
+  const plan = planBump({ manifest, dockerfile, drift });
+  if (plan.error) return { refused: plan.error };
+  try {
+    return { files: applyEdits({ manifest, ...(dockerfile !== undefined ? { dockerfile } : {}) }, plan.edits), version: plan.version };
+  } catch (e) {
+    return { refused: e.message };
+  }
+}
+
+/**
  * The plan, applied. Every `find` must appear exactly once in its file or nothing is written: an
  * ambiguous target is how a version number in a comment gets edited instead of the one that counts.
  */

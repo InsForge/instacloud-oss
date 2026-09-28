@@ -175,6 +175,31 @@ describe('checkUpstreamFrom', () => {
     expect(checkUpstreamFrom(up, from('ghcr.io/decolua/9router:9.9.9'))).toBeNull();
   });
 
+  it('continues a line with whatever the parser directive says continues it', () => {
+    // `# escape=`` ` `` is a directive, not a comment. Dropped with the comments and assumed to be a
+    // backslash, the backtick itself was read as the image, so the reference on the next line was
+    // never looked at and an unrelated ARG carried the substring rule on its own.
+    const up = { image: 'example/upstream', pinned: '1.2.3' };
+    const tick = ['# escape=`', 'FROM --platform=linux/amd64 `', '    example/upstream:9.9.9', 'ARG EXPECTED=1.2.3', ''].join('\n');
+    expect(checkUpstreamFrom(up, tick)?.error).toMatch(/9\.9\.9/);
+    expect(checkUpstreamFrom(up, ['# escape=`', 'FROM example/upstream:1.2.3 `', '    AS b', ''].join('\n'))).toBeNull();
+    // A directive that is not `escape` leaves the backslash alone, and so does a plain comment.
+    const syn = ['# syntax=docker/dockerfile:1', 'FROM --platform=linux/amd64 \\', '    example/upstream:9.9.9', ''].join('\n');
+    expect(checkUpstreamFrom(up, syn)?.error).toMatch(/9\.9\.9/);
+  });
+
+  it('resolves a tag the Dockerfile keeps in a build arg', () => {
+    // `ARG VERSION=1.2.3` above `FROM example/upstream:${VERSION}` is an ordinary Dockerfile and was
+    // reported as drift, because the literal text `${VERSION}` was compared with the pin. Expanding
+    // first removes the false alarm and catches the arg that has actually moved.
+    const up = { image: 'example/upstream', pinned: '1.2.3' };
+    expect(checkUpstreamFrom(up, 'ARG VERSION=1.2.3\nFROM example/upstream:${VERSION}\n')).toBeNull();
+    expect(checkUpstreamFrom(up, 'ARG VERSION=1.2.3\nFROM example/upstream:$VERSION\n')).toBeNull();
+    expect(checkUpstreamFrom(up, 'ARG VERSION=9.9.9\nFROM example/upstream:${VERSION}\n')?.error).toMatch(/9\.9\.9/);
+    // Nothing declares it, so the version this image gets is decided at build time, not here.
+    expect(checkUpstreamFrom(up, 'ARG VERSION\nFROM example/upstream:${VERSION}\n')?.error).toMatch(/build time/);
+  });
+
   it('says so when the upstream image is built on without any pin at all', () => {
     const up = { image: 'docker.io/decolua/9router', pinned: '0.5.55' };
     expect(checkUpstreamFrom(up, from('docker.io/decolua/9router'))?.error).toMatch(/no tag/i);

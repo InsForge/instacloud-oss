@@ -76,14 +76,52 @@ function canonicalImage(image) {
  * It is deliberately blunt about a `#` inside quotes, which a shell would keep. That direction
  * refuses a pin rather than passing one, and no Dockerfile in the registry has an inline `#` at all.
  */
-const instructions = (dockerfile) => String(dockerfile ?? '')
-  .split('\n')
-  .filter((l) => !/^\s*#/.test(l))
-  .join('\n')
-  .replace(/\\[ \t]*\r?\n[ \t]*/g, ' ')
-  .split('\n')
-  .map((l) => l.replace(/\s#.*$/, ''))
-  .join('\n');
+const instructions = (dockerfile) => {
+  const lines = String(dockerfile ?? '').split('\n');
+  const cont = new RegExp(`${escapeRe(escapeChar(lines))}[ \\t]*\\r?\\n[ \\t]*`, 'g');
+  return lines
+    .filter((l) => !/^\s*#/.test(l))
+    .join('\n')
+    .replace(cont, ' ')
+    .split('\n')
+    .map((l) => l.replace(/\s#.*$/, ''))
+    .join('\n');
+};
+
+const escapeRe = (v) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * What continues a line in THIS Dockerfile.
+ *
+ * `# escape=\`` is a parser directive rather than a comment, and it changes the character that
+ * continues a line. Dropping it with the other comments and assuming a backslash read the backtick
+ * itself as the FROM's image, so the reference on the next line was never looked at at all. Docker
+ * stops recognizing directives at the first comment, blank line or instruction, which is this loop.
+ */
+function escapeChar(lines) {
+  for (const line of lines) {
+    const m = /^#\s*([A-Za-z]+)\s*=\s*(\S+)\s*$/.exec(line);
+    if (!m) break;
+    if (m[1].toLowerCase() === 'escape') return m[2];
+  }
+  return '\\';
+}
+
+/**
+ * The ARG and ENV defaults a Dockerfile declares, so a reference written with a variable can be
+ * compared against a version rather than against the literal text `${VERSION}`.
+ */
+function declared(text) {
+  const vars = new Map();
+  for (const m of text.matchAll(/^\s*(?:ARG|ENV)\s+([A-Za-z_]\w*)=("?)([^"\s]*)\2/gim)) vars.set(m[1], m[3]);
+  return vars;
+}
+
+/** `${NAME}` and `$NAME` replaced by what the file declares, and left alone when it declares nothing. */
+const expand = (ref, vars) => String(ref).replace(
+  /\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)/g,
+  (all, braced, bare) => vars.get(braced ?? bare) ?? all,
+);
 
 /**
  * Does `pin` appear in `text` as a value rather than as part of a longer one?
@@ -122,13 +160,22 @@ export function checkUpstreamFrom(upstream, dockerfile) {
   // EVERY matching stage, not the first. A multi-stage build takes its final stage by default, so
   // `FROM upstream:1.2.3 AS old` followed by `FROM upstream:9.9.9` would otherwise pass on the
   // strength of a stage the image never uses, while the one it does use has drifted.
-  for (const line of instructions(dockerfile).split('\n')) {
+  const text = instructions(dockerfile);
+  const vars = declared(text);
+  for (const line of text.split('\n')) {
     // `FROM [--platform=... --flag=...] <ref> [AS name]`. Skipping the flags matters: reading the
     // first token as the image made a standard `FROM --platform=linux/amd64 <ref>` invisible.
     const m = /^\s*FROM\s+((?:--\S+\s+)*)(\S+)/i.exec(line);
     if (!m) continue;
-    const got = splitRef(m[2]);
+    const got = splitRef(expand(m[2], vars));
     if (canonicalImage(got.image) !== canonicalImage(image)) continue;
+    // `ARG VERSION=1.2.3` above `FROM example/upstream:${VERSION}` is an ordinary way to write a
+    // Dockerfile and was read as a literal tag called `${VERSION}`, so the rule reported drift on a
+    // file that had none. Expanding first also means `ARG VERSION=9.9.9` is now caught rather than
+    // waved through. What is still unresolved after that comes from somewhere this cannot see.
+    if (/\$/.test(got.tag) || /\$/.test(got.digest)) {
+      return { error: `Dockerfile builds on ${image} at a version supplied at build time (${m[2]}), so nothing in the file pins which one it gets` };
+    }
     if (!got.tag) return { error: `Dockerfile builds on ${image} with no tag, so nothing pins which version it gets` };
     if (got.tag !== want.tag) {
       return { error: `Dockerfile builds on ${image}:${got.tag} but the manifest pins '${want.tag}': the two have drifted` };

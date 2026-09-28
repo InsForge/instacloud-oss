@@ -6,7 +6,7 @@
 // "the newest thing" from either would propose `0.159.0-alpha.9-win32-arm64` and
 // `v3-nightly-20260927`, and open a pull request against a template on the strength of it.
 import { describe, it, expect } from 'vitest';
-import { compareVersions, kindOf, resolveUpstream, upstreamDrift } from './upstream-check.mjs';
+import { compareVersions, kindOf, resolveUpstream, tagDigest, upstreamDrift } from './upstream-check.mjs';
 
 /** A fetch that answers from a map of url-substring to body, and refuses anything else. */
 const serving = (routes) => async (url) => {
@@ -129,6 +129,17 @@ describe('resolveUpstream: git', () => {
   });
 });
 
+describe('tagDigest', () => {
+  it('answers what a named tag points at', async () => {
+    const deps = { fetchImpl: serving({ '/tags/0.5.55': { digest: 'sha256:f00fe389' } }) };
+    expect(await tagDigest('docker.io/decolua/9router', '0.5.55', deps)).toEqual({ digest: 'sha256:f00fe389' });
+  });
+
+  it('is unknown off docker.io rather than a guess', async () => {
+    expect(await tagDigest('ghcr.io/openclaw/openclaw', 'latest', {})).toHaveProperty('unknown');
+  });
+});
+
 describe('upstreamDrift', () => {
   const npmAt = (v) => ({ fetchImpl: serving({ 'registry.npmjs.org': { 'dist-tags': { latest: v } } }) });
 
@@ -164,6 +175,16 @@ describe('upstreamDrift', () => {
     );
     expect(moved).toMatchObject({ comparable: false });
     expect(moved.level).toBeNull();
+  });
+
+  it('carries the digest of the tag it picked, because a tag alone is half a pin', async () => {
+    // 9router, hermes and openclaw write FROM <image>:<tag>@sha256:<digest>. Moving the tag and
+    // leaving the digest is the worst outcome available: docker prefers the digest, so the build
+    // succeeds and ships the old image while the manifest and the catalog claim the new version.
+    const out = await upstreamDrift({ image: 'docker.io/decolua/9router', pinned: '0.5.55' }, {
+      fetchImpl: serving({ 'hub.docker.com': { results: [{ name: '0.5.91', digest: 'sha256:efc6e88c' }, { name: '0.5.55', digest: 'sha256:f00fe389' }] } }),
+    });
+    expect(out).toMatchObject({ to: '0.5.91', digest: 'sha256:efc6e88c' });
   });
 
   it('passes an unresolvable upstream through as unknown, and proposes nothing', async () => {

@@ -124,9 +124,15 @@ export async function resolveUpstream(upstream, deps = {}) {
       const m = /^docker\.io\/([^/]+)\/([^/:]+)$/.exec(ref);
       if (!m) return unknown(`${ref} is not on docker.io, and only Docker Hub can be read anonymously`);
       const body = await json(fetchImpl, `https://hub.docker.com/v2/repositories/${m[1]}/${m[2]}/tags?page_size=100`);
-      const plain = (body?.results ?? []).map((r) => r?.name).filter((n) => n && PLAIN_TAG.test(n));
+      const results = body?.results ?? [];
+      const plain = results.map((r) => r?.name).filter((n) => n && PLAIN_TAG.test(n));
       if (!plain.length) return unknown('no tag on that image is a plain version');
-      return { kind: k.kind, current: plain.reduce((a, b) => ((compareVersions(a, b) ?? 0) < 0 ? b : a)) };
+      const current = plain.reduce((a, b) => ((compareVersions(a, b) ?? 0) < 0 ? b : a));
+      // The digest of the tag we just chose, because three templates write BOTH into their FROM
+      // and moving the tag without it is the worst kind of wrong: docker prefers the digest, so the
+      // build succeeds and ships the old image while everything claims the new version. Whatever
+      // applies this edit needs both halves, so both are reported.
+      return { kind: k.kind, current, digest: results.find((r) => r?.name === current)?.digest ?? null };
     }
 
     if (k.kind === 'git-commit') {
@@ -169,8 +175,30 @@ export async function upstreamDrift(upstream, deps = {}) {
   if (!from) return { kind, unknown: 'the manifest declares no pin to compare against' };
   if (from === to) return null;
 
+  // Carried through so whatever applies the edit has both halves of a pin that has two.
+  const digest = resolved.digest ? { digest: resolved.digest } : {};
   const cmp = compareVersions(from, to);
-  if (cmp === null) return { kind, from, to, comparable: false, level: null };
+  if (cmp === null) return { kind, from, to, comparable: false, level: null, ...digest };
   if (cmp >= 0) return null; // equal, or the registry went backwards: never a downgrade
-  return { kind, from, to, comparable: true, level: bumpLevel(from, to) };
+  return { kind, from, to, comparable: true, level: bumpLevel(from, to), ...digest };
+}
+
+/**
+ * What a specific tag points at right now.
+ *
+ * Separate from resolving the newest version because it answers a different question: not "is there
+ * something newer" but "is the thing we pinned still the thing we pinned". An upstream that
+ * re-pushes a tag changes what we build from without changing a line in this repository, and the
+ * digest beside the tag in a FROM is the only record that would disagree.
+ */
+export async function tagDigest(image, tag, deps = {}) {
+  const { fetchImpl = fetch } = deps;
+  const m = /^docker\.io\/([^/]+)\/([^/:]+)$/.exec(String(image));
+  if (!m) return { unknown: `${image} is not on docker.io, and only Docker Hub can be read anonymously` };
+  try {
+    const body = await json(fetchImpl, `https://hub.docker.com/v2/repositories/${m[1]}/${m[2]}/tags/${tag}`);
+    return body?.digest ? { digest: String(body.digest) } : { unknown: `${image}:${tag} reports no digest` };
+  } catch (e) {
+    return { unknown: `could not read ${image}:${tag}: ${e.message}` };
+  }
 }

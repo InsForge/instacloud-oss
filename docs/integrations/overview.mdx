@@ -1,11 +1,11 @@
 ---
 title: "Multi-tenant & integrations"
-description: "Run InstaCloud underneath your own product: a project per customer, provisioned and operated over the REST API. Access is by application."
+description: "Run InstaCloud underneath your own product: a project per customer, provisioned and operated over the REST API. Available on every plan."
 ---
 
-Everything the console and CLI do runs over the [REST API](/reference/api/overview), so a platform can do it too: provision infrastructure for its own customers, from its own backend, and never show them an InstaCloud screen. That is what a multi-tenant setup is: your product on top, one InstaCloud project per tenant underneath.
+Everything the console and CLI do runs over the [REST API](/reference/api/overview), so a platform can do it too: provision infrastructure for its own customers, from its own backend, and never show them an InstaCloud screen. That is the shape this page covers, whether you call it a multi-tenant setup or an integration: your product on top, one InstaCloud project per tenant underneath.
 
-Integration and multi-tenant access is onboarded by application, so we can size limits and billing to your fleet before your first customer lands on it. [Apply below](#apply-for-access).
+The API is directly available: [mint a token](/reference/api/overview#minting-a-token) on any account and start building. When you are ready to put a real fleet on it, [contact us](#enterprise-plans) for an Enterprise plan with custom restrictions.
 
 ## The shape of a multi-tenant setup
 
@@ -18,14 +18,14 @@ One organization belongs to your platform; each of your customers gets a project
 
 Branches work per project, so a tenant's preview and agent environments ([branch per task](/agents/branch-per-task)) come free with the setup. The [API overview](/reference/api/overview#provisioning-end-to-end) walks the whole flow, from organization to running deploy, in four curl calls.
 
-## Apply for access
+## Enterprise plans
 
-Tell us what you are building: the product, roughly how many tenants you expect, and what each tenant's project needs to run. We answer within one business day, and set you up with limits and billing sized to it:
+Standard plans carry per-organization service caps sized for one team, not a fleet of tenants. For production multi-tenant use, contact us to be upgraded to an **Enterprise plan with custom restrictions**: limits sized to your tenant count, and guardrails where you want them, per project. Tell us what you are building and roughly how many tenants you expect:
 
 - Email [founders@insforge.dev](mailto:founders@insforge.dev), or
 - use the [contact form](https://www.instacloud.com/contact).
 
-Nothing stops you prototyping first: any account can [mint an API token](/reference/api/overview#minting-a-token) today, and the free tier is enough to stand up a tenant or two. Apply before you put real customers on it.
+We answer within one business day.
 
 ## The API design
 

@@ -154,6 +154,40 @@ describe('planBump: what it refuses', () => {
     expect(out.error).toMatch(/does not name '2\.1\.235'/);
   });
 
+  it('refuses when the old pin is only in a comment', () => {
+    // `# bumped from 2.1.235` over an install line that has already moved on is the most natural
+    // sentence to write while bumping by hand. It used to rewrite the COMMENT, bump the manifest
+    // and the image tag, and report a synchronized move that had not happened, leaving the build
+    // on the other version with nothing disagreeing.
+    const out = planBump({
+      manifest: NPM_MANIFEST,
+      dockerfile: '# previously pinned at 2.1.235\nRUN npm install -g @anthropic-ai/claude-code@2.0.0\n',
+      drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
+    });
+    expect(out.error).toMatch(/in any instruction/);
+  });
+
+  it('refuses when the pin is in both a comment and the instruction', () => {
+    // Two occurrences, and replacing either blind is a guess. applyEdits is what says so.
+    const out = applyBump({
+      manifest: NPM_MANIFEST,
+      dockerfile: '# pinned at 2.1.235\nRUN npm install -g @anthropic-ai/claude-code@2.1.235\n',
+      drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
+    });
+    expect(out.refused).toMatch(/appears 2 times/);
+  });
+
+  it('ignores a commented-out FROM when finding the one that builds', () => {
+    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/x:1.3.2');
+    const dockerfile = '# FROM docker.io/n8nio/n8n:2.36.5@sha256:old\nFROM docker.io/n8nio/n8n:2.36.5@sha256:aaaa\n';
+    const out = applyBump({ manifest, dockerfile, drift: { kind: 'docker-tag', from: '2.36.5', to: '2.41.3', level: 'minor', digest: 'sha256:bbbb' } });
+    expect(out.refused).toBeUndefined();
+    // The instruction moved and the commented-out line was left exactly as it was: it is a note
+    // about the past, not something to keep current.
+    expect(out.files.dockerfile).toContain('FROM docker.io/n8nio/n8n:2.41.3@sha256:bbbb');
+    expect(out.files.dockerfile).toContain('# FROM docker.io/n8nio/n8n:2.36.5@sha256:old');
+  });
+
   it('refuses a docker-tag move with no digest when the Dockerfile pins one', () => {
     // Moving the tag and leaving the digest ships the old image under the new number. If the
     // detector could not resolve the digest, there is no safe edit to make here.

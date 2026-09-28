@@ -36,6 +36,12 @@ export function planBump({ manifest, dockerfile, drift }) {
   if (!drift || drift.unknown || !drift.to) return { error: 'no resolved upstream move to apply' };
   const text = String(manifest ?? '');
   const df = dockerfile === undefined ? null : String(dockerfile);
+  // Two readings of the same Dockerfile. `noComments` drops comment lines and leaves every other
+  // line byte for byte, so a match in it is a string applyEdits can still find in the real file.
+  // `build` also joins continuations, which is what docker actually executes and therefore what
+  // decides whether the pin is genuinely in the build at all.
+  const noComments = df === null ? '' : df.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  const build = noComments.replace(/\\[ \t]*\r?\n[ \t]*/g, ' ');
 
   const version = (/^version:\s*(\S+)/m.exec(text) ?? [])[1];
   const next = bumpVersion(version, drift.level);
@@ -70,13 +76,18 @@ export function planBump({ manifest, dockerfile, drift }) {
     // manifest alone leaves the image built from the old upstream while the catalog advertises the
     // new one, which is the exact outcome the rest of this exists to prevent, and it was reported
     // as applied. The manifest and the Dockerfile move together or neither moves.
-    if (!df.includes(drift.from)) {
-      return { error: `the Dockerfile does not name '${drift.from}', so the manifest cannot be moved without leaving the image built from the old version` };
+    //
+    // Comments do not count. `# bumped from 2.1.235` over an install line that has already moved
+    // on is the most natural sentence to write while bumping by hand, and it made this rewrite the
+    // COMMENT, bump the manifest, and report a synchronized move that had not happened. When the
+    // pin is in both a comment and an instruction, applyEdits refuses it as ambiguous instead.
+    if (!build.includes(drift.from)) {
+      return { error: `the Dockerfile does not name '${drift.from}' in any instruction, so the manifest cannot be moved without leaving the image built from the old version` };
     }
     // A FROM that pins tag AND digest has to move both. Docker prefers the digest, so moving the
     // tag alone builds the OLD image under the new number and every check downstream agrees with
     // the lie. Without a digest to move to there is no safe edit here.
-    const from = new RegExp(`^(\\s*FROM\\s+(?:--\\S+\\s+)*\\S+?):${esc(drift.from)}@(\\S+)`, 'mi').exec(df);
+    const from = new RegExp(`^(\\s*FROM\\s+(?:--\\S+\\s+)*\\S+?):${esc(drift.from)}@(\\S+)`, 'mi').exec(noComments);
     if (from) {
       if (!drift.digest) return { error: `${from[1].trim()} pins a digest beside its tag and the drift carries none, so moving the tag alone would ship the old image` };
       edits.push(edit('dockerfile', from[0], `${from[1]}:${drift.to}@${drift.digest}`, 'the tag and the digest are one pin'));

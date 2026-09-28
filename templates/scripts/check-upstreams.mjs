@@ -2,22 +2,29 @@
 // What every template's upstream has done since we pinned it. Reads the registry directories and
 // the public package/image/repo APIs, prints a line each, and changes nothing.
 //
-//   npm run check-upstreams            every template
-//   npm run check-upstreams -- n8n pi  just these
-//   npm run check-upstreams -- --json  for something else to consume
+//   npm run check-upstreams             every template
+//   npm run check-upstreams -- n8n pi   just these
+//   npm run check-upstreams -- --json   for something else to consume
+//   npm run check-upstreams -- --apply  write the bumps, which is a diff to read, not a release
+//
+// `--apply` edits files and stops. It opens nothing and pushes nothing, so what it leaves behind is
+// a working tree to read, and `npm run lint` plus `npm run version-guard` are the gates that say
+// whether it is sound. A template it cannot patch confidently is left alone with its reason.
 //
 // Exit code is 0 unless a template could not be resolved at all, which is a reason to look rather
 // than a reason to stop: being unable to tell is not the same as being behind, and neither is an
 // error in this script.
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 import { upstreamDrift, kindOf } from "./upstream-check.mjs";
+import { planBump, applyEdits } from "./bump-plan.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const asJson = args.includes("--json");
+const apply = args.includes("--apply");
 const only = args.filter((a) => !a.startsWith("--"));
 
 const codes = readdirSync(root)
@@ -27,10 +34,28 @@ const codes = readdirSync(root)
 
 const rows = [];
 for (const code of codes) {
-  const m = yaml.load(readFileSync(join(root, code, "insta.template.yaml"), "utf8"));
-  const upstream = m?.upstream ?? {};
+  const manifestPath = join(root, code, "insta.template.yaml");
+  const dockerfilePath = join(root, code, "Dockerfile");
+  const manifest = readFileSync(manifestPath, "utf8");
+  const upstream = yaml.load(manifest)?.upstream ?? {};
   const drift = await upstreamDrift(upstream);
-  rows.push({ code, kind: kindOf(upstream).kind ?? null, ...(drift ?? { current: true }) });
+  const row = { code, kind: kindOf(upstream).kind ?? null, ...(drift ?? { current: true }) };
+
+  if (apply && drift && !drift.unknown) {
+    const dockerfile = existsSync(dockerfilePath) ? readFileSync(dockerfilePath, "utf8") : undefined;
+    const plan = planBump({ manifest, dockerfile, drift });
+    if (plan.error) {
+      // Refused, not failed. A plan that no longer matches the files is the one case where doing
+      // nothing IS the correct edit, and the reason belongs beside the move it declined.
+      row.refused = plan.error;
+    } else {
+      const out = applyEdits({ manifest, ...(dockerfile !== undefined ? { dockerfile } : {}) }, plan.edits);
+      writeFileSync(manifestPath, out.manifest);
+      if (out.dockerfile !== undefined) writeFileSync(dockerfilePath, out.dockerfile);
+      row.applied = plan.version;
+    }
+  }
+  rows.push(row);
 }
 
 if (asJson) {
@@ -39,14 +64,16 @@ if (asJson) {
   const w = Math.max(...rows.map((r) => r.code.length));
   for (const r of rows) {
     const say = r.current ? "up to date"
-      : r.unknown ? `unknown: ${r.unknown}`
+      : r.refused ? `not patched: ${r.refused}`
+        : r.unknown ? `unknown: ${r.unknown}`
         // A commit sha has no ordering, so it is reported as moved and never as an upgrade.
-        : `${r.from} -> ${r.to}  [${r.level ?? "changed, not comparable"}]`;
+        : `${r.from} -> ${r.to}  [${r.level ?? "changed, not comparable"}]${r.applied ? `  template v${r.applied.from} -> v${r.applied.to}` : ""}`;
     console.log(`${r.current ? "=" : r.unknown ? "?" : ">"} ${r.code.padEnd(w)}  ${String(r.kind ?? "-").padEnd(14)} ${say}`);
   }
   const moved = rows.filter((r) => r.to).length;
   const stuck = rows.filter((r) => r.unknown).length;
-  console.log(`\n${rows.length} templates, ${moved} behind, ${stuck} could not be resolved`);
+  const done = rows.filter((r) => r.applied).length;
+  console.log(`\n${rows.length} templates, ${moved} behind, ${stuck} could not be resolved${apply ? `, ${done} patched` : ""}`);
 }
 
 process.exit(rows.some((r) => r.unknown) ? 1 : 0);

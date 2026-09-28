@@ -3,29 +3,24 @@ title: "Multi-tenant & integrations"
 description: "Run InstaCloud underneath your own product: a master token in your backend, a project or an app per customer. Available on every plan."
 ---
 
-Everything the console and CLI do runs over the [REST API](/reference/api/overview), so a platform can do it too: provision infrastructure for its own customers, from its own backend, and never show them an InstaCloud screen. That is the shape this page covers, whether you call it a multi-tenant setup or an integration: your product on top, InstaCloud underneath.
+Everything the console and CLI do runs over the [REST API](/reference/api/overview), so a platform can do it too: provision infrastructure for its own customers, from its own backend, and never show them an InstaCloud screen. That is the shape this section covers, whether you call it a multi-tenant setup or an integration: your product on top, InstaCloud underneath.
 
 The API is directly available: [mint a token](/reference/api/overview#minting-a-token) on any account and start building. When you are ready to put a real fleet on it, [contact us](#enterprise-plans) for an Enterprise plan with custom restrictions.
 
 ## The recommended setup
 
-Your backend keeps one **master token**: an organization token, minted once (`insta tokens create master --org <orgId>`). It is the credential that creates projects and [mints narrower tokens](/reference/api/overview#minting-a-token), never wider than itself, and it never leaves your backend. From there, pick the isolation each customer needs. Two shapes work:
+Your backend keeps one **master token**: an organization token, minted once (`insta tokens create master --org <orgId>`). It is the credential that creates projects and [mints narrower tokens](/reference/api/overview#minting-a-token), never wider than itself, and it never leaves your backend. From there, pick the isolation each customer needs:
 
-### A project per customer
+<CardGroup cols={2}>
+  <Card title="A project per customer" icon="folder-tree" href="/integrations/project-per-customer">
+    Hard isolation: each customer gets their own Postgres, buckets, compute and branches, under a project token that reaches nothing else. Per-customer usage is built in.
+  </Card>
+  <Card title="An app per customer" icon="cubes" href="/integrations/app-per-customer">
+    One project, a compute service per customer. Cheaper per tenant: the apps can share a database, and logs and metrics still read per app.
+  </Card>
+</CardGroup>
 
-When a customer signs up, the master token creates a project for them (`POST /orgs/{orgId}/projects`) and mints a **project token** bound to it. Everything that runs for that customer runs under the project token: it can add services, deploy, and read its own logs and metrics, and cannot reach other customers' projects or mint anything.
-
-- Hard isolation: each customer gets their own Postgres, buckets and compute, plus their own branches for previews and agent runs ([branch per task](/agents/branch-per-task)).
-- Per-customer metering is built in: `GET /projects/{projectId}/usage` is that customer's bill.
-
-### An app per customer, in one project
-
-When tenants are lighter, keep one project and give every customer an **app** inside it: one compute service per customer (`POST /projects/{projectId}/services`), deployed, scaled, and stopped independently of the rest.
-
-- Cheaper per tenant: the apps can share the project's Postgres and storage through [secret bindings](/reference/api/project), with per-customer separation inside them left to your schema.
-- Logs and metrics still read per app (`GET /projects/{projectId}/logs?group=<app>`), but usage is reported per project, so per-customer billing needs your own accounting on top.
-
-Either way, the organization's audit stream (`GET /orgs/{orgId}/events/stream`) gives you one timeline of everything every customer's infrastructure did, and the [API overview](/reference/api/overview#provisioning-end-to-end) walks the provisioning flow, from organization to running deploy, in four curl calls.
+Either way, the organization's audit stream (`GET /orgs/{orgId}/events/stream`) gives you one timeline of everything every customer's infrastructure did.
 
 ## Enterprise plans
 

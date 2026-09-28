@@ -1,0 +1,38 @@
+---
+title: "An app per customer"
+description: "One project, a compute service per customer: cheaper per tenant, a shared database, and logs and metrics that still read per app."
+---
+
+When tenants are lighter, keep one project and make every customer an **app**: a compute service of their own, deployed, scaled and stopped independently of the rest. One [project token](/reference/api/overview#token-scopes), minted once from the [master token](/integrations/overview#the-recommended-setup), drives the whole fleet.
+
+## The flow
+
+The shared infrastructure is created once; each new customer adds one service:
+
+```bash
+API=https://api.instacloud.com
+
+# Once: the shared database.
+curl -s -X POST $API/projects/$PROJECT/services -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"type":"postgres","name":"db"}'
+
+# Per customer: an app, wired to the shared database, deployed.
+curl -s -X POST $API/projects/$PROJECT/services -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"type":"compute","name":"acme","port":3000}'
+curl -s -X PUT $API/projects/$PROJECT/secret-bindings/DATABASE_URL \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"target":"compute/acme","source":"postgres/db"}'
+curl -s -X POST $API/projects/$PROJECT/deploy -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"image":"ghcr.io/you/tenant-app:1.0.0","group":"acme","port":3000}'
+```
+
+## Per-customer separation
+
+- The apps share the project's Postgres and storage; separation inside them is your schema design. A database per customer keeps it clean: `POST /projects/{projectId}/database/databases`.
+- Logs and metrics still read per app: `GET /projects/{projectId}/logs?group=acme`, and the same `group` filter on `/metrics`.
+- Each app is operated on its own: scale, restart, stop and suspend are per-service endpoints, so one customer's traffic never forces another's app to move.
+
+## Where it stops scaling
+
+Usage (`GET /projects/{projectId}/usage`) is reported for the whole project, so per-customer billing needs your own accounting on top of the per-app metrics. And standard plans cap how many services of each type a branch can hold, so a growing fleet of apps hits the compute cap first: [Enterprise plans](/integrations/overview#enterprise-plans) lift both, with custom restrictions sized to your tenant count. When customers outgrow the shared project, promote the big ones to [a project of their own](/integrations/project-per-customer).

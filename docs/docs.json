@@ -113,7 +113,9 @@
             "group": "Multi-tenant",
             "icon": "building",
             "pages": [
-              "integrations/overview"
+              "integrations/overview",
+              "integrations/project-per-customer",
+              "integrations/app-per-customer"
             ]
           },
           {

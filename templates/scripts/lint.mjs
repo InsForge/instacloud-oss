@@ -7,6 +7,7 @@ import yaml from "js-yaml";
 import { FIXED_REF_RE, checkFixedRef, MANAGED_TYPES } from "./manifest-refs.mjs";
 import { DEPLOY_BUTTON_ASSET, findDeployButtons } from "./publish-lib.mjs";
 import { ARCHITECTURES } from "./build-targets.mjs";
+import { checkDockerfilePin } from "./dockerfile-pin.mjs";
 
 // Template dirs live beside this script's parent (templates/<code>/): runs from any cwd.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -36,6 +37,15 @@ for (const dir of dirs) {
   if (m?.version && !SEMVER_RE.test(String(m.version))) err(dir, `version '${m.version}' is not semver`);
   if (!m?.meta?.category) err(dir, "missing meta.category");
   if (!m?.upstream?.pinned) err(dir, "missing upstream.pinned");
+
+  // The version is written twice when we build the image ourselves, and the two must agree. Drafts
+  // included: this is internal consistency, not publishing readiness, and a draft that drifts is a
+  // published drift the day it ships. Templates that deploy an upstream image (n8n) have no
+  // Dockerfile and nothing to compare.
+  if (existsSync(join(root, dir, "Dockerfile"))) {
+    const drift = checkDockerfilePin(m?.upstream ?? {}, readFileSync(join(root, dir, "Dockerfile"), "utf8"));
+    if (drift) err(dir, drift.error);
+  }
 
   // Which CPU architectures the deployable image is published for. Mandatory, drafts included:
   // the image workflow derives its buildx `platforms` from this, the catalog serves it, and the

@@ -56,10 +56,15 @@ export function checkUpstreamFrom(upstream, dockerfile) {
   if (!image) return null;
   const want = splitPin(upstream?.pinned);
 
+  // EVERY matching stage, not the first. A multi-stage build takes its final stage by default, so
+  // `FROM upstream:1.2.3 AS old` followed by `FROM upstream:9.9.9` would otherwise pass on the
+  // strength of a stage the image never uses, while the one it does use has drifted.
   for (const line of String(dockerfile ?? '').split('\n')) {
-    const m = /^\s*FROM\s+(\S+)/i.exec(line);
+    // `FROM [--platform=... --flag=...] <ref> [AS name]`. Skipping the flags matters: reading the
+    // first token as the image made a standard `FROM --platform=linux/amd64 <ref>` invisible.
+    const m = /^\s*FROM\s+((?:--\S+\s+)*)(\S+)/i.exec(line);
     if (!m) continue;
-    const got = splitRef(m[1]);
+    const got = splitRef(m[2]);
     if (got.image !== image) continue;
     if (!got.tag) return { error: `Dockerfile builds on ${image} with no tag, so nothing pins which version it gets` };
     if (got.tag !== want.tag) {
@@ -70,7 +75,6 @@ export function checkUpstreamFrom(upstream, dockerfile) {
     if (want.digest && got.digest !== want.digest) {
       return { error: `Dockerfile pins ${image}:${got.tag} at a different digest than the manifest does` };
     }
-    return null;
   }
   return null;
 }

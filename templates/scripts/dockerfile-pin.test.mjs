@@ -97,6 +97,23 @@ describe('checkUpstreamFrom', () => {
     expect(checkUpstreamFrom({ image: 'docker.io/decolua/9router', pinned: '0.5.55' }, from('debian:bookworm-slim@sha256:3783cc01'))).toBeNull();
   });
 
+  it('checks every stage, because docker builds the last one', () => {
+    // An early stage that agrees proves nothing about the stage the image actually comes from.
+    // Returning at the first match let `FROM upstream:1.2.3 AS old` vouch for a stale final stage,
+    // and whisper-turbo is already multi-stage, so this is a shape the registry contains.
+    const up = { image: 'example/upstream', pinned: '1.2.3' };
+    const df = 'FROM example/upstream:1.2.3 AS old\nRUN true\nFROM example/upstream:9.9.9\n';
+    expect(checkUpstreamFrom(up, df)?.error).toMatch(/9\.9\.9/);
+  });
+
+  it('reads past the flags a FROM may carry', () => {
+    // `--platform` was being read as the image, so the whole instruction was skipped and a drifted
+    // pin behind one was invisible.
+    const up = { image: 'example/upstream', pinned: '1.2.3' };
+    expect(checkUpstreamFrom(up, 'FROM --platform=linux/amd64 example/upstream:9.9.9\n')?.error).toMatch(/9\.9\.9/);
+    expect(checkUpstreamFrom(up, 'FROM --platform=$BUILDPLATFORM example/upstream:1.2.3 AS b\n')).toBeNull();
+  });
+
   it('says so when the upstream image is built on without any pin at all', () => {
     const up = { image: 'docker.io/decolua/9router', pinned: '0.5.55' };
     expect(checkUpstreamFrom(up, from('docker.io/decolua/9router'))?.error).toMatch(/no tag/i);

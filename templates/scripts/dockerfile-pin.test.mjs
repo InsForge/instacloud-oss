@@ -47,6 +47,17 @@ describe('checkDockerfilePin', () => {
     expect(checkDockerfilePin({}, 'FROM scratch\n')?.error).toBeTruthy();
   });
 
+  it('does not count a comment as naming the pin', () => {
+    // `# bumped from 2.1.235` is the most natural sentence to write while bumping by hand, and it
+    // made a Dockerfile whose install line had already diverged look compliant. The manifest would
+    // then advertise a version the image does not build, with nothing disagreeing.
+    const df = '# previously pinned at 2.1.235\nRUN npm install -g x@2.0.0\n';
+    expect(checkDockerfilePin({ pinned: '2.1.235' }, df)?.error).toBeTruthy();
+    // And a commented-out FROM is not a FROM.
+    const up = { image: 'example/upstream', pinned: '1.2.3' };
+    expect(checkUpstreamFrom(up, '# FROM example/upstream:1.2.3\nFROM example/upstream:9.9.9\n')?.error).toMatch(/9\.9\.9/);
+  });
+
   it('does not read a pin as present inside a longer version', () => {
     // Plain containment reads 1.2.3 as present in 1.2.30, so a template pinned one release behind
     // its Dockerfile passed. A digit or a dot on either side means the match is the middle of

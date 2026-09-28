@@ -39,13 +39,20 @@ const splitPin = (pin) => {
 };
 
 /**
- * A Dockerfile with its line continuations joined, because an instruction is not a line.
+ * The instructions a Dockerfile actually carries: comments dropped, continuations joined.
  *
- * `FROM --platform=linux/amd64 \` continued on the next line is one instruction to docker and was
- * two to a scanner reading physical lines, which is a way for the reference that actually builds to
- * sit somewhere this never looked.
+ * Comments first, then continuations, which is the order docker itself uses. Both matter and each
+ * was a way past this check. A comment counted as naming the pin, so
+ * `# previously pinned at 2.1.235` over `RUN npm install -g x@2.0.0` passed while the image built
+ * a different version than the manifest advertised. And `FROM --platform=... \` continued on the
+ * next line is one instruction to docker and was two to a scanner reading physical lines, so the
+ * reference that actually builds could sit somewhere this never looked.
  */
-const instructions = (dockerfile) => String(dockerfile ?? '').replace(/\\[ \t]*\r?\n[ \t]*/g, ' ');
+const instructions = (dockerfile) => String(dockerfile ?? '')
+  .split('\n')
+  .filter((l) => !/^\s*#/.test(l))
+  .join('\n')
+  .replace(/\\[ \t]*\r?\n[ \t]*/g, ' ');
 
 /**
  * Does `pin` appear in `text` as a value rather than as part of a longer one?

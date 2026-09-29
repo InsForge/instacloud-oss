@@ -3,11 +3,11 @@
 An open System One decision model behind a Jev-compatible API: typed yes/no, choice and score
 answers with calibrated probabilities, on CPU, in your own project.
 
-> **Draft.** The template deploys and answers: a typed decision comes back in 4 to 6 seconds once
-> the machine is warm. It does that with 9.3 GB of bf16 weights memory-mapped off the volume on a
-> machine whose memory ceiling is 8 GB, which works but means the service has to be always-on and
-> so bills around the clock for a CPU decision. Whether that belongs in the catalog is the call
-> this stays draft for. The measurements are on the pull request that added this directory.
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/lev)
+
+**This service is always-on and billed the whole time it exists.** It cannot scale to zero, for
+the reason in the [FAQ](#faq), so a deployment you are done with is a deployment to delete. The
+warm decision it buys you is 4 to 6 seconds of CPU.
 
 ## Overview
 

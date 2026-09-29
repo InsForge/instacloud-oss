@@ -62,7 +62,8 @@
             "pages": [
               "introduction",
               "quickstart",
-              "projects/branches"
+              "projects/branches",
+              "multi-tenant"
             ]
           },
           {

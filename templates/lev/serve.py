@@ -132,11 +132,11 @@ async def api_key_auth(request, call_next):
     if request.url.path in OPEN_PATHS:
         if _load["state"] == "failed":
             # See the module docstring: without this the gate reads a permanently loading service
-            # as a healthy one.
-            return JSONResponse(
-                {"status": "failed", "error": _load["error"]},
-                status_code=503,
-            )
+            # as a healthy one. The status alone, with no `error`: this response goes out
+            # unauthenticated, and the message behind it is a stack-derived string about the inside
+            # of the container, which is the reason `/status` sits behind the key. The gate only
+            # needs the 503. An operator reads the cause from `/status` or the deploy log.
+            return JSONResponse({"status": "failed"}, status_code=503)
         return await call_next(request)
     if _authorized(request.headers.get("authorization", "")):
         return await call_next(request)

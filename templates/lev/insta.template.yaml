@@ -1,5 +1,5 @@
 code: lev
-version: 0.1.0
+version: 0.1.1
 maintainer: official
 sourceRepo: InsForge/instacloud-oss
 
@@ -20,7 +20,7 @@ upstream:
 services:
   lev:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/lev:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/lev:0.1.1   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
     # Upstream's own liveness route, and the only one that can serve as the gate. There is no route
     # at `/` in lev's server (this template's serve.py adds a redirect there for humans), and
@@ -37,7 +37,8 @@ services:
     # and over 60 s on the other, while the forward pass faults the weights in. The second restart
     # put the first decision past the limit on its own and the edge returned a 502, so the pair
     # does not merely add up past 60 s, it can exceed it unaided: every first request after an idle
-    # period would be cut off. It bills around the clock: see Open questions on the pull request.
+    # period would be cut off. It bills around the clock, which the README's Limits section and
+    # FAQ both say out loud. The measurements behind these numbers are on PR #187.
     alwaysOn: true
     # The Hub cache, and the reason a restart is cheap. 9.3 GB of backbone, 170 MB of adapter and a
     # 15 MB Mode B head: 8.9 GiB on the disk, fetched once per deployment instead of once per
@@ -52,9 +53,12 @@ services:
         # On the volume, which is the whole reason the volume exists.
         HF_HOME: /data/hf
         # What gets served: a release directory, a Hub id, or empty for the untrained backbone.
-        # This is the released adapter, and it is the thing being templated. Declared here rather
-        # than baked into serve.py so an operator can repoint it at their own release from the
-        # console without a new image.
+        # This is the released adapter, and it is the thing being templated. It is a manifest
+        # variable rather than a constant in serve.py so that repointing it never needs a new
+        # image. Whether `fixed` is the right group is open: the claim that an operator can edit
+        # it after deploy has not been verified against the console, so neither this comment nor
+        # the README asserts it any more. Raised on PR #193, and the unresolved half of it is the
+        # cubic finding on PR #187.
         LEV_CHECKPOINT: interfaze-ai/lev
         # The platform's compute machines are 8 shared vCPUs at the ceiling, and a forward pass
         # here is CPU-bound across all of them.
@@ -81,7 +85,10 @@ services:
 
 meta:
   name: lev
-  tagline: Typed, calibrated decisions from one forward pass and zero output tokens
+  # Names the thing, not the property. The previous line said what the output is like ("typed,
+  # calibrated decisions from one forward pass and zero output tokens") and never said it was a
+  # decision model, which is the one word a gallery card has to land.
+  tagline: Open System One decision model with a Jev-compatible API
   category: llm
   tags: [llm, ai]
   # amd64 only, declared rather than hoped for. The CPU torch wheels exist for aarch64, but nobody
@@ -89,11 +96,12 @@ meta:
   # kernels are exactly what would have to be proved there. See the Architectures table in
   # ../README.md for what adding the second row would take.
   architectures: [amd64]
-  # Draft. It deploys and answers: a typed decision comes back in 4 to 6 seconds warm, with the
-  # 9.3 GB of bf16 weights memory-mapped off the volume rather than resident, on a machine whose
-  # ceiling is 8 GB. What is unsettled is whether an always-on machine billing around the clock
-  # for a 4 to 6 second CPU decision is a thing to put in the gallery. See the pull request.
-  draft: true
+  # Published. It was a draft over one open question, whether an always-on machine billing around
+  # the clock for a 4 to 6 second CPU decision belongs in the gallery, and that was settled yes.
+  # The cost is not hidden from it: the README's Limits section and FAQ say always-on, say it is
+  # charged the whole time, and say to delete the service when you are done. Everything the draft
+  # note used to carry is now in those two sections, which is where a reader looks anyway.
+  draft: false
   # Upstream HAS a mark, and an earlier draft of this file was wrong to say otherwise: the "lev."
   # wordmark, near-black #14181F glyphs with a #2A78D6 dot. What upstream does not do is publish it
   # on its own. It exists only baked into hf/assets/hero.png (3200x1120) and hf/assets/

@@ -52,9 +52,11 @@ services:
         # On the volume, which is the whole reason the volume exists.
         HF_HOME: /data/hf
         # What gets served: a release directory, a Hub id, or empty for the untrained backbone.
-        # This is the released adapter, and it is the thing being templated. Declared here rather
-        # than baked into serve.py so an operator can repoint it at their own release from the
-        # console without a new image.
+        # This is the released adapter, and it is the thing being templated. It is a manifest
+        # variable rather than a constant in serve.py so that repointing it never needs a new
+        # image. Whether `fixed` is the right group is open: the claim that an operator can edit
+        # it after deploy has not been verified against the console, so neither this comment nor
+        # the README asserts it any more. See the pull request that raised it.
         LEV_CHECKPOINT: interfaze-ai/lev
         # The platform's compute machines are 8 shared vCPUs at the ceiling, and a forward pass
         # here is CPU-bound across all of them.
@@ -81,7 +83,10 @@ services:
 
 meta:
   name: lev
-  tagline: Typed, calibrated decisions from one forward pass and zero output tokens
+  # Names the thing, not the property. The previous line said what the output is like ("typed,
+  # calibrated decisions from one forward pass and zero output tokens") and never said it was a
+  # decision model, which is the one word a gallery card has to land.
+  tagline: Open System One decision model with a Jev-compatible API
   category: llm
   tags: [llm, ai]
   # amd64 only, declared rather than hoped for. The CPU torch wheels exist for aarch64, but nobody

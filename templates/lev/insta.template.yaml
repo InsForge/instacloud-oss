@@ -32,11 +32,12 @@ services:
     healthcheck: /health
     # Not scale-to-zero, and not a preference. An idle volume-bearing service is STOPPED, so the
     # next request pays a cold start plus a fresh map of the backbone off the disk, and the edge in
-    # front of a compute service cuts the connection at 60 seconds. Measured on a restart of this
-    # template: 69 s from boot to a loaded engine, then 36 s for the first decision while the
-    # forward pass faults the weights in. Either number alone is inside 60 s and the pair is not,
-    # so every first request after an idle period would be cut off. It bills around the clock:
-    # see Open questions on the pull request.
+    # front of a compute service cuts the connection at 60 seconds. Measured over two restarts of
+    # this template: 65 and 69 s from boot to a loaded engine, then a first decision of 36 s on one
+    # and over 60 s on the other, while the forward pass faults the weights in. The second restart
+    # put the first decision past the limit on its own and the edge returned a 502, so the pair
+    # does not merely add up past 60 s, it can exceed it unaided: every first request after an idle
+    # period would be cut off. It bills around the clock: see Open questions on the pull request.
     alwaysOn: true
     # The Hub cache, and the reason a restart is cheap. 9.3 GB of backbone, 170 MB of adapter and a
     # 15 MB Mode B head: 8.9 GiB on the disk, fetched once per deployment instead of once per
@@ -93,9 +94,16 @@ meta:
   # ceiling is 8 GB. What is unsettled is whether an always-on machine billing around the clock
   # for a 4 to 6 second CPU decision is a thing to put in the gallery. See the pull request.
   draft: true
-  # Upstream ships no mark: no logo, no icon and no favicon in the repository, and interfaze.ai
-  # publishes none for lev either. Declared `none` so consumers fall back to a monogram, rather
-  # than drawing one, which the rules forbid. Revisit if upstream ever publishes one.
+  # Upstream HAS a mark, and an earlier draft of this file was wrong to say otherwise: the "lev."
+  # wordmark, near-black #14181F glyphs with a #2A78D6 dot. What upstream does not do is publish it
+  # on its own. It exists only baked into hf/assets/hero.png (3200x1120) and hf/assets/
+  # social-card.png (1200x630), both sitting on an opaque #FAFAF8 plate, and a recursive listing of
+  # the repository turns up no standalone file, no transparent copy and no favicon. interfaze.ai
+  # serves interfaze_app_icon.svg, which is Interfaze's mark and not lev's, and no third-party
+  # listing carries a copy either. Cutting the wordmark out of a banner is exactly what "do not
+  # hand-cut one" in ../AGENTS.md forbids, so this stays `none` and consumers fall back to a
+  # monogram. Recorded in the logo attribution table in ../README.md. Revisit if upstream ever
+  # publishes the mark as its own file.
   logo: none
   links:
     upstream: https://github.com/Abhinavexists/lev

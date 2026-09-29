@@ -65,8 +65,10 @@ forward pass here is CPU-bound across all of them), `PORT=8080`, and `USE_TF=0` 
 
 The service is **always-on**. An idle volume-bearing compute service is stopped, so the next
 request would pay a cold start plus a fresh map of the backbone, and the edge in front of the
-service cuts a connection at 60 seconds: the measured 69 seconds to a loaded engine plus 36
-seconds for the first decision do not fit inside that. Always-on bills continuously.
+service cuts a connection at 60 seconds: 65 to 69 seconds to a loaded engine, plus a first decision
+measured at 36 seconds on one restart and over 60 on the next, do not fit inside that. The first
+decision alone has exceeded the limit, so this is not a margin that scale-to-zero could be tuned
+into. Always-on bills continuously.
 
 ## After deploy
 
@@ -76,12 +78,18 @@ deploy goes green well before that finishes, which is deliberate: `/health` answ
 the weights are mapped. Watch the progress at `/status`, which reports `loading`, `ready` or
 `failed` and how long the load took.
 
-What that looked like on one deployment, so you know roughly what to expect: 25 seconds from boot
-to `ready` on the first start, 69 seconds after a restart (no download either time after the
-first, since the cache is on the volume). The first decision after a restart took 36 seconds
-because the forward pass has to fault the weights in off the disk; every one after that took 4 to
-6 seconds. The edge in front of the service cuts a connection at 60 seconds, so give a restarted
-service its first request before you point real traffic at it.
+What that looked like across two restarts of the same deployment, so you know roughly what to
+expect: 25 seconds from boot to `ready` on the first start, then 65 and 69 seconds after a restart
+(no download either time after the first, since the cache is on the volume).
+
+**The first decision after a restart is the one to plan for.** The forward pass has to fault 9.3 GB
+of weights in off the disk, which took 36 seconds on one restart and more than 60 on the next. The
+edge in front of the service cuts a connection at 60 seconds and returns a 502, so that first
+request is not reliably answerable: on the second restart it was cut. Send it yourself once
+`/status` reports `ready`, expect it to be slow or cut, and do not point real traffic at a
+restarted service until a request has come back. The pages stay warm afterwards. Every decision
+after that first one took 4 to 6 seconds, measured at 4.5 to 4.6 seconds over four consecutive
+requests.
 
 Once `/health` reports `"status": "ok"`, ask it something:
 

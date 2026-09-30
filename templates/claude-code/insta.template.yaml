@@ -1,11 +1,11 @@
 code: claude-code
-version: 0.8.3
+version: 0.8.4
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
 upstream:
   package: "@anthropic-ai/claude-code"
-  pinned: "2.1.235"
+  pinned: "2.1.280"
   license: LicenseRef-Anthropic-Commercial-Terms
 
 services:
@@ -13,7 +13,7 @@ services:
   # the same branch, the second overwriting the first (QA.md finding 1).
   claude-code:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/claude-code:0.8.3   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/claude-code:0.8.4   # built from ./Dockerfile by templates-build-images.yml
     port: 7681
     healthcheck: /
     # No `spec:`, so the platform's birth size applies. Worth keeping from when this asked for

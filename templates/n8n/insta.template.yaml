@@ -1,5 +1,5 @@
 code: n8n
-version: 1.3.2
+version: 1.4.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -7,7 +7,7 @@ sourceRepo: InsForge/insta-oss
 upstream:
   repo: n8n-io/n8n
   image: docker.io/n8nio/n8n
-  pinned: "2.36.5"
+  pinned: "2.42.0"
   license: LicenseRef-n8n-Sustainable-Use-License
 
 generated:
@@ -16,7 +16,7 @@ generated:
 services:
   n8n:
     type: web
-    image: docker.io/n8nio/n8n:2.36.5
+    image: docker.io/n8nio/n8n:2.42.0
     port: 5678
     healthcheck: /healthz
     # Schedule and polling triggers fire from inside the process, so an idle machine never wakes.

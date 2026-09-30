@@ -233,6 +233,22 @@ test('the README git push-to-deploy walkthrough names the real route and request
   for (const field of ['"repo"', '"ref"', '"token"']) expect(section).toContain(field)
 })
 
+// The README collapses its deep walkthroughs into <details> blocks. A dropped or out-of-order
+// </details> silently swallows the rest of the page on GitHub, and nothing else here would catch it.
+// Depth scan (tolerating attributes/whitespace/case): never goes negative, ends at zero.
+test('README <details> blocks are balanced and correctly ordered', () => {
+  const readme = readFileSync(join(root, 'README.md'), 'utf8')
+  let depth = 0
+  let opened = 0
+  for (const m of readme.matchAll(/<(\/?)details(?:\s[^>]*)?>/gi)) {
+    if (m[1]) depth--
+    else { depth++; opened++ }
+    expect(depth, 'a </details> appears before its <details> in README').toBeGreaterThanOrEqual(0)
+  }
+  expect(depth, 'unbalanced <details> in README').toBe(0)
+  expect(opened).toBeGreaterThan(0)
+})
+
 // The backup page is the ONLY documented recovery path (the backups API answers 501), so what it
 // tells the operator to archive is derived from the code rather than trusted: `md/` was missing
 // from it, which loses every managed database from a backup that appears to succeed.

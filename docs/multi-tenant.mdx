@@ -49,7 +49,7 @@ curl -s -X POST $API/projects/$PROJECT/deploy -H "Authorization: Bearer $TOKEN" 
 The project token is the isolation boundary, so hand it to the customer's runtime without worry:
 
 - It reaches its own project only. Any endpoint outside the binding answers `403 token_scope`, and it cannot mint tokens at all.
-- A second token with `"access":"read_only"` serves customer-facing dashboards: it is accepted on `GET` and `HEAD` only.
+- A second token with `"access":"read_only"` is accepted on `GET` and `HEAD` only: useful for backend read paths that should not be able to write. Like any project token it can still read the project's credentials, so neither belongs in a customer's browser.
 - Each customer gets their own branches for previews and agent runs ([branch per task](/agents/branch-per-task)).
 
 ## 3. An app per customer
@@ -112,7 +112,7 @@ A project with two customer apps and a shared database reads like this:
 
 Each row also carries `serviceId`, `status` and its per-dimension quantities (ram, cpu, volume, storage, egress), and the response's own project-level `dimensions` array sits above `byService`; both are trimmed here. Deleted services keep their rows, and spend with no recoverable service lands in one unattributed bucket, so the split still sums to the total. Compute splits per customer; a shared Postgres stays one row, and a branch database's cost rolls onto the service it was forked from.
 
-Who may call these depends on the shape. In a project per customer, the GETs accept that customer's `read_only` token (section 2), so their dashboard can call them directly. In a shared project the response spans every customer: only your backend reads it, selects the customer's row, and serves that. The master token stays behind your backend either way.
+These reads belong to your backend. Even a `read_only` token reads more than billing (the project's credentials included), so no token goes into customer-facing code: serve each customer their own numbers, and in a shared project, where the response spans every customer, select their row first. The master token stays behind your backend either way.
 
 Stopping is just as direct. Idle customers already stay cheap on their own: compute [scales to zero](/compute/overview) by default (workers and always-on services keep running and billing); stopping is for taking a customer offline on purpose. In the shared project:
 

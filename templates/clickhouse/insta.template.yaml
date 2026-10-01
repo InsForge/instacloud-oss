@@ -1,0 +1,61 @@
+code: clickhouse
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# The official image, with a config.d drop-in and a credential shim on top (see ./Dockerfile).
+# Nothing about the server itself is rebuilt: the binary, the entrypoint and the stock config are
+# upstream's.
+upstream:
+  repo: ClickHouse/ClickHouse
+  image: docker.io/library/clickhouse
+  pinned: "26.8.11.7"   # the LTS line; docker.io/library/clickhouse:lts resolves to this index
+  license: Apache-2.0
+
+services:
+  clickhouse:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/clickhouse:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    # The HTTP interface. Routing one port means the native protocol on 9000 is not reachable, so
+    # clickhouse-client cannot connect; every HTTP client (clickhouse-connect, JDBC/ODBC over HTTP,
+    # curl) can. The Play UI this template's Start here uses is served on this port too.
+    port: 8123
+    # Unauthenticated by design in the stock config's handler list, and answers 200 "Ok." only once
+    # the server has loaded its databases, which is exactly the readiness question the gate asks.
+    # "/" also answers 200, but it is the "Ok." stub rather than anything a human would open.
+    healthcheck: /ping
+    # A query is an inbound request, so an idle machine wakes on the next one and nothing is lost by
+    # stopping it. MergeTree background merges pause while it is down and resume on wake; they are
+    # driven by inserts, so an idle server has none pending.
+    alwaysOn: false
+    volume: true
+    env:
+      fixed:
+        # Lets the admin user run CREATE USER, GRANT and the rest of the access DDL, so additional
+        # users are made in SQL after deploy rather than by redeploying with more variables. Read by
+        # upstream's entrypoint, which writes it into the user it generates.
+        CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      required:
+        # Neither a `default:` nor a `generate:`, matching the other templates that put a credential
+        # in front of a public URL: a template variable is stored write-only (`minted = false`), so a
+        # generated password would be one nobody could ever read back, and a blank field silently
+        # mints another instead of erroring.
+        ADMIN_USERNAME:
+          description: "Username for the ClickHouse account this creates. Upstream writes it into an XML config as an element name, so use letters, digits and underscores only, and do not start it with a digit"
+        ADMIN_PASSWORD:
+          description: "Password for that account. It is the only thing standing between the public URL and a SQL shell on your data, so pick a strong one"
+
+meta:
+  name: ClickHouse
+  tagline: Column-oriented SQL database for real-time analytics
+  category: database
+  tags: [database, analytics]
+  # Architectures the published image carries. Upstream's 26.8.11.7 index carries both and this
+  # image only copies in a config file and a wrapper script, so there is nothing to cross-compile.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  # Published: a public SQL URL behind one password was accepted, and the README says so up front.
+  draft: false
+  links:
+    upstream: https://github.com/ClickHouse/ClickHouse
+    documentation: https://clickhouse.com/docs

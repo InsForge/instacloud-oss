@@ -304,7 +304,8 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
     }
     let command: string | undefined
     if (rawSvc.command !== undefined) {
-      command = scalarString(rawSvc.command, `${at}.command`).trim()
+      if (typeof rawSvc.command !== 'string') return bad(`${at}.command must be a non-empty string`)
+      command = rawSvc.command.trim()
       if (!command) return bad(`${at}.command must be a non-empty string`)
     }
     let mountPath: string | undefined

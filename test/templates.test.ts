@@ -207,6 +207,7 @@ test('manifest parity: command and mountPath are kept on the parsed service so t
   expect(Object.keys(parse(base).services.web)).not.toContain('mountPath')
   const svc = (extra: Record<string, unknown>) => ({ ...base, services: { web: { ...base.services.web, ...extra } } })
   refuses(svc({ command: '  ' }), /services\.web\.command must be a non-empty string/)
+  for (const command of [42, false, [], {}]) refuses(svc({ command }), /services\.web\.command must be a non-empty string/)
   refuses(svc({ mountPath: '/a' }), /mountPath requires volume: true/)
   refuses(svc({ volume: true, mountPath: ' ' }), /services\.web\.mountPath must be an absolute path/)
   refuses(svc({ volume: true, mountPath: 'a' }), /services\.web\.mountPath must be an absolute path/)

@@ -14,6 +14,9 @@ describe('checkServiceRuntime', () => {
   it('refuses a relative mountPath', () => {
     expect(checkServiceRuntime('app', { type: 'web', volume: true, mountPath: 'a' }).errors).toEqual(['app: mountPath must be an absolute path']);
   });
+  it('trims mountPath before the absolute check, like the parser', () => {
+    expect(checkServiceRuntime('app', { type: 'web', volume: true, mountPath: ' /app/storage ' }).errors).toEqual([]);
+  });
   it('warns that either field is cloud-only', () => {
     const r = checkServiceRuntime('app', { type: 'web', command: 'run', volume: true, mountPath: '/a' });
     expect(r.errors).toEqual([]);

@@ -323,6 +323,16 @@
               }
             }
           },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Billing (Stripe) not configured"
           }
@@ -523,6 +533,16 @@
               }
             }
           },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Billing (Stripe) not configured"
           }
@@ -648,6 +668,16 @@
               }
             }
           },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Billing (Stripe) not configured"
           }
@@ -657,6 +687,122 @@
           "metadata": {
             "title": "Open the Stripe Customer Portal (change plan / card / cancel)",
             "sidebarTitle": "Create billing portal"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/billing/redeem": {
+      "post": {
+        "operationId": "redeemCreditCode",
+        "summary": "Redeem a credit code into this org",
+        "tags": [
+          "Billing"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "required": [
+                  "code"
+                ],
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "amountMicros": {
+                      "type": "integer"
+                    },
+                    "creditsExpireAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "orgId": {
+                      "type": "string"
+                    },
+                    "orgName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "amountMicros",
+                    "creditsExpireAt",
+                    "orgId",
+                    "orgName"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Redeem a credit code into this org",
+            "sidebarTitle": "Redeem credit code"
           }
         }
       }
@@ -836,11 +982,11 @@
             }
           },
           "409": {
-            "description": "the name is taken, premium, or already registered through InstaCloud",
+            "description": "the name is taken, its extension cannot be sold here, or it is already registered through InstaCloud",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the name is taken, premium, or already registered through InstaCloud",
+                  "description": "the name is taken, its extension cannot be sold here, or it is already registered through InstaCloud",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -1047,7 +1193,7 @@
             "in": "query",
             "name": "tlds",
             "required": false,
-            "description": "comma-separated subset of the sellable TLDs"
+            "description": "comma-separated TLDs to search, at most 50; omitted, the registrar suggests extensions"
           },
           {
             "schema": {
@@ -2615,7 +2761,7 @@
     "/orgs/{orgId}/projects": {
       "post": {
         "operationId": "createProject",
-        "summary": "Provision a project (DB + storage + compute)",
+        "summary": "Create an empty project with its default `main` branch — add services afterwards",
         "tags": [
           "Projects"
         ],
@@ -2693,7 +2839,7 @@
         "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
         "x-mint": {
           "metadata": {
-            "title": "Provision a project (DB + storage + compute)",
+            "title": "Create an empty project with its default `main` branch — add services afterwards",
             "sidebarTitle": "Create project"
           }
         }

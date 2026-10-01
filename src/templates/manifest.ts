@@ -8,6 +8,7 @@
 // to 400. Canonical credential keys come from ../manageddb (the same catalog the engine mints from),
 // not from a second copy of the table.
 import { createHash, randomBytes } from 'node:crypto'
+import { posix } from 'node:path'
 import YAML from 'yaml'
 import { CANONICAL_KEYS } from '../manageddb'
 
@@ -75,6 +76,10 @@ export type TemplateService = {
    *  bot long-polling its platform) is never woken by traffic at all, so staying warm is
    *  correctness rather than latency. */
   alwaysOn?: boolean
+  /** Start command, run through `sh -c`. Absent = the image's own. Parsed for digest parity, refused at execution. */
+  command?: string
+  /** Where the volume mounts. Only with `volume: true`. Absent = /data. Parsed for digest parity, refused at execution. */
+  mountPath?: string
   env: TemplateServiceEnv
 }
 
@@ -243,7 +248,7 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
     // so a manifest has nothing to configure on it and anything it set would be silently ignored.
     // Refused with the field named.
     if (type === 'postgres') {
-      for (const field of ['image', 'build', 'port', 'healthcheck', 'volume', 'volumeGib', 'spec', 'alwaysOn'] as const) {
+      for (const field of ['image', 'build', 'port', 'healthcheck', 'volume', 'volumeGib', 'spec', 'alwaysOn', 'command', 'mountPath'] as const) {
         if (rawSvc[field] !== undefined) return bad(`${at}.${field}: a postgres service is platform-managed and carries no ${field} (declare it bare: { type: postgres })`)
       }
       // env must be absent or an EXACT empty shell (known group names, each an empty map): the
@@ -297,6 +302,23 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
     } else if (rawSvc.volumeGib !== undefined) {
       volume = true
     }
+    let command: string | undefined
+    if (rawSvc.command !== undefined) {
+      command = scalarString(rawSvc.command, `${at}.command`).trim()
+      if (!command) return bad(`${at}.command must be a non-empty string`)
+    }
+    let mountPath: string | undefined
+    if (rawSvc.mountPath !== undefined) {
+      if (!volume) return bad(`${at}.mountPath requires volume: true`)
+      const raw = scalarString(rawSvc.mountPath, `${at}.mountPath`)
+      if (!raw.trim()) return bad(`${at}.mountPath must be an absolute path`)
+      try {
+        mountPath = normalizeMountPath(raw)
+      } catch (e) {
+        // The validator names the field `mountPath` already, so only the location is prefixed.
+        return bad(`${at}.${(e as Error).message}`)
+      }
+    }
 
     const rawEnv = rawSvc.env === undefined ? {} : rawSvc.env
     if (!isRecord(rawEnv)) return bad(`${at}.env must be a map`)
@@ -336,7 +358,12 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
       }
     }
 
-    services[name] = { type, image, build, port, healthcheck, volume, alwaysOn, env: { fixed, generated: generatedEnv, platform, required, optional } }
+    services[name] = {
+      type, image, build, port, healthcheck, volume, alwaysOn,
+      ...(command !== undefined ? { command } : {}),
+      ...(mountPath !== undefined ? { mountPath } : {}),
+      env: { fixed, generated: generatedEnv, platform, required, optional },
+    }
   }
 
   // env.platform refs are validated once ALL services are parsed (a web service may reference a
@@ -726,4 +753,19 @@ export function capLogTail(tail: string): string {
   const budget = LOG_TAIL_MAX_BYTES - Buffer.byteLength(LOG_TAIL_TRUNCATION_MARKER, 'utf8')
   const start = buf.length - budget
   return `${LOG_TAIL_TRUNCATION_MARKER}${buf.subarray(start).toString('utf8')}`
+}
+
+// Ported from the platform's volume-path.ts: same rules, same messages.
+const RESERVED_MOUNTS = ['/', '/bin', '/boot', '/dev', '/etc', '/home', '/lib', '/lib32', '/lib64', '/libx32', '/proc', '/root', '/run', '/sbin', '/sys', '/usr', '/var']
+function normalizeMountPath(value: string): string {
+  const path = value.trim()
+  if (path.length > 255) throw new Error('mountPath must be at most 255 characters')
+  if (!path.startsWith('/')) throw new Error('mountPath must be an absolute path')
+  if (!/^[a-zA-Z0-9._/\-]+$/.test(path)) throw new Error("mountPath may contain only letters, digits, '.', '-', '_' and '/'")
+  if (path.split('/').includes('..')) throw new Error('mountPath must not contain ..')
+  const clean = posix.normalize(path).replace(/\/$/, '') || '/'
+  if (RESERVED_MOUNTS.includes(clean) || ['/dev', '/proc', '/sys', '/.insta'].some((p) => clean === p || clean.startsWith(p + '/'))) {
+    throw new Error('mountPath is reserved by the container runtime')
+  }
+  return clean
 }

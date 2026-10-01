@@ -17,8 +17,6 @@ services:
     image: ghcr.io/insforge/insta-oss/templates/codex:0.8.3   # built from ./Dockerfile by templates-build-images.yml
     port: 7681
     healthcheck: /
-    # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works (hermes and n8n
-    # cannot). Costs a ~25s cold boot, and an agent left running with no browser is stopped.
     volume: true
     env:
       fixed:

@@ -23,11 +23,13 @@ PROJECT=$(curl -s -X POST $API/orgs/$ORG/projects \
   -H "Authorization: Bearer $MASTER" -H "Content-Type: application/json" \
   -d '{"name":"acme"}' | jq -r .project.id)
 
-# 2. A token bound to that project alone. The plaintext is returned once;
-#    store it with the customer record.
-TOKEN=$(curl -s -X POST $API/tokens \
+# 2. A token bound to that project alone. The plaintext (.token) is returned
+#    once; store it, and the record id, with the customer record.
+MINT=$(curl -s -X POST $API/tokens \
   -H "Authorization: Bearer $MASTER" -H "Content-Type: application/json" \
-  -d "{\"name\":\"acme\",\"orgId\":\"$ORG\",\"projectId\":\"$PROJECT\"}" | jq -r .token)
+  -d "{\"name\":\"acme\",\"orgId\":\"$ORG\",\"projectId\":\"$PROJECT\"}")
+TOKEN=$(echo "$MINT" | jq -r .token)
+TOKEN_ID=$(echo "$MINT" | jq -r .record.id)
 
 # 3. Everything for this customer now runs under $TOKEN.
 curl -s -X POST $API/projects/$PROJECT/services -H "Authorization: Bearer $TOKEN" \
@@ -82,7 +84,8 @@ Billing reads over the same API, with the same tokens. Read-only tokens are acce
 curl -s $API/projects/$PROJECT/usage -H "Authorization: Bearer $TOKEN"
 
 # An app's bill: byService splits the same money per service, deleted
-# services included. In a shared project, each customer's line item.
+# services included. In a shared project, each customer's app is its own
+# line; shared services (the Postgres, say) keep theirs.
 curl -s $API/projects/$PROJECT/usage -H "Authorization: Bearer $TOKEN" \
   | jq '.byService[] | {name, type, totalCostUsd}'
 
@@ -118,7 +121,7 @@ curl -s -X DELETE $API/projects/$PROJECT -H "Authorization: Bearer $MASTER"
 curl -s -X DELETE $API/tokens/$TOKEN_ID -H "Authorization: Bearer $MASTER"
 ```
 
-`.../suspend` also takes an app down, but it may wake on the next request; only stop guarantees it stays off. A whole project stops by stopping its compute services: its [Postgres suspends when idle](/postgres/overview) on its own and bills only for storage. `$TOKEN_ID` is the token record's `id`, answered when it was minted.
+`.../suspend` also takes an app down, but it may wake on the next request; only stop guarantees it stays off. A whole project stops by stopping its compute services: its [Postgres suspends when idle](/postgres/overview) on its own and bills only for storage. `$TOKEN_ID` was captured when the token was minted in section 2.
 
 ## Enterprise plans
 

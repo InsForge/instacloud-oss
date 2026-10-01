@@ -65,10 +65,10 @@ Where the record stands, and what each row rests on:
 | `pi` | yes | yes | Same base and ttyd asset as the other terminal templates |
 | `whisper-turbo` | yes | **no** | `debian:bookworm-slim` carries both, but upstream's `make server` target compiles `-DWHISPER_X86` against the AVX2/AVX-512/VNNI kernels in `src/x86`. The generic C fallback in the tree is not wired into that target, so there is nothing to build for arm64 and the row says so rather than shipping a broken index |
 
-Every row above was checked by building the template for `linux/arm64` on an arm64 machine and
-starting the resulting image until it answered its own manifest healthcheck. Re-check a row the
-same way rather than trusting it after a base image or upstream version moves. The one `no` row is
-the other half of the same rule: an upstream that genuinely builds for one architecture declares
+Every row above except `clickhouse`, which says what it rests on instead, was checked by building
+the template for `linux/arm64` on an arm64 machine and starting the resulting image until it
+answered its own manifest healthcheck. Re-check a row the same way rather than trusting it after a
+base image or upstream version moves. The `no` rows are the other half of the same rule: an upstream that genuinely builds for one architecture declares
 one, and a user on the other is refused before the deploy creates anything.
 
 ## Logo attribution
@@ -85,7 +85,7 @@ because an RGBA file can still be fully opaque.
 | `hermes` | `logo.png` 512x512 | yes (corner alpha 0) | fixed light plate | Upstream's own app icon, `apps/desktop/assets/icon.png` at 1024x1024, downscaled. This row used to name the NousResearch GitHub org avatar and claim upstream published no transparent mark; that icon disproves it. No vector option: upstream's only SVG is a bare `⚕` glyph in the default font, which the rules below reject. Stored greyscale+alpha, halving the bytes for a max difference of 3/255 on a single pixel. The white plate is part of the artwork, not a background: the character's face is the plate showing through, so cutting it out would erase the face |
 | `dsh` | `logo.svg` 2.0 KB | yes (vector) | fixed `#5786FE` | DeepSeek's mark, on DeepSeek's own project. The same file the delisted `deepseek-hermes` carried, where it was the weaker case: branding someone else's agent. Upstream's `BRAND_GUIDELINES.md` asks projects not to imply endorsement, which naming their own harness does not |
 | `n8n` | `logo.svg` 1.6 KB | yes (vector) | fixed `#EA4B71` | n8n's brand mark |
-| `clickhouse` | `logo.svg` 586 B | yes (vector) | **adapts** via `prefers-color-scheme` (`#151515` light, `#ffffff` dark) | ClickHouse's own mark, `static/img/clickhouse-logo-mark.svg` in `ClickHouse/clickhouse-docs`, taken byte for byte. Five rounded rects, no `<text>`. Preferred over the favicon `clickhouse.com` serves at `/icon0.svg`, which is the same five bars baked onto an opaque `#161616` plate |
+| `clickhouse` | `logo.svg` 434 B | no, upstream's own plate (vector) | fixed `#FCFF74` bars on `#161616` | ClickHouse's app icon, `clickhouse.com/icon0.svg`, taken byte for byte (sha256 `97e3c3f3...`). The current brand yellow ships only on this plate: the transparent marks upstream publishes are the monochrome `static/img/clickhouse-logo-mark.svg` in `ClickHouse/clickhouse-docs`, which themes itself, and the retired orange-and-red `logo_without_text.svg`. 0.1.0 carried the monochrome mark and read as black bars on every gallery tile |
 | `laya` | `logo.svg` 1.3 KB | yes (vector) | fixed `#2a78d6` | Laya's own mark, `assets/logo-mark.svg` in the original repository, NandhaKishorM/laya. Paths and circles, no `<text>`. The repo also ships `logo-mark-mono.svg` and a dark lockup, but no single file that adapts on its own |
 | `openclaw` | `logo.svg` 4.6 KB | yes (vector) | fixed; includes a near-black `#050810` element | OpenClaw's mark |
 | `9router` | `logo.png` 500x500 | yes (corner alpha 0) | fixed orange `#F34E21` | 9router's own mark, taken from the copy at `i.imgur.com/yjb5HvR.png`. Upstream's repo PNG (`images/9router.png`) is a 2940x2594 screenshot of the app, not this mark, so that copy is the only place the asset is available. Please do not "correct" this row to the repo URL |

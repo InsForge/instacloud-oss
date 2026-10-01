@@ -1,13 +1,1 @@
-<svg width="36" height="36" viewBox="0 0 20.2504 20.2493" fill="none" xmlns="http://www.w3.org/2000/svg">
-<style>
-  rect { fill: #151515; }
-  @media (prefers-color-scheme: dark) {
-    rect { fill: #ffffff; }
-  }
-</style>
-<rect x="0" y="0" width="2.24992" height="20.2493" rx="0.547286"/>
-<rect x="4.5" y="0" width="2.24992" height="20.2493" rx="0.547286"/>
-<rect x="9.0002" y="0" width="2.24992" height="20.2493" rx="0.547286"/>
-<rect x="13.4993" y="0" width="2.24992" height="20.2493" rx="0.547286"/>
-<rect x="18.0005" y="7.8752" width="2.24992" height="4.49985" rx="0.547286"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect width="512" height="512" rx="8" fill="#161616"/><g fill="#FCFF74"><rect x="83" y="83" width="38" height="346" rx="3"/><rect x="160" y="83" width="38" height="346" rx="3"/><rect x="237" y="83" width="38" height="346" rx="3"/><rect x="314" y="83" width="38" height="346" rx="3"/><rect x="391" y="218" width="38" height="76" rx="3"/></g></svg>

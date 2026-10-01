@@ -13,6 +13,12 @@ if [ -z "${ADMIN_USERNAME:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
     exit 1
 fi
 
+# Upstream writes the name into users.d/default-user.xml as an element name, so refuse what XML cannot hold.
+if ! [[ "${ADMIN_USERNAME}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "$0: ADMIN_USERNAME '${ADMIN_USERNAME}' must be letters, digits and underscores, not starting with a digit." >&2
+    exit 1
+fi
+
 CLICKHOUSE_USER="${ADMIN_USERNAME}"
 CLICKHOUSE_PASSWORD="${ADMIN_PASSWORD}"
 export CLICKHOUSE_USER CLICKHOUSE_PASSWORD

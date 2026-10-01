@@ -75,17 +75,50 @@ Either way, the organization's audit stream (`GET /orgs/{orgId}/events/stream`) 
 
 ## 4. Check the bill, stop the spend
 
-Billing reads over the same API, with the same tokens:
+Billing reads over the same API, with the same tokens. Read-only tokens are accepted on every call here, so a customer-facing dashboard can make them directly:
 
-- **A project's bill**: `GET /projects/{projectId}/usage` returns the current cycle's spend across the 5 billing dimensions; `from` and `to` select another window, and `/usage/daily` gives the day-by-day series. Read-only tokens are accepted, so a customer-facing dashboard can call it directly.
-- **An app's bill**: the same response carries `byService`, the same money split per service, deleted services included; spend with no recoverable service lands in one unattributed bucket. In a shared project, that is each customer's line item with no accounting of your own.
-- **All customers at once**: `GET /orgs/{orgId}/usage` with the master token rolls spend up per project, deleted projects included, so a final bill still reads after offboarding.
+```bash
+# A project's bill: the current cycle's spend across the 5 billing dimensions.
+curl -s $API/projects/$PROJECT/usage -H "Authorization: Bearer $TOKEN"
 
-Stopping is just as direct. Idle customers already stay cheap on their own, compute [scales to zero](/compute/overview) by default (workers and always-on services keep running, and billing); stopping is for taking a customer offline on purpose. Service ids come from `GET /projects/{projectId}/services`:
+# An app's bill: byService splits the same money per service, deleted
+# services included. In a shared project, each customer's line item.
+curl -s $API/projects/$PROJECT/usage -H "Authorization: Bearer $TOKEN" \
+  | jq '.byService[] | {name, type, totalCostUsd}'
 
-- **Stop an app**: `POST /projects/{projectId}/services/{serviceId}/stop` takes the compute offline and keeps it offline: traffic is refused rather than woken, so a stopped customer accrues no further compute charges (stored data still bills). `POST .../start` brings it back. (`.../suspend` also takes an app down, but it may wake on the next request; only stop guarantees it stays off.)
-- **Stop a project**: stop its compute services. The project's [Postgres suspends when idle](/postgres/overview) on its own and bills only for storage.
-- **Offboard for good**: `DELETE /projects/{projectId}` and `DELETE /tokens/{tokenId}`, with the master token.
+# Day by day over a window (unix seconds; default = current cycle).
+curl -s "$API/projects/$PROJECT/usage/daily?from=1788220800&to=1790812800" \
+  -H "Authorization: Bearer $TOKEN"
+
+# All customers at once: the org roll-up, per project, deleted projects
+# included, so a final bill still reads after offboarding. Master token.
+curl -s $API/orgs/$ORG/usage -H "Authorization: Bearer $MASTER"
+```
+
+Spend with no recoverable service lands in `byService`'s one unattributed bucket, so the split still sums to the project total.
+
+Stopping is just as direct. Idle customers already stay cheap on their own, compute [scales to zero](/compute/overview) by default (workers and always-on services keep running, and billing); stopping is for taking a customer offline on purpose:
+
+```bash
+# The app's service id, from the services list.
+SERVICE=$(curl -s $API/projects/$PROJECT/services -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.services[] | select(.name == "acme") | .id')
+
+# Stop the app and keep it off: traffic is refused rather than woken, so the
+# customer accrues no further compute charges (stored data still bills).
+curl -s -X POST $API/projects/$PROJECT/services/$SERVICE/stop \
+  -H "Authorization: Bearer $TOKEN"
+
+# Bring it back.
+curl -s -X POST $API/projects/$PROJECT/services/$SERVICE/start \
+  -H "Authorization: Bearer $TOKEN"
+
+# Offboard for good: the project and its token. Master token only.
+curl -s -X DELETE $API/projects/$PROJECT -H "Authorization: Bearer $MASTER"
+curl -s -X DELETE $API/tokens/$TOKEN_ID -H "Authorization: Bearer $MASTER"
+```
+
+`.../suspend` also takes an app down, but it may wake on the next request; only stop guarantees it stays off. A whole project stops by stopping its compute services: its [Postgres suspends when idle](/postgres/overview) on its own and bills only for storage. `$TOKEN_ID` is the token record's `id`, answered when it was minted.
 
 ## Enterprise plans
 

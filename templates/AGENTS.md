@@ -158,8 +158,11 @@ the catalog holds only a reference, and it is served from a CDN pinned to the pu
   own env var (`HERMES_HOME`, `N8N_USER_FOLDER`, `HOME`) and check upstream docs for the right one.
 - Fair-code upstreams such as n8n: reference the official image, and never rebuild or rebrand it.
 - A template that exposes a terminal MUST require an access credential (for ttyd, the `-c` flag).
-- Categories are `ai-agent`, `llm` and `automation`. Propose a new one in your PR rather than
-  reaching for `other`.
+- Categories are `ai-agent`, `llm`, `automation`, `backend` (database, auth, storage and functions
+  shipped as one backend, such as Supabase) and `database` (a single datastore, such as
+  ClickHouse). Propose a new one in your PR rather than reaching for `other`. A new category also
+  needs a label in the console (`TEMPLATE_CATEGORIES`) and the marketing gallery (`CATEGORIES`),
+  or it is listed only under All.
 - `meta.draft: true` keeps a template out of the gallery while it is unfinished. Drafts are exempt
   from the logo and version-bump rules, because they publish nothing.
 - Everything in this tree is **English**, comments included. A comment only some contributors can

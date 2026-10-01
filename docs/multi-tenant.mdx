@@ -77,15 +77,13 @@ Either way, the organization's audit stream (`GET /orgs/{orgId}/events/stream`) 
 
 ## 4. Check the bill, stop the spend
 
-Billing reads over the same API, with the same tokens. Read-only tokens are accepted on every call here, so a customer-facing dashboard can make them directly:
+Billing reads over the same API. Read-only tokens are accepted on every call here, so a customer-facing dashboard can call them directly:
 
 ```bash
 # A project's bill: the current cycle's spend across the 5 billing dimensions.
 curl -s $API/projects/$PROJECT/usage -H "Authorization: Bearer $TOKEN"
 
-# An app's bill: byService splits the same money per service, deleted
-# services included. In a shared project, each customer's app is its own
-# line; shared services (the Postgres, say) keep theirs.
+# An app's bill: the same response's byService, the money split per service.
 curl -s $API/projects/$PROJECT/usage -H "Authorization: Bearer $TOKEN" \
   | jq '.byService[] | {name, type, totalCostUsd}'
 
@@ -93,12 +91,26 @@ curl -s $API/projects/$PROJECT/usage -H "Authorization: Bearer $TOKEN" \
 curl -s "$API/projects/$PROJECT/usage/daily?from=1788220800&to=1790812800" \
   -H "Authorization: Bearer $TOKEN"
 
-# All customers at once: the org roll-up, per project, deleted projects
+# All customers at once: the org roll-up per project, deleted projects
 # included, so a final bill still reads after offboarding. Master token.
 curl -s $API/orgs/$ORG/usage -H "Authorization: Bearer $MASTER"
 ```
 
-Spend with no recoverable service lands in `byService`'s one unattributed bucket, so the split still sums to the project total.
+A project with two customer apps and a shared database reads like this:
+
+```json title="GET /projects/{projectId}/usage (200)"
+{
+  "from": 1789430400, "to": 1792022400,
+  "totalCostUsd": 9.33,
+  "byService": [
+    {"name": "acme", "type": "compute", "branch": "main", "totalCostUsd": 7.18},
+    {"name": "beta", "type": "compute", "branch": "main", "totalCostUsd": 1.92},
+    {"name": "db", "type": "postgres", "branch": "main", "totalCostUsd": 0.23}
+  ]
+}
+```
+
+Each row also carries `serviceId`, `status` and the per-dimension quantities (ram, cpu, volume, storage, egress), trimmed here. Deleted services keep their rows, and spend with no recoverable service lands in one unattributed bucket, so the split still sums to the total.
 
 Stopping is just as direct. Idle customers already stay cheap on their own, compute [scales to zero](/compute/overview) by default (workers and always-on services keep running, and billing); stopping is for taking a customer offline on purpose:
 

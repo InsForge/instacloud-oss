@@ -50,7 +50,8 @@ built-in dashboard at `/dashboard`, and `POST` of raw SQL for every HTTP client.
   platform minted would be one it could never show you again, because a template variable is stored
   write-only.
 - The username is written into an XML config file as an element name, so keep it to letters, digits
-  and underscores, and do not start it with a digit.
+  and underscores, and do not start it with a digit. The server refuses to start with any other
+  name, and its log says which rule the name broke.
 
 That is all. Databases, tables and further users are created in SQL after deploy.
 

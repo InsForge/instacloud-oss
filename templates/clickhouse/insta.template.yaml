@@ -1,5 +1,5 @@
 code: clickhouse
-version: 0.1.0
+version: 0.1.1
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -15,7 +15,7 @@ upstream:
 services:
   clickhouse:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/clickhouse:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/clickhouse:0.1.1   # built from ./Dockerfile by templates-build-images.yml
     # The HTTP interface. Routing one port means the native protocol on 9000 is not reachable, so
     # clickhouse-client cannot connect; every HTTP client (clickhouse-connect, JDBC/ODBC over HTTP,
     # curl) can. The Play UI this template's Start here uses is served on this port too.

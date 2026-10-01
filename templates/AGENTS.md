@@ -134,16 +134,20 @@ upstream has no vector mark: keep it square, roughly 128 to 512 px, and under ab
 - Check the project's **product site**, not just its repository. A repo often carries only a banner
   or a README screenshot while the site serves a real mark. `pi.dev/logo-auto.svg` is where pi's
   came from, after its repository appeared to have none.
-- A mark that adapts to dark mode is strictly better than one that does not, and worth asking for.
-  pi's carries its own `@media (prefers-color-scheme: dark)` rule, so one file works on light and
-  dark surfaces alike.
+- **A mark must not theme itself.** No `@media (prefers-color-scheme)` rule. Every surface that
+  shows a logo (the console, this repo's UI, the marketing gallery) draws it inside its own neutral
+  tile, and the gallery pins that tile to the light scheme. Firefox ignores the pin inside an
+  `<img>`, so a mark that repaints itself white for dark mode disappears on the light tile. pi's
+  mark predates this rule and still themes itself.
 - Reject a `<text>`-based mark even when it is upstream's own favicon. A glyph in `system-ui`
   renders differently on every machine, and two of the upstreams here ship exactly that.
-- The asset must have **real transparency**. Check the corner pixels' alpha rather than the colour
-  type, because an RGBA file can still be fully opaque. A mark baked onto a solid background reads
-  as a coloured tile and fights whichever theme it was not drawn for.
-- Where upstream publishes nothing transparent, say so in the attribution table in
-  [README.md](README.md) and let the card put a neutral tile behind it. Do not hand-cut one.
+- Use upstream's **current** brand colours. Prefer a transparent file, and check transparency from
+  the corner pixels' alpha rather than the colour type, because an RGBA file can still be fully
+  opaque. When upstream ships its current mark only on its own plate, as an app icon or favicon,
+  use that file unchanged rather than a monochrome or retired transparent one: the surface's tile
+  frames it, so the plate reads as an app icon. `hermes` and `clickhouse` both do this.
+- Whichever file you take, record the choice in the attribution table in [README.md](README.md),
+  including why when it carries a plate. Do not hand-cut one.
 - If upstream has no mark at all, declare `meta.logo: none`. Consumers fall back to a monogram.
   That declaration gets reviewed; a missing file does not.
 

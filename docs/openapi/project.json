@@ -3064,7 +3064,7 @@
                         "type": "string"
                       },
                       "secretRefs": {
-                        "description": "header name → project secret NAME. Resolved per attempt from whatever is current, so rotating a secret does not change the identity a retry runs under.",
+                        "description": "header name → project secret NAME. Resolved per attempt from whatever is current, so rotating a secret takes effect on the next attempt with no edit to the job. Looked up in the JOB’S own branch, then its project — not the target’s — so a service in another project or branch of this org sees a different scope than its own env; for a service target IN THE SAME project and branch, secrets bound to that service also count (the same value the service reads from its env there). Only user-defined secrets resolve — platform-managed credentials such as DATABASE_URL never do. A header may not be in both `headers` and `secretRefs`.",
                         "type": "object",
                         "additionalProperties": {
                           "type": "string"
@@ -3231,7 +3231,8 @@
                         "request": {
                           "required": [
                             "method",
-                            "headerNames"
+                            "headerNames",
+                            "secretRefs"
                           ],
                           "description": "The non-secret description of the job’s request.",
                           "type": "object",
@@ -3247,6 +3248,13 @@
                               "description": "names only, literal and secret-backed alike — never values",
                               "type": "array",
                               "items": {
+                                "type": "string"
+                              }
+                            },
+                            "secretRefs": {
+                              "description": "header name → secret NAME for the secret-backed headers. Names are not credentials, so they are returned: an edit can re-send these as they are, where a literal header’s value must be supplied again.",
+                              "type": "object",
+                              "additionalProperties": {
                                 "type": "string"
                               }
                             }
@@ -3384,7 +3392,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nCreate a cron job on a branch. Gated — cron.write. 403 also when the org’s schedule quota is full, or the target service belongs to another organization.",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nCreate a cron job on a branch. Gated — cron.write. 403 also when the org is billing-suspended, its schedule quota is full, or the target service belongs to another organization.",
         "x-mint": {
           "metadata": {
             "title": "Create cron job",
@@ -3524,7 +3532,8 @@
                           "request": {
                             "required": [
                               "method",
-                              "headerNames"
+                              "headerNames",
+                              "secretRefs"
                             ],
                             "description": "The non-secret description of the job’s request.",
                             "type": "object",
@@ -3540,6 +3549,13 @@
                                 "description": "names only, literal and secret-backed alike — never values",
                                 "type": "array",
                                 "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "secretRefs": {
+                                "description": "header name → secret NAME for the secret-backed headers. Names are not credentials, so they are returned: an edit can re-send these as they are, where a literal header’s value must be supplied again.",
+                                "type": "object",
+                                "additionalProperties": {
                                   "type": "string"
                                 }
                               }
@@ -3901,7 +3917,8 @@
                         "request": {
                           "required": [
                             "method",
-                            "headerNames"
+                            "headerNames",
+                            "secretRefs"
                           ],
                           "description": "The non-secret description of the job’s request.",
                           "type": "object",
@@ -3917,6 +3934,13 @@
                               "description": "names only, literal and secret-backed alike — never values",
                               "type": "array",
                               "items": {
+                                "type": "string"
+                              }
+                            },
+                            "secretRefs": {
+                              "description": "header name → secret NAME for the secret-backed headers. Names are not credentials, so they are returned: an edit can re-send these as they are, where a literal header’s value must be supplied again.",
+                              "type": "object",
+                              "additionalProperties": {
                                 "type": "string"
                               }
                             }
@@ -4004,7 +4028,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nRead one cron job. Header values are write-only; `request` gives the method and header names.",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nRead one cron job. Header values are write-only; `request` gives the method, the header names, and the secret each secret-backed header names.",
         "x-mint": {
           "metadata": {
             "title": "Get cron job",
@@ -4022,6 +4046,7 @@
           "content": {
             "application/json": {
               "schema": {
+                "description": "Changing `target` on a POST job, or one that sends headers, requires `request` in the same PATCH: stored header values and the body are write-only and never follow the job to a new destination.",
                 "type": "object",
                 "properties": {
                   "name": {
@@ -4111,7 +4136,7 @@
                         "type": "string"
                       },
                       "secretRefs": {
-                        "description": "header name → project secret NAME. Resolved per attempt from whatever is current, so rotating a secret does not change the identity a retry runs under.",
+                        "description": "header name → project secret NAME. Resolved per attempt from whatever is current, so rotating a secret takes effect on the next attempt with no edit to the job. Looked up in the JOB’S own branch, then its project — not the target’s — so a service in another project or branch of this org sees a different scope than its own env; for a service target IN THE SAME project and branch, secrets bound to that service also count (the same value the service reads from its env there). Only user-defined secrets resolve — platform-managed credentials such as DATABASE_URL never do. A header may not be in both `headers` and `secretRefs`.",
                         "type": "object",
                         "additionalProperties": {
                           "type": "string"
@@ -4159,7 +4184,8 @@
                 }
               }
             }
-          }
+          },
+          "description": "Changing `target` on a POST job, or one that sends headers, requires `request` in the same PATCH: stored header values and the body are write-only and never follow the job to a new destination."
         },
         "parameters": [
           {
@@ -4294,7 +4320,8 @@
                         "request": {
                           "required": [
                             "method",
-                            "headerNames"
+                            "headerNames",
+                            "secretRefs"
                           ],
                           "description": "The non-secret description of the job’s request.",
                           "type": "object",
@@ -4310,6 +4337,13 @@
                               "description": "names only, literal and secret-backed alike — never values",
                               "type": "array",
                               "items": {
+                                "type": "string"
+                              }
+                            },
+                            "secretRefs": {
+                              "description": "header name → secret NAME for the secret-backed headers. Names are not credentials, so they are returned: an edit can re-send these as they are, where a literal header’s value must be supplied again.",
+                              "type": "object",
+                              "additionalProperties": {
                                 "type": "string"
                               }
                             }
@@ -4397,11 +4431,11 @@
             }
           },
           "400": {
-            "description": "missing/invalid If-Match, or an invalid expression or target",
+            "description": "missing/invalid If-Match, an invalid expression or target, or a new target without `request` on a POST job or one that sends headers",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "missing/invalid If-Match, or an invalid expression or target",
+                  "description": "missing/invalid If-Match, an invalid expression or target, or a new target without `request` on a POST job or one that sends headers",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -4531,7 +4565,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nDelete a cron job. Its run history is retained. Gated — cron.delete.",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nDelete a cron job. It stops firing and cannot be restored; its run history is no longer readable. Gated — cron.delete.",
         "x-mint": {
           "metadata": {
             "title": "Delete cron job",
@@ -4607,11 +4641,11 @@
             }
           },
           "400": {
-            "description": "missing Idempotency-Key, or the job is disabled",
+            "description": "missing, blank, or over-255-character Idempotency-Key (a paused job is still triggerable: pause stops the clock, not a manual run)",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "missing Idempotency-Key, or the job is disabled",
+                  "description": "missing, blank, or over-255-character Idempotency-Key (a paused job is still triggerable: pause stops the clock, not a manual run)",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -4657,7 +4691,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nTrigger a run now. Requires Idempotency-Key. Gated — cron.run.",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nTrigger a run now. Requires Idempotency-Key. Gated — cron.run. 403 also when the org is billing-suspended.",
         "x-mint": {
           "metadata": {
             "title": "Trigger cron job",
@@ -4879,6 +4913,13 @@
                                   "type": "string"
                                 }
                               },
+                              "secretRefs": {
+                                "description": "header name → secret NAME, as frozen for this run",
+                                "type": "object",
+                                "additionalProperties": {
+                                  "type": "string"
+                                }
+                              },
                               "requestTimeoutMs": {
                                 "type": "integer"
                               },
@@ -4919,6 +4960,7 @@
                               "target",
                               "method",
                               "headerNames",
+                              "secretRefs",
                               "requestTimeoutMs",
                               "retry"
                             ]
@@ -5185,6 +5227,13 @@
                                 "type": "string"
                               }
                             },
+                            "secretRefs": {
+                              "description": "header name → secret NAME, as frozen for this run",
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            },
                             "requestTimeoutMs": {
                               "type": "integer"
                             },
@@ -5225,6 +5274,7 @@
                             "target",
                             "method",
                             "headerNames",
+                            "secretRefs",
                             "requestTimeoutMs",
                             "retry"
                           ]
@@ -6611,11 +6661,12 @@
             }
           },
           "409": {
-            "description": "Default Response",
+            "description": "code credential_change_in_progress: another credential change for this database (a rotation or a private-access toggle) is in flight — nothing was changed and the password is not rotated; retry in a moment",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "description": "code credential_change_in_progress: another credential change for this database (a rotation or a private-access toggle) is in flight — nothing was changed and the password is not rotated; retry in a moment",
+                  "$ref": "#/components/schemas/CodedError"
                 }
               }
             }
@@ -6820,6 +6871,17 @@
               }
             }
           },
+          "409": {
+            "description": "code public_access_closed: the database's public access is closed and the console has no private lane on this deployment yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "code public_access_closed: the database's public access is closed and the console has no private lane on this deployment yet",
+                  "$ref": "#/components/schemas/CodedError"
+                }
+              }
+            }
+          },
           "502": {
             "description": "Default Response",
             "content": {
@@ -7015,6 +7077,10 @@
                     "deprecated": true,
                     "description": "DEPRECATED alias of volumeSize — dropped next release",
                     "type": "string"
+                  },
+                  "privateAccess": {
+                    "description": "insta-db only — true: give the database a private network connection string and mint DATABASE_PRIVATE_URL (with the password) into its credentials beside DATABASE_URL, which is unchanged; compute services on the insta-compute provider bind it to connect without the public endpoint. false: retract DATABASE_PRIVATE_URL (refused while public access is closed); the response `warnings` name computes still bound to it. Gated — service.setAccess. 409 {code: private_lane_disabled} until the private lane is enabled on this deployment. Public access is NOT set here: use PUT /projects/{projectId}/services/{serviceId}/access.",
+                    "type": "boolean"
                   }
                 }
               }
@@ -7141,11 +7207,12 @@
             }
           },
           "409": {
-            "description": "Default Response",
+            "description": "code private_lane_disabled: private network access is not yet available on this deployment. code private_lane_unavailable_in_region: the database's region has no private network lane yet — privateAccess was turned back off and nothing was minted. code credential_change_in_progress (privateAccess only): another credential change for this database (a private-access toggle or a password rotation) is in flight — nothing was changed; retry in a moment",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "description": "code private_lane_disabled: private network access is not yet available on this deployment. code private_lane_unavailable_in_region: the database's region has no private network lane yet — privateAccess was turned back off and nothing was minted. code credential_change_in_progress (privateAccess only): another credential change for this database (a private-access toggle or a password rotation) is in flight — nothing was changed; retry in a moment",
+                  "$ref": "#/components/schemas/CodedError"
                 }
               }
             }
@@ -7161,7 +7228,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nUpdate postgres settings: connection pooling, scale-to-zero, idle timeout, storage, and deletion protection.",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nUpdate postgres settings: connection pooling, scale-to-zero, idle timeout, storage, deletion protection, and private network access.",
         "x-mint": {
           "metadata": {
             "title": "Update database settings",
@@ -7373,6 +7440,17 @@
               }
             }
           },
+          "409": {
+            "description": "code public_access_closed: the database's public access is closed and the console has no private lane on this deployment yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "code public_access_closed: the database's public access is closed and the console has no private lane on this deployment yet",
+                  "$ref": "#/components/schemas/CodedError"
+                }
+              }
+            }
+          },
           "502": {
             "description": "Default Response",
             "content": {
@@ -7568,6 +7646,17 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "code public_access_closed: the database's public access is closed and the console has no private lane on this deployment yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "code public_access_closed: the database's public access is closed and the console has no private lane on this deployment yet",
+                  "$ref": "#/components/schemas/CodedError"
                 }
               }
             }
@@ -7842,7 +7931,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nDeploy events for a Fly-backed service (machine lifecycle events; compute and managed databases)",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nDeploy events for a compute service (machine lifecycle events; compute and managed databases)",
         "x-mint": {
           "metadata": {
             "title": "Get deploy events",
@@ -8413,7 +8502,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nRuntime logs (compute and managed Fly databases via Fly Logs API; DB via provider API when available)",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nRuntime logs (compute and managed databases via the compute plane's logs API; DB via provider API when available)",
         "x-mint": {
           "metadata": {
             "title": "Get logs",
@@ -8575,7 +8664,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nResource metrics (compute and managed Fly databases via Fly Prometheus; insta-db serves CPU/memory/storage series, other database providers return a note instead)",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nResource metrics (compute and managed databases via the compute plane's metrics API; insta-db serves CPU/memory/storage series, other database providers return a note instead)",
         "x-mint": {
           "metadata": {
             "title": "Get metrics",
@@ -8761,10 +8850,11 @@
                               "crashed",
                               "starting",
                               "standby",
+                              "offline",
                               "none",
                               "unknown"
                             ],
-                            "description": "healthy = started and answering (compute: at least one replica ready; postgres: instance running) · crashed = started but the check is critical / the machine or instance is in a failed state · starting = booting, no ready replicas yet · standby = scaled to zero at rest, wakes on request (normal) · none = nothing deployed yet · unknown = the provider could not be read, or reported a state we don't recognize"
+                            "description": "healthy = started and answering (compute: at least one replica ready; postgres: instance running) · crashed = started but the check is critical / the machine or instance is in a failed state · starting = booting, no ready replicas yet · standby = scaled to zero at rest, wakes on request (normal) · offline = held down on purpose and NOT waking on request: stopped by the developer (start it to bring it back), or a reserved identity with no machine behind it yet (deploy to it) — insta-compute only · none = nothing deployed yet · unknown = the provider could not be read, or reported a state we don't recognize"
                           },
                           "machines": {
                             "description": "machines/instances the provider still knows about",
@@ -8773,6 +8863,15 @@
                           "failing": {
                             "description": "machines/instances failed or carrying a critical check",
                             "type": "integer"
+                          },
+                          "lastRequestAt": {
+                            "format": "date-time",
+                            "description": "insta-compute only — when the plane last saw this service active, the clock its idle sweep consults before suspending. Omitted until the first activity, and on a plane that predates it. Evidence, not liveness: reading it renews nothing.",
+                            "type": "string"
+                          },
+                          "lastActivitySource": {
+                            "description": "insta-compute only — what the last activity was: inbound_http · inbound_tcp · inbound_ip · outbound (measured egress, e.g. a worker calling a model) · shell_session · ready (a readiness probe) · unknown (recorded before the plane kept provenance). Open vocabulary: the plane may add sources.",
+                            "type": "string"
                           },
                           "desiredReplicas": {
                             "minimum": 1,
@@ -9820,7 +9919,7 @@
                     "type": "integer"
                   },
                   "alwaysOn": {
-                    "description": "compute only — idle mode at creation. Omitted: the platform default (INSTA_COMPUTE_ALWAYS_ON_DEFAULT; true on InstaCloud: machines never scale to zero). false = scale-to-zero: idle machines suspend and wake on request. All plans; billing is actual usage either way.",
+                    "description": "compute only — idle mode at creation. Omitted: the platform default (INSTA_COMPUTE_ALWAYS_ON_DEFAULT; false on InstaCloud: scale-to-zero — a machine with no inbound or outbound traffic suspends and wakes on the next request). true = always-on: machines never scale to zero. A worker (port 0) is always-on regardless; false with port 0 is refused. All plans; billing is actual usage either way.",
                     "type": "boolean"
                   },
                   "volumeMountPath": {
@@ -9830,6 +9929,10 @@
                   "volumeGib": {
                     "minimum": 1,
                     "description": "compute only — attach a persistent volume of this many whole Gi (attachable later too via PUT /services/:id/volume; the volume never detaches, but DELETE /services/:id/volume destroys it, data and all). Any plan may create up to the configured free volume cap (10Gi by default, env-overridable per deployment); a larger size is paid and capped at the org's own plan cap (50Gi on paid plans by default), like growing it later. Constraints: machineCount stays 1, and scale-to-zero uses stop (cold wake) instead of suspend — both lift if the volume is deleted.",
+                    "type": "integer"
+                  },
+                  "pgVersion": {
+                    "description": "postgres only — the Postgres major version to create the database on: 16, 17, 18. Omitted: the platform default (INSTA_DB_POSTGRES_MAJOR; 16 on InstaCloud). Fixed for the database's lifetime; branches keep it. 501 when the database provider cannot create that major yet.",
                     "type": "integer"
                   },
                   "source": {
@@ -10043,6 +10146,17 @@
               }
             }
           },
+          "501": {
+            "description": "the database provider cannot create the requested pgVersion yet — nothing was created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "the database provider cannot create the requested pgVersion yet — nothing was created",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "502": {
             "description": "the provider could not provision the service — nothing was created; safe to retry",
             "content": {
@@ -10192,7 +10306,7 @@
                     "type": "string"
                   },
                   "alwaysOn": {
-                    "description": "true = machines never autostop (the platform default for new compute services); false = scale-to-zero",
+                    "description": "true = machines never autostop; false = scale-to-zero (the platform default for new compute services; refused on a worker)",
                     "type": "boolean"
                   },
                   "memoryMb": {
@@ -10438,7 +10552,7 @@
                 "type": "object",
                 "properties": {
                   "public": {
-                    "description": "true = anonymous public-read; false = private (credential-gated)",
+                    "description": "storage: true = anonymous public-read, false = private (credential-gated). postgres: true = reachable on the public endpoint (the default), false = not reachable from the internet",
                     "type": "boolean"
                   }
                 }
@@ -10477,6 +10591,13 @@
                   "properties": {
                     "service": {
                       "$ref": "#/components/schemas/Service"
+                    },
+                    "impact": {
+                      "$ref": "#/components/schemas/AccessImpact"
+                    },
+                    "notice": {
+                      "description": "postgres, when the access actually changed: it takes effect on the database proxy within about 30 seconds (connections opened before then may still use the previous setting). Absent when nothing changed.",
+                      "type": "string"
                     }
                   }
                 }
@@ -10530,13 +10651,112 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "postgres: code private_lane_disabled — closing public access needs the private network lane, which is not yet available on this deployment (re-opening is never refused)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "postgres: code private_lane_disabled — closing public access needs the private network lane, which is not yet available on this deployment (re-opening is never refused)",
+                  "$ref": "#/components/schemas/CodedError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "the provider refused the change for the named bucket; the service flag is unchanged, and buckets earlier in the lineage may already have switched — retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "the provider refused the change for the named bucket; the service flag is unchanged, and buckets earlier in the lineage may already have switched — retry",
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nSet a service's public access mode. Storage: anonymous public-read on the bucket (lineage-wide). Managed databases (redis/mysql/mongodb): expose the database port on a dedicated public IP at <app>.fly.dev and mint *_PUBLIC_URL/*_PUBLIC_HOST credentials (branch-scoped; internal credentials never move; password-auth on the open internet — a dev/test posture). Gated — service.setAccess.",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nSet a service's public access mode. Storage: anonymous public-read on the bucket (lineage-wide). Managed databases (redis/mysql/mongodb): expose the database port on a dedicated public hostname and mint *_PUBLIC_URL/*_PUBLIC_HOST credentials (branch-scoped; internal credentials never move; password-auth on the open internet — a dev/test posture). Postgres (insta-db): born public; false closes the public endpoint (it refuses every connection with SQLSTATE 28000) so the database is not reachable from the internet and only the private network lane connects — requires private access on first (PATCH .../database/settings {privateAccess:true}), branch-scoped, and the response `impact` lists what will break (GET .../access/impact previews it). A change reaches the database proxy within about 30 seconds (the response `notice` says so); re-opening a database that is already public makes no provider call. Gated — service.setAccess.",
         "x-mint": {
           "metadata": {
             "title": "Set service access",
             "sidebarTitle": "Set service access"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/services/{serviceId}/access/impact": {
+      "get": {
+        "operationId": "getServiceAccessImpact",
+        "summary": "Get service access impact",
+        "tags": [
+          "Services"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "in": "query",
+            "name": "public",
+            "required": true,
+            "description": "the access mode being considered"
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "projectId",
+            "required": true
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "serviceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessImpact"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nPreview what changing a service's public access would break, without changing anything. Postgres: closing public access (public=false) lists compute services that will lose the database (on the legacy compute plane, which cannot use the private network lane, or on insta-compute but still bound to the public DATABASE_URL) plus the external clients, CI and local development that will no longer be able to connect. Advisory only — the change is never blocked.",
+        "x-mint": {
+          "metadata": {
+            "title": "Get service access impact",
+            "sidebarTitle": "Get service access impact"
           }
         }
       }
@@ -10683,7 +10903,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nSet a compute or managed-database service always-on (never scale to zero, the platform default for new compute services) or scale-to-zero. All plans; billing is actual usage either way.",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nSet a compute or managed-database service always-on (never scale to zero) or scale-to-zero (the platform default for new compute services). A worker (port 0) cannot be set scale-to-zero. All plans; billing is actual usage either way.",
         "x-mint": {
           "metadata": {
             "title": "Set service always on",
@@ -11006,6 +11226,158 @@
           "metadata": {
             "title": "Exec service",
             "sidebarTitle": "Exec service"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/services/{serviceId}/instances/{instanceId}": {
+      "delete": {
+        "operationId": "removeServiceInstance",
+        "summary": "Remove service instance",
+        "tags": [
+          "Services"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "projectId",
+            "required": true
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "serviceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "pattern": "^inst-[a-f0-9]{12}$",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "instanceId",
+            "required": true,
+            "description": "instance id, as per-instance metrics and logs report it"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "service": {
+                      "$ref": "#/components/schemas/Service"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "approvalId": {
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "string"
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "approvalId",
+                    "action",
+                    "actions",
+                    "message",
+                    "url"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nStop one named compute instance and run one fewer (paid plans only; free → 403). The last instance cannot be removed.",
+        "x-mint": {
+          "metadata": {
+            "title": "Remove service instance",
+            "sidebarTitle": "Remove service instance"
           }
         }
       }
@@ -12293,7 +12665,7 @@
                     "type": "integer"
                   },
                   "region": {
-                    "description": "region for the compute machines (see GET /regions)",
+                    "description": "must equal the service's own region (fixed at creation); any other region is refused (400)",
                     "anyOf": [
                       {
                         "type": "string",
@@ -12427,6 +12799,16 @@
             }
           },
           "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
             "description": "Default Response",
             "content": {
               "application/json": {
@@ -13884,7 +14266,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nSuspend a compute service: takes it offline now, but on the microvm plane it still WAKES ON REQUEST (use stop to keep it offline). On legacy Fly it stays down until start. All plans.",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nSuspend a compute service: takes it offline now, but on the microvm plane it still WAKES ON REQUEST (use stop to keep it offline). On the legacy plane it stays down until start. All plans.",
         "x-mint": {
           "metadata": {
             "title": "Suspend service",
@@ -14976,6 +15358,66 @@
       }
     },
     "schemas": {
+      "AccessImpact": {
+        "description": "What changing a service's public access will break. Advisory: the change is never blocked on it.",
+        "type": "object",
+        "properties": {
+          "warnings": {
+            "description": "human-readable consequences of the change, most specific first; empty when nothing breaks",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "services": {
+            "description": "compute services bound to this database that will lose their connection",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "compute service name",
+                  "type": "string"
+                },
+                "provider": {
+                  "$ref": "#/components/schemas/ComputeProvider"
+                },
+                "envName": {
+                  "description": "the env var the compute reads the database from",
+                  "type": "string"
+                },
+                "sourceName": {
+                  "description": "the credential it is bound to (DATABASE_URL | DATABASE_PRIVATE_URL)",
+                  "type": "string"
+                },
+                "reason": {
+                  "description": "provider-cannot-use-private-lane: the compute runs on the legacy compute plane, which has no path to the private network lane. bound-to-public-url: an insta-compute service still bound to DATABASE_URL — rebind it to DATABASE_PRIVATE_URL and redeploy.",
+                  "type": "string",
+                  "enum": [
+                    "provider-cannot-use-private-lane",
+                    "bound-to-public-url"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "envName",
+                "sourceName",
+                "reason"
+              ]
+            }
+          }
+        },
+        "required": [
+          "warnings",
+          "services"
+        ]
+      },
       "Approval": {
         "type": "object",
         "properties": {
@@ -15329,6 +15771,21 @@
           "entries"
         ]
       },
+      "CodedError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "description": "stable machine-readable reason, e.g. private_lane_disabled, private_lane_unavailable_in_region, public_access_closed, credential_change_in_progress",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
       "ComputeProvider": {
         "description": "Compute plane actually backing a compute resource, derived from its provider_ref rather than its kind. Absent when it cannot be determined from the row — clients must then assert no provider rather than assume one from `kind`.",
         "type": "string",
@@ -15402,6 +15859,21 @@
           },
           "password": {
             "type": "string"
+          },
+          "privateConnString": {
+            "description": "the private network lane twin of connString (with the password). Present only while the instance has private access.",
+            "type": "string"
+          },
+          "credentialsStored": {
+            "description": "password rotation only (insta-db) — true: the new connection strings were stored in the project secrets (DATABASE_URL, and DATABASE_PRIVATE_URL while private access is on). false: the password rotated but storing them failed, so the project secrets still carry the retired password and this response holds the only copy of the new credentials — rotate again to re-store them. Absent on a provider path that stores no credentials. Branch on this, not on `warnings` text: a warning can accompany a successful store.",
+            "type": "boolean"
+          },
+          "warnings": {
+            "description": "password rotation only — what to act on: compute services bound to this database that must be redeployed to pick up the new password, or (the rotation still succeeded) that re-storing DATABASE_URL / DATABASE_PRIVATE_URL failed, in which case this response holds the only copy of the new credentials.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -15416,6 +15888,10 @@
             "type": "string"
           },
           "connString": {
+            "type": "string"
+          },
+          "privateConnString": {
+            "description": "the private network lane twin of connString — it CONTAINS the password, exactly like connString. Present only while the instance has private access.",
             "type": "string"
           }
         }
@@ -15694,6 +16170,47 @@
               "memoryMib",
               "volumeGib"
             ]
+          },
+          "pending": {
+            "description": "true when the provider accepted the change asynchronously and it has not been applied yet — the ceiling/volume fields are then the PRE-change values. Re-read (GET) to see the applied state. Absent when the change was applied synchronously.",
+            "type": "boolean"
+          },
+          "publicAccess": {
+            "description": "postgres (insta-db) — false: the public endpoint refuses every connection (SQLSTATE 28000) and the database is not reachable from the internet; only the private network lane connects. Change it with PUT .../services/{serviceId}/access. Absent when the provider does not report it.",
+            "type": "boolean"
+          },
+          "privateAccess": {
+            "description": "postgres (insta-db) — true: the database has a private network connection string (privateConnString, and DATABASE_PRIVATE_URL in the service credentials) for compute services on the insta-compute provider. Change it with PATCH .../database/settings {privateAccess}. Absent when the provider does not report it.",
+            "type": "boolean"
+          },
+          "privateConnString": {
+            "description": "the connection string over the private network lane, WITHOUT the password (the full URL is DATABASE_PRIVATE_URL in the service credentials). Present only while privateAccess is on.",
+            "type": "string"
+          },
+          "privateLane": {
+            "description": "GET .../database/instance only — this deployment's private-lane switches, so a UI can render the toggles without a probing write",
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "description": "the private network access toggle and closing public access are available on this deployment; false: both answer 409 {code: private_lane_disabled}",
+                "type": "boolean"
+              },
+              "console": {
+                "description": "the platform console reaches databases over the private network lane; false: it uses the public endpoint, so it cannot browse a database whose public access is closed",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled",
+              "console"
+            ]
+          },
+          "warnings": {
+            "description": "what this change will break and how to fix it (e.g. compute services bound to DATABASE_PRIVATE_URL when private access is turned off). Advisory: the change was applied.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -15892,7 +16409,7 @@
             "type": "string"
           },
           "origin": {
-            "description": "Fly event source (e.g. 'flyd', 'user')",
+            "description": "event source as the compute plane reports it",
             "type": "string"
           },
           "instance": {
@@ -15905,7 +16422,7 @@
         "type": "object",
         "properties": {
           "source": {
-            "example": "fly-machine-events",
+            "example": "insta-compute",
             "type": "string"
           },
           "events": {
@@ -16044,7 +16561,7 @@
         "type": "object",
         "properties": {
           "source": {
-            "example": "fly-logs",
+            "example": "insta-compute",
             "type": "string"
           },
           "lines": {
@@ -16099,7 +16616,7 @@
         "type": "object",
         "properties": {
           "source": {
-            "example": "fly-prometheus",
+            "example": "insta-compute",
             "type": "string"
           },
           "series": {
@@ -16452,7 +16969,7 @@
             "type": "string"
           },
           "ref": {
-            "description": "Non-credential identifiers (e.g. fly url, bucket name, database project id)",
+            "description": "Non-credential identifiers (e.g. service url, bucket name, database project id)",
             "type": "object",
             "additionalProperties": true
           }
@@ -16773,7 +17290,7 @@
             ]
           },
           "always_on": {
-            "description": "compute only — true (the platform default for new compute services): machines never scale to zero; false: idle machines suspend and wake on request. Billing is actual usage either way.",
+            "description": "compute only — true: machines never scale to zero; false (the platform default for new compute services, except workers): idle machines suspend and wake on request. Billing is actual usage either way.",
             "type": "boolean"
           },
           "websocket": {
@@ -16797,7 +17314,7 @@
             ]
           },
           "public": {
-            "description": "storage only — bucket(s) served with anonymous public-read",
+            "description": "storage — bucket(s) served with anonymous public-read; managed databases — the database port is exposed on a public address; postgres — the public endpoint accepts connections (true by default; false = not reachable from the internet, private network lane only)",
             "type": "boolean"
           },
           "image": {
@@ -16905,14 +17422,6 @@
           "source_id": {
             "format": "uuid",
             "description": "the service source that queued it; null once that source was disconnected",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "repo_binding_id": {
-            "format": "uuid",
-            "description": "DEPRECATED — set only on builds queued before sources existed; null for every new build",
             "type": [
               "string",
               "null"

@@ -30,5 +30,13 @@
     <logger>
         <console>1</console>
         <console_log_level>information</console_log_level>
+        <!-- The file log stays, at the stock `trace`, for anyone who shells in. What does not stay
+             is the stock rotation policy of 1000M x 10, which allows 10 GB of it on a container
+             root filesystem the server itself measures at 1 GiB and warns about on every boot
+             ("Available disk space for logs at server startup is too low (1GiB)"). 100M x 3 is a
+             rotating set that cannot outgrow the filesystem it sits on. Deliberately NOT moved to
+             the volume: that would spend a user's disk on log files. -->
+        <size>100M</size>
+        <count>3</count>
     </logger>
 </clickhouse>

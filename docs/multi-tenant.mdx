@@ -7,9 +7,9 @@ InstaCloud supports multi-tenancy out of the box: to make each of your customers
 
 ## 1. Provision the master token
 
-Your backend keeps one **master token**: an organization-scoped API token, minted once (`insta tokens create master --org <orgId>`). It acts as your backend's master key: it is the credential that creates projects and [mints narrower tokens](/reference/api/overview#minting-a-token), never wider than itself, and it never leaves your backend.
+Your backend keeps one **master token**: an organization-scoped API token, minted once (`insta tokens create master --org <orgId>`). It is the credential that creates projects and [mints narrower tokens](/reference/api/overview#minting-a-token), never wider than itself, and it never leaves your backend.
 
-From there, give each customer the isolation boundary that matches how much they touch. In doubt, take a project per customer.
+From there, give each customer the isolation boundary that matches how much they touch. When in doubt, take a project per customer.
 
 ## 2. A project per customer
 
@@ -44,25 +44,11 @@ curl -s -X POST $API/projects/$PROJECT/deploy -H "Authorization: Bearer $TOKEN" 
   -d '{"image":"ghcr.io/you/tenant-app:1.0.0","group":"app","port":3000}'
 ```
 
-The responses are plain JSON. Creating the project answers with the project row and its default branch; minting the token answers once with the plaintext:
-
-```json title="POST /orgs/{orgId}/projects (201)"
-{"project":{"id":"36b7fe0a-87a1-4db4-8fc5-9b2188962afe","org_id":"86e77ca0-...","name":"acme","status":"active","agent_policy":{"mode":"full_access"},"created_at":"2026-09-29T03:28:24.245Z"},"defaultBranch":{"id":"0ba7ab98-...","name":"main"},"resources":[]}
-```
-
-```json title="POST /tokens (201)"
-{"token":"insta_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","record":{"id":"nbvAiBn5...","name":"acme","scope":"project","orgId":"86e77ca0-...","projectId":"36b7fe0a-...","access":"full","expiresAt":null,"createdAt":"2026-09-29T03:28:24.873Z"}}
-```
-
 The project token is the isolation boundary, so hand it to the customer's runtime without worry:
 
 - It reaches its own project only. Any endpoint outside the binding answers `403 token_scope`, and it cannot mint tokens at all.
 - A second token with `"access":"read_only"` serves customer-facing dashboards: it is accepted on `GET` and `HEAD` only.
 - Each customer gets their own branches for previews and agent runs ([branch per task](/agents/branch-per-task)).
-- `GET /projects/{projectId}/usage` is that customer's bill; `/usage/daily` gives the day-by-day series.
-- Offboarding is two calls with the master token: `DELETE /projects/{projectId}` and `DELETE /tokens/{tokenId}`.
-
-Idle customers stay cheap: a project's [Postgres suspends by default](/postgres/overview) and bills only for storage, and its compute can [scale to zero](/compute/overview) the same way.
 
 ## 3. An app per customer
 
@@ -83,18 +69,27 @@ curl -s -X POST $API/projects/$PROJECT/deploy -H "Authorization: Bearer $TOKEN" 
 - Each app deploys, scales, restarts and stops on its own, without touching the rest of the fleet.
 - Logs and metrics still read per app: `GET /projects/{projectId}/logs?group=<app>`, and the same `group` filter on `/metrics`.
 - A database per customer inside the shared Postgres keeps separation clean: `POST /projects/{projectId}/database/databases`.
-- Usage is reported for the whole project, so per-customer billing needs your own accounting on top, and a growing fleet hits the plan's per-branch service caps first. When a customer outgrows the shared project, promote them to a project of their own.
+- A growing fleet hits the plan's per-branch service caps; when a customer outgrows the shared project, promote them to a project of their own.
 
 Either way, the organization's audit stream (`GET /orgs/{orgId}/events/stream`) gives you one timeline of everything every customer's infrastructure did.
 
+## 4. Check the bill, stop the spend
+
+Billing reads over the same API, with the same tokens:
+
+- **A project's bill**: `GET /projects/{projectId}/usage` returns the current cycle's spend across the 5 billing dimensions; `from` and `to` select another window, and `/usage/daily` gives the day-by-day series. Read-only tokens are accepted, so a customer-facing dashboard can call it directly.
+- **An app's bill**: the same response carries `byService`, the same money split per service, deleted services included. In a shared project, that is each customer's line item with no accounting of your own.
+- **All customers at once**: `GET /orgs/{orgId}/usage` with the master token rolls spend up per project, deleted projects included, so a final bill still reads after offboarding.
+
+Stopping is just as direct. Idle customers already stay cheap on their own, compute [scales to zero](/compute/overview) by default; stopping is for taking a customer offline on purpose. Service ids come from `GET /projects/{projectId}/services`:
+
+- **Stop an app**: `POST /projects/{projectId}/services/{serviceId}/stop` takes the compute offline and keeps it offline: traffic is refused rather than woken, so a stopped customer cannot run up a bill. `POST .../start` brings it back. (`.../suspend` also takes an app down, but a new request can wake it; use stop to keep it off.)
+- **Stop a project**: stop its compute services. The project's [Postgres suspends when idle](/postgres/overview) on its own and bills only for storage.
+- **Offboard for good**: `DELETE /projects/{projectId}` and `DELETE /tokens/{tokenId}`, with the master token.
+
 ## Enterprise plans
 
-Standard plans cap how many services of each type a branch can hold, sized for one team rather than a fleet of tenants, so an app per customer hits the compute cap first and a project per customer eventually meets its own ceilings. For production multi-tenant use, contact us to be upgraded to an **Enterprise plan with custom restrictions**: limits sized to your tenant count, and guardrails where you want them, per project. Tell us what you are building and roughly how many tenants you expect:
-
-- Email [founders@insforge.dev](mailto:founders@insforge.dev), or
-- use the [contact form](https://www.instacloud.com/contact).
-
-We answer within one business day.
+Standard plans cap how many services of each type a branch can hold, sized for one team rather than a fleet of tenants. For production multi-tenant use, contact us to be upgraded to an **Enterprise plan with custom restrictions**: limits sized to your tenant count, and guardrails where you want them, per project. Email [founders@insforge.dev](mailto:founders@insforge.dev) or use the [contact form](https://www.instacloud.com/contact); we answer within one business day.
 
 ## The API design
 

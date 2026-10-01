@@ -89,9 +89,10 @@ IS the template code. Copying the closest existing template is the fastest way t
 14. `command` overrides the image's start command and runs through `sh -c`, on a web or worker service.
    It must be a non-empty string. `npm run lint` refuses an empty one, and so does publish. It is
    cloud-only today: the self-hosted runtime refuses to run it, and lint prints a warning.
-15. `mountPath` moves the volume off `/data`. It needs `volume: true` and an absolute path that is not
-   a system directory. `npm run lint` refuses the shapes the platform refuses, and so does publish. It
-   is cloud-only today, like `command`.
+15. `mountPath` moves the volume off `/data`. It needs `volume: true` and an absolute path.
+   `npm run lint` refuses a missing `volume: true` and a relative path. Publish also refuses system
+   directories, `..`, and characters other than letters, digits, `.`, `-`, `_` and `/`. It is
+   cloud-only today, like `command`.
 
 ## Architectures
 

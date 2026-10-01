@@ -78,12 +78,12 @@ Either way, the organization's audit stream (`GET /orgs/{orgId}/events/stream`) 
 Billing reads over the same API, with the same tokens:
 
 - **A project's bill**: `GET /projects/{projectId}/usage` returns the current cycle's spend across the 5 billing dimensions; `from` and `to` select another window, and `/usage/daily` gives the day-by-day series. Read-only tokens are accepted, so a customer-facing dashboard can call it directly.
-- **An app's bill**: the same response carries `byService`, the same money split per service, deleted services included. In a shared project, that is each customer's line item with no accounting of your own.
+- **An app's bill**: the same response carries `byService`, the same money split per service, deleted services included; spend with no recoverable service lands in one unattributed bucket. In a shared project, that is each customer's line item with no accounting of your own.
 - **All customers at once**: `GET /orgs/{orgId}/usage` with the master token rolls spend up per project, deleted projects included, so a final bill still reads after offboarding.
 
-Stopping is just as direct. Idle customers already stay cheap on their own, compute [scales to zero](/compute/overview) by default; stopping is for taking a customer offline on purpose. Service ids come from `GET /projects/{projectId}/services`:
+Stopping is just as direct. Idle customers already stay cheap on their own, compute [scales to zero](/compute/overview) by default (workers and always-on services keep running, and billing); stopping is for taking a customer offline on purpose. Service ids come from `GET /projects/{projectId}/services`:
 
-- **Stop an app**: `POST /projects/{projectId}/services/{serviceId}/stop` takes the compute offline and keeps it offline: traffic is refused rather than woken, so a stopped customer cannot run up a bill. `POST .../start` brings it back. (`.../suspend` also takes an app down, but a new request can wake it; use stop to keep it off.)
+- **Stop an app**: `POST /projects/{projectId}/services/{serviceId}/stop` takes the compute offline and keeps it offline: traffic is refused rather than woken, so a stopped customer accrues no further compute charges (stored data still bills). `POST .../start` brings it back. (`.../suspend` also takes an app down, but it may wake on the next request; only stop guarantees it stays off.)
 - **Stop a project**: stop its compute services. The project's [Postgres suspends when idle](/postgres/overview) on its own and bills only for storage.
 - **Offboard for good**: `DELETE /projects/{projectId}` and `DELETE /tokens/{tokenId}`, with the master token.
 

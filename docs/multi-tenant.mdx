@@ -98,7 +98,7 @@ curl -s "$API/projects/$PROJECT/usage/daily?from=1788220800&to=1790812800" \
 curl -s $API/orgs/$ORG/usage -H "Authorization: Bearer $MASTER"
 ```
 
-Spend with no recoverable service lands in `byService`'s one unattributed bucket, so the split still sums to the project total. The CLI reads the same numbers: `insta billing usage --proj <projectId>`, or bare for the whole org.
+Spend with no recoverable service lands in `byService`'s one unattributed bucket, so the split still sums to the project total.
 
 Stopping is just as direct. Idle customers already stay cheap on their own, compute [scales to zero](/compute/overview) by default (workers and always-on services keep running, and billing); stopping is for taking a customer offline on purpose:
 
@@ -121,7 +121,7 @@ curl -s -X DELETE $API/projects/$PROJECT -H "Authorization: Bearer $MASTER"
 curl -s -X DELETE $API/tokens/$TOKEN_ID -H "Authorization: Bearer $MASTER"
 ```
 
-`.../suspend` also takes an app down, but it may wake on the next request; only stop guarantees it stays off. `insta compute stop|start` is the same lifecycle from the CLI. A whole project stops by stopping its compute services: its [Postgres suspends when idle](/postgres/overview) on its own and bills only for storage. `$TOKEN_ID` was captured when the token was minted in section 2.
+`.../suspend` also takes an app down, but it may wake on the next request; only stop guarantees it stays off. A whole project stops by stopping its compute services: its [Postgres suspends when idle](/postgres/overview) on its own and bills only for storage. `$TOKEN_ID` was captured when the token was minted in section 2.
 
 ## Enterprise plans
 

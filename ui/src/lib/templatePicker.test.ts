@@ -16,12 +16,9 @@ describe('templateCategoryLabel', () => {
     expect(templateCategoryLabel('ai-agent')).toBe('AI Agent')
     expect(templateCategoryLabel('llm')).toBe('LLM')
     expect(templateCategoryLabel('automation')).toBe('Automation')
-    expect(templateCategoryLabel('data-tools')).toBe('Data tools')
-  })
-
-  it('reads backend and database off the fallback, which is why neither has a LABELS entry', () => {
     expect(templateCategoryLabel('backend')).toBe('Backend')
     expect(templateCategoryLabel('database')).toBe('Database')
+    expect(templateCategoryLabel('data-tools')).toBe('Data tools')
   })
 })
 

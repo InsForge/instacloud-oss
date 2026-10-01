@@ -110,16 +110,16 @@ A project with two customer apps and a shared database reads like this:
 }
 ```
 
-Each row also carries `serviceId`, `status` and the per-dimension quantities (ram, cpu, volume, storage, egress), trimmed here. Deleted services keep their rows, and spend with no recoverable service lands in one unattributed bucket, so the split still sums to the total.
+Each row also carries `serviceId`, `status` and its per-dimension quantities (ram, cpu, volume, storage, egress), and the response's own project-level `dimensions` array sits above `byService`; both are trimmed here. Deleted services keep their rows, and spend with no recoverable service lands in one unattributed bucket, so the split still sums to the total. Compute splits per customer; a shared Postgres stays one row, and a branch database's cost rolls onto the service it was forked from.
 
 Who may call these depends on the shape. In a project per customer, the GETs accept that customer's `read_only` token (section 2), so their dashboard can call them directly. In a shared project the response spans every customer: only your backend reads it, selects the customer's row, and serves that. The master token stays behind your backend either way.
 
-Stopping is just as direct. Idle customers already stay cheap on their own, compute [scales to zero](/compute/overview) by default (workers and always-on services keep running, and billing); stopping is for taking a customer offline on purpose:
+Stopping is just as direct. Idle customers already stay cheap on their own: compute [scales to zero](/compute/overview) by default (workers and always-on services keep running and billing); stopping is for taking a customer offline on purpose. In the shared project:
 
 ```bash
 # The app's service id, from the services list.
 SERVICE=$(curl -s $API/projects/$PROJECT/services -H "Authorization: Bearer $TOKEN" \
-  | jq -r '.services[] | select(.name == "acme") | .id')
+  | jq -r '.services[] | select(.name == "acme" and .type == "compute") | .id')
 
 # Stop the app and keep it off: traffic is refused rather than woken, so the
 # customer accrues no further compute charges (stored data still bills).
@@ -130,12 +130,19 @@ curl -s -X POST $API/projects/$PROJECT/services/$SERVICE/stop \
 curl -s -X POST $API/projects/$PROJECT/services/$SERVICE/start \
   -H "Authorization: Bearer $TOKEN"
 
-# Offboard for good: the project and its token. Master token only.
+# Offboard a shared-project customer: remove their app and its resources.
+curl -s -X DELETE $API/projects/$PROJECT/services/$SERVICE \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+`.../suspend` also takes an app down, but it may wake on the next request; only stop guarantees it stays off. A whole project stops by stopping its compute services: its [Postgres suspends when idle](/postgres/overview) on its own and bills only for storage.
+
+Offboarding a project-per-customer tenant for good is two calls with the master token, using the `$TOKEN_ID` captured at mint in section 2. This deletes that customer's entire project, so it has no place in the shared shape:
+
+```bash
 curl -s -X DELETE $API/projects/$PROJECT -H "Authorization: Bearer $MASTER"
 curl -s -X DELETE $API/tokens/$TOKEN_ID -H "Authorization: Bearer $MASTER"
 ```
-
-`.../suspend` also takes an app down, but it may wake on the next request; only stop guarantees it stays off. A whole project stops by stopping its compute services: its [Postgres suspends when idle](/postgres/overview) on its own and bills only for storage. `$TOKEN_ID` was captured when the token was minted in section 2.
 
 ## Enterprise plans
 

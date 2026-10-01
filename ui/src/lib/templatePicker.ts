@@ -8,8 +8,10 @@
 import { ALL_CATEGORIES, filterTemplates, type CatalogItem } from './catalog'
 
 /** The console's category order. A category it does not know follows, alphabetically. */
-export const TEMPLATE_CATEGORY_ORDER = ['ai-agent', 'llm', 'automation'] as const
+export const TEMPLATE_CATEGORY_ORDER = ['ai-agent', 'llm', 'automation', 'backend', 'database'] as const
 
+// No LABELS entry for backend or database: the fallback below already reads them as "Backend" and
+// "Database". LABELS is only for the ones it gets wrong.
 const LABELS: Record<string, string> = { 'ai-agent': 'AI Agent', llm: 'LLM', automation: 'Automation' }
 
 /** "AI Agent", "LLM", "Automation"; any other category reads as its words, first letter capitalised. */

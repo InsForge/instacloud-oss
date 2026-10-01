@@ -162,7 +162,11 @@ the catalog holds only a reference, and it is served from a CDN pinned to the pu
   shipped as one backend, such as Supabase) and `database` (a single datastore, such as
   ClickHouse). Propose a new one in your PR rather than reaching for `other`. A new category also
   needs a label in the console (`TEMPLATE_CATEGORIES`) and the marketing gallery (`CATEGORIES`),
-  or it is listed only under All.
+  or it is listed only under All, and it belongs in `TEMPLATE_CATEGORY_ORDER` in
+  [ui/src/lib/templatePicker.ts](../ui/src/lib/templatePicker.ts), which mirrors the console's list
+  for this repo's own UI. That third place is easy to miss: a category absent from it still gets a
+  rail entry and a correct label, it just sorts in alphabetically after the ones the console orders
+  deliberately, which is a difference nothing fails on.
 - `meta.draft: true` keeps a template out of the gallery while it is unfinished. Drafts are exempt
   from the logo and version-bump rules, because they publish nothing.
 - Everything in this tree is **English**, comments included. A comment only some contributors can

@@ -54,11 +54,8 @@ meta:
   # image only copies in a config file and a wrapper script, so there is nothing to cross-compile.
   architectures: [amd64, arm64]
   logo: ./logo.svg
-  # Draft while one call is open: whether a database whose full SQL surface is on a public URL
-  # behind one password should be in the gallery at all. It is in the pull request. The category
-  # was the other open call and is settled: `database`, which AGENTS.md's own set names ClickHouse
-  # as the example of.
-  draft: true
+  # Published: a public SQL URL behind one password was accepted, and the README says so up front.
+  draft: false
   links:
     upstream: https://github.com/ClickHouse/ClickHouse
     documentation: https://clickhouse.com/docs

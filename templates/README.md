@@ -54,7 +54,7 @@ Where the record stands, and what each row rests on:
 |---|---|---|---|
 | `9router` | yes | yes | Upstream's `0.5.55` index carries both. The Dockerfile used to pin that index's amd64 CHILD digest, which is why this template could not cross-build; it now pins the index |
 | `claude-code` | yes | yes | `node:24-bookworm-slim` is a multi-arch index, the ttyd 1.7.7 release ships an `aarch64` asset with its own pinned checksum, and the npm package is architecture-independent |
-| `clickhouse` | yes | yes | Upstream's `26.8.11.7` index carries both, and the FROM pins that index digest rather than a child. The overlay is two `COPY`s and a `chmod`, so there is nothing architecture-specific to build. Weaker than the rows above by one step while this is a draft: the arm64 half rests on the workflow's buildx push and its index check, not on anyone having started the image on an arm64 machine |
+| `clickhouse` | yes | yes | Upstream's `26.8.11.7` index carries both, and the FROM pins that index digest rather than a child. The overlay is two `COPY`s and a `chmod`, so there is nothing architecture-specific to build. Weaker than the rows above by one step: the arm64 half rests on the workflow's buildx push and its index check, not on anyone having started the image on an arm64 machine |
 | `codex` | yes | yes | Same base, same ttyd asset. `codex --version` answers inside the arm64 image, so the CLI's platform-specific parts resolved |
 | `dsh` | yes | yes | Same base. `bubblewrap` is in Debian for arm64, and the `@vscode/ripgrep` the harness bundles resolves its arm64 optional package (the Dockerfile asserts the binary exists) |
 | `hermes` | yes | yes | Upstream's `v2026.8.27` index carries both; this image only adds an entrypoint |

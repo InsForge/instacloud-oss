@@ -2,11 +2,10 @@
 
 Column-oriented SQL database for real-time analytics.
 
-> **Draft.** The template deploys and has been verified end to end; it stays out of the catalog
-> while the publish decision is pending. What a reviewer is deciding is whether a database whose
-> entire SQL surface sits on a public URL behind a single password belongs in a one-click gallery,
-> and the HTTP interface is the only one a routed port can carry, so there is no narrower face to
-> ship instead.
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/clickhouse)
+
+**The service URL is a SQL endpoint on the public internet, and the password you set at deploy is
+the only thing guarding it.** Pick a strong one, and delete the deployment when you are done.
 
 ## Overview
 
@@ -41,7 +40,8 @@ built-in dashboard at `/dashboard`, and `POST` of raw SQL for every HTTP client.
   redeploy keeps both the tables and the accounts that can read them.
 - Deploys are health-gated on `/ping`, which answers only once the server has loaded its databases.
 - The machine idle-stops and wakes on the next query, so an analytics database you touch a few
-  times a day is not billed around the clock.
+  times a day is not billed around the clock. That first query waits for the wake, measured at
+  about 22 seconds, so give your client a timeout of 30 seconds or more.
 
 ## What you need before deploying
 

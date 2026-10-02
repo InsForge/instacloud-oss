@@ -108,6 +108,12 @@ the built-in agent skills and the runtime's, which the image pins together anywa
    skills it needs are in the image at `/opt/open-slide/.claude/skills`. Anything written outside
    `/data` is lost when the container is replaced.
 
+Two things to expect on a cold start. The service scales to zero, so the first request after an
+idle period wakes the machine; nginx takes the public port only once the dev server is listening
+behind it, so that request waits rather than failing. And the first deck you open after a boot
+takes a few seconds while Vite prebundles its dependencies, reloading the page itself once when it
+finishes. Later loads are immediate.
+
 The editor's "update open-slide" action installs a newer runtime into the container's own
 filesystem, not the volume, so it is undone by the next restart. Treat the pinned image as the
 version you are running, and a template version bump as how it moves.

@@ -97,6 +97,34 @@ trap 'stopping=1; kill -TERM "${dev_pid:-}" "${nginx_pid:-}" 2>/dev/null || true
 # `wait` below.
 ./node_modules/.bin/open-slide dev --host 127.0.0.1 &
 dev_pid=$!
+
+# nginx takes the routed port only once the dev server answers on loopback, and this order is
+# load-bearing twice over. The manifest's `healthcheck: /` is satisfied by nginx's own 401, which
+# nginx serves before it has an upstream at all, so starting them together let a deploy report
+# healthy while Vite was still booting (measured: nginx up 6s ahead of it, and every request in
+# that window got a 502 from a URL the deploy had just called healthy). The same window reopens on
+# every wake from zero, where the platform's router waits for this port to open: unbound, the
+# request waits and then succeeds; bound too early, it fails.
+# /dev/tcp is bash's own, so this needs no curl or nc in the image. Bounded on purpose: a dev
+# server that never listens must fail the deploy rather than hang it past the health timeout.
+listening=0
+for _ in $(seq 1 60); do
+    if (exec 3<>/dev/tcp/127.0.0.1/5173) 2>/dev/null; then
+        listening=1
+        break
+    fi
+    if ! kill -0 "$dev_pid" 2>/dev/null; then
+        echo "entrypoint: the dev server exited before it listened on 127.0.0.1:5173" >&2
+        exit 1
+    fi
+    sleep 1
+done
+if [ "$listening" != 1 ]; then
+    echo "entrypoint: the dev server did not listen on 127.0.0.1:5173 within 60s" >&2
+    kill -TERM "$dev_pid" 2>/dev/null || true
+    exit 1
+fi
+
 nginx -c /run/open-slide/nginx.conf -g 'daemon off;' &
 nginx_pid=$!
 

@@ -124,6 +124,11 @@ EOF
             validation_context:
               trusted_ca:
                 filename: /etc/ssl/certs/ca-certificates.crt
+              # The hop crosses the public internet, so the certificate must also name this host.
+              match_typed_subject_alt_names:
+                - san_type: DNS
+                  matcher:
+                    exact: $host
 EOF
     fi
 }
@@ -181,7 +186,7 @@ run_studio() {
         export PG_META_HOST=127.0.0.1 PG_META_PORT=8080 CRYPTO_KEY="$crypto_key"
         export PG_META_DB_HOST="$db_host" PG_META_DB_PORT="$db_port" PG_META_DB_NAME="$db_name"
         export PG_META_DB_USER=postgres PG_META_DB_PASSWORD="$db_password" PG_META_DB_SSL_MODE=require
-        # Studio's connection strings carry no sslmode, so node-pg takes it from here.
+        # Studio never dials Postgres: meta dials the connstrings Studio sends, which carry no sslmode.
         export PGSSLMODE=no-verify
         exec node22 dist/server/server.js
     ) &

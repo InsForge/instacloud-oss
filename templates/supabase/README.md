@@ -30,13 +30,16 @@ file, each component gets its own service, and the database is a managed InstaCl
 
 The template's own image only puts upstream's binaries side by side (Envoy, PostgREST, the Realtime
 release, Studio, postgres-meta, the Storage API and imgproxy) and adds an entrypoint that picks one
-component per machine. Nothing is rebuilt from source. `auth` runs upstream's GoTrue image
-unchanged, with a start command that builds its database URL.
+component per machine. Nothing is rebuilt from source except the Storage API's `fs-xattr` addon,
+which upstream ships built for Alpine and is rebuilt against glibc. `auth` runs upstream's GoTrue
+image unchanged, with a start command that builds its database URL.
 
 Two pairs share a machine on purpose. postgres-meta has no authentication, so it runs next to Studio
 and listens on loopback only. imgproxy has none either, and reads the stored files straight off the
 storage volume, so it runs next to the Storage API, also on loopback. Studio's own machine refuses
 every request that did not come through the gateway, so the gateway's basic auth cannot be skipped.
+The one exception is `/healthz`, which the platform's health check calls directly and which Studio
+answers from its profile route.
 
 ## What you get by hosting it
 

@@ -19,7 +19,7 @@ const templates = readdirSync(root)
   .filter((d) => !NON_TEMPLATE.has(d) && statSync(join(root, d)).isDirectory())
   .map((dir) => ({ dir, manifest: yaml.load(readFileSync(join(root, dir, 'insta.template.yaml'), 'utf8')) }));
 
-// Set by the Dockerfile, not by the manifest, so an entrypoint may read them freely.
+// Set by the image or by bash itself (BASH_SOURCE), not by the manifest, so an entrypoint may read them freely.
 const IMAGE_PROVIDED = new Set(['HOME', 'PATH', 'PWD', 'SHELL', 'TERM', 'USER', 'LANG', 'BASH_SOURCE']);
 
 describe('valueSource: the platform resolution order', () => {

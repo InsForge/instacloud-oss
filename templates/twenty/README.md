@@ -2,7 +2,7 @@
 
 Open-source CRM for contacts, companies and deals.
 
-[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/twenty)
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/twenty)
 
 ## Overview
 
@@ -10,38 +10,37 @@ Open-source CRM for contacts, companies and deals.
 tasks, on customisable record views with a kanban and a table mode, plus workflows, a REST API and
 a GraphQL API. Upstream describes it as the open-source alternative to Salesforce.
 
-This template deploys upstream's own release image against a managed PostgreSQL and a managed Redis.
-It is the upstream application, not a reimplementation: the image is `twentycrm/twenty:v2.41.0` and
-its own entrypoint still creates the schema and runs the migrations.
+This template deploys upstream's own release image, `twentycrm/twenty:v2.44.0`, against a managed
+PostgreSQL and a managed Redis. Nothing of Twenty is rebuilt. Setup is upstream's own
+`database:init:prod`, `upgrade`, `cache:flush` and `cron:register:all`, run in upstream's order on
+every boot.
 
-Upstream's `docker-compose.yml` is four containers and this template is four services, one for
-one: the managed `db` and `cache` datastores, the `crm` web service, and the `jobs` worker. The
-worker is the same image as the web service, told which one it is by an environment variable,
-because a manifest has no `command:` key and upstream distinguishes the two only by what the
-container runs.
+Upstream's `docker-compose.yml` is four containers: PostgreSQL, Redis, the server and the worker.
+The platform supplies the first two as the managed `db` and `cache` services. The server and the
+worker run together in the `crm` service, because with local file storage they have to share a
+disk. Upstream's compose mounts one volume into both containers for the same reason.
 
 The deploy form asks for nothing. The instance comes up on upstream's own welcome page with
 sign-up open, and the first person to open the URL creates the account, names the workspace and
-becomes its admin, example records and all. Making that account is also what closes sign-up, so
-open the URL yourself before you share it.
+becomes its admin. Making that account is also what closes sign-up, so open the URL yourself before
+you share it.
 
 ## What you get by hosting it
 
 - An HTTPS URL for the CRM, with no port forwarding or tunnel to manage.
 - Upstream's sign-up flow, untouched: you pick the email, the password and the workspace name in
-  the browser, and Twenty fills the new workspace with its example companies, people,
-  opportunities and dashboard the way it does everywhere else.
+  the browser.
 - A managed PostgreSQL service holding every record, created and wired by the platform. You never
   type a database URL, and the database is backed up and resized by the platform rather than by
   this template.
 - A managed Redis for the cache and the BullMQ queues. Twenty hardcodes the BullMQ driver and
   `REDIS_URL` has no default, so this is required rather than an optimisation.
-- The worker as its own service, so Twenty's background jobs actually run: workflow executions,
-  CSV imports, search index updates, and the message and calendar sync if you connect an account.
-  It has its own machine, so a long job does not compete with the request the person in front of
-  the CRM is waiting on.
-- A persistent volume at `/data` on the web service holding uploaded attachments and workspace
-  logos (`STORAGE_LOCAL_PATH=/data/storage`), so a restart keeps the files.
+- Twenty's queue worker running beside the server, so background work actually happens: workflow
+  runs, including their code steps, scheduled triggers, search index updates, and the message and
+  calendar sync if you connect an account. It starts once the server passes its health check, and
+  restarts on its own if it exits.
+- A persistent volume at `/data` holding uploaded attachments, workspace logos and the source of
+  workflow code steps (`STORAGE_LOCAL_PATH=/data/storage`), so a restart keeps the files.
 - `APP_SECRET` and `ENCRYPTION_KEY` generated for you and stored as managed secrets. Twenty signs
   tokens with the first and encrypts stored third-party credentials with the second.
 - `SERVER_URL` already resolved to the service's own address, so invite links and email links
@@ -69,98 +68,62 @@ below are supplied for you and are listed so you know what they are, not so you 
 | `PG_DATABASE_URL` | platform | Bound to the managed `db` service's `DATABASE_URL`. Not a value you supply or can edit. |
 | `REDIS_URL` | platform | Bound to the managed `cache` service. Same: supplied by the platform. |
 
-Set by the template, not by you: `NODE_PORT=3000`, `SERVER_URL` resolved to the web service's own
+Set by the template, not by you: `NODE_PORT=3000`, `SERVER_URL` resolved to the service's own
 HTTPS URL, `STORAGE_TYPE=local`, `STORAGE_LOCAL_PATH=/data/storage`,
-`PG_SSL_ALLOW_SELF_SIGNED=true` for the managed database's TLS lane,
-`NODE_OPTIONS=--require /insta-sni.cjs` for the managed Redis's (see below), and
-`INSTA_TWENTY_ROLE`, which is the one thing that differs between the two compute services.
+`PG_SSL_ALLOW_SELF_SIGNED=true` for the managed database's TLS lane, and
+`NODE_OPTIONS=--require /insta-sni.cjs` for the managed Redis's (see below).
 
 **Why the Redis connection needs a preload.** The managed Redis lane puts many databases behind one
 TLS port and picks yours out of the handshake's server name. Twenty builds both of its Redis
 clients from `REDIS_URL` alone, with no TLS options and no setting to add any, so neither sends
 that name: the connection is opened, silently dropped, and retried forever with nothing logged. The
-image ships a nine-line `sni.cjs` that fills the name in on outbound TLS connections that left it
-blank, and `NODE_OPTIONS` preloads it. It changes nothing else, and it is the only reason this
-template can use a managed Redis at all.
+image ships a short `sni.cjs` that fills the name in on outbound TLS connections that left it
+blank, and `NODE_OPTIONS` preloads it. It changes nothing else.
 
-Both compute services are always-on, for different reasons. The worker has no choice: nothing is
-routed to a worker, so no request could ever wake it and a sleeping queue consumer is a queue that
-never drains. The web service could sleep now that the worker owns the background work, and it does
-not because Twenty's cold boot is tens of seconds, which is how long the first request after an
-idle stop would wait.
-
-**Boot order.** The worker does not start until the web service passes the health check the
-manifest declares, which is upstream's `depends_on: server: service_healthy` and the only signal
-that the migrations and the workspace upgrades have finished. Until then it waits and logs; after
-ten minutes it exits so the machine restarts and waits again, because a worker consuming jobs
-against a half-migrated schema is worse than a late worker. The web service records the version
-setup last **completed** for, on its volume, and only after every step of that setup succeeded: a
-partial upgrade leaves no marker, so the next boot runs it again rather than skipping it forever.
-Cron registration runs on every boot, after the server answers, because it is idempotent and that
-is what makes it recover from a failed attempt or a Redis that lost the repeatables.
-
-**Boot times, measured on this template.** The first deploy takes about 40 seconds from container
-start to a healthy `/healthz`, most of it Twenty creating its schema and running every migration
-before the server can listen. A restart is about the same, minus the migrations, because the
-marker sends it straight to the server. While either is happening, a small listener holds port
-3000 and answers 503, which is what stops the deploy's port probe from timing out.
-
-These numbers move with the machine. An earlier build of this template measured 105 seconds on a
-slower run, which overran the platform's 90-second health gate and reported one of two services
-unhealthy on a deploy that was in fact fine fifteen seconds later. The entrypoint's job is to keep
-that distance: on an empty database it runs the migrations and nothing else, and the cron
-registration happens only after the server answers, so it does not compete with the boot for the
-machine.
+**Boot order.** Every boot runs upstream's setup before the server starts: the migrations on an
+empty database, otherwise the upgrade and the two cache flushes, which do nothing when the schema
+is already current. A failed upgrade step is logged and retried on the next boot, the way
+upstream's own entrypoint treats it. While setup runs, a small listener holds port 3000 and
+answers 503, which is what stops the deploy's port probe from timing out. Once the server answers
+its health check, the queue worker starts and the cron jobs are registered.
 
 ## Scope
 
-**Four services, four bills.** The managed PostgreSQL and the managed Redis are each born with
-their own volume, and the web service and the worker each mount one of their own. That is the
-shape upstream's compose has; it is not a small deployment.
+**Three services, three volumes.** The managed PostgreSQL and the managed Redis are each born with
+their own volume, and `crm` mounts a third. It is not a small deployment.
 
-**The two compute services do not share a disk.** Upstream's compose gives the server and the
-worker the same `.local-storage` volume; the platform gives each service its own. Uploads are
-invisible to this, because the web service both receives and serves them, but a job that writes a
-file and expects the server to hand it back would not find it. Setting `STORAGE_TYPE=s3` and the
-`STORAGE_S3_*` variables against a bucket gives both services one store and is the right answer
-for real use.
+**It bills continuously.** `crm` is `alwaysOn: true` because the queue worker lives in it: a
+machine that slept would run no scheduled workflow and no sync until somebody opened the CRM.
 
-**Queue state lives in the managed Redis.** That is what survives a restart of either compute
-service, and it is the platform's to size and keep, not this template's.
+**Files live on the `crm` volume.** That is the right default for one machine. For more than one,
+or to keep files independent of the machine, set `STORAGE_TYPE=s3` and the `STORAGE_S3_*`
+variables against a bucket.
 
 **There is one account and the first visitor gets it.** Twenty runs in single-workspace mode
-(`IS_MULTIWORKSPACE_ENABLED` is off), where its own gate is `isSignUpEnabled = multiworkspace ||
-no workspace exists yet`: the moment a workspace exists the sign-up page answers *"New workspace
-setup is disabled"*. This template leaves that as upstream ships it, so the URL is a race until
-you have signed up. Open it yourself first, and everybody else joins by invitation from
-**Settings > Members**.
-
-**It bills continuously.** Both compute services are `alwaysOn: true`, so neither is idle-stopped
-and both are charged from deploy until you delete them.
+(`IS_MULTIWORKSPACE_ENABLED` is off), where sign-up is open only while no workspace exists. This
+template leaves that as upstream ships it, so the URL is a race until you have signed up. Open it
+yourself first, and everybody else joins by invitation from **Settings > Members**.
 
 **Self-hosted InstaCloud cannot run this template yet.** It declares a managed `redis` service, and
-the runtime in this repository parses only `web`, `worker` and `postgres`, so it skips the template
-with a warning. It deploys on the hosted platform.
+the template parser in this repository's runtime reads only `web`, `worker` and `postgres`, so it
+skips the template with a warning. It deploys on the hosted platform.
 
-**The workspace arrives with Twenty's example data in it.** Activating a workspace calls
-`prefillCreatedWorkspaceRecords`, which writes five companies (Airbnb, Anthropic, Stripe, Figma,
-Notion), five people, six opportunities and a dashboard, plus two pre-installed workflows. That is
-upstream's behaviour and v2.41.0 has no setting that turns it off. Select the rows in **Companies**
-and **People** and delete them when you want the CRM to yourself; **Workflows** in the sidebar
-removes the two automations.
+**The workspace arrives with Twenty's example data in it.** Activating a workspace fills it with
+example companies, people and opportunities, plus pre-installed workflows. That is upstream's
+behaviour and there is no setting that turns it off. Select the rows and delete them when you want
+the CRM to yourself.
 
 ## After deploy
 
 1. Open the service URL. Twenty's welcome page asks for an email and a password: what you type
-   there becomes the admin account, so do this before you hand the URL to anyone else. The
-   password must be 8 to 50 characters, which is Twenty's own rule.
+   there becomes the admin account, so do this before you hand the URL to anyone else.
 2. Name the workspace and fill in your own name when Twenty asks. Both are editable later in
    **Settings**.
 3. Invite your colleagues from **Settings > Members**. The sign-up page is closed to everyone
    else now that the workspace exists, so an invitation is the way in.
 4. Add a company and a person, or import a CSV from the record list, and the CRM is in use. The
    example records Twenty put there are yours to delete.
-5. A token from **Settings > Playground** gets you the REST API at `/rest/core/...` and the
+5. A token from **Settings > APIs & Webhooks** gets you the REST API at `/rest/...` and the
    GraphQL API at `/graphql` on the same URL.
 
 ## Licensing
@@ -175,5 +138,5 @@ software.
 - Architectures: `linux/amd64` and `linux/arm64`, as published by the upstream image.
 - Documentation: <https://twenty.com/developers/section/self-hosting>
 - Upstream: <https://github.com/twentyhq/twenty>
-- Base image: `docker.io/twentycrm/twenty`, pinned to `v2.41.0`
+- Base image: `docker.io/twentycrm/twenty`, pinned to `v2.44.0`
 - License: AGPL-3.0-only (see <https://github.com/twentyhq/twenty/blob/main/LICENSE>).

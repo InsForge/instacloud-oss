@@ -42,10 +42,11 @@ RUN EXPO_PUBLIC_API_URL=/ pnpm --dir apps/mobile exec expo export \
 
 FROM node:24-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03
 
-# nginx serves the bundle and proxies /api to the API; apache2-utils writes the credential file;
-# openssl mints the token-encryption key when the operator supplies none.
+# nginx serves the bundle and proxies /api to the API; openssl mints the token-encryption key when
+# the operator supplies none. No htpasswd: in live mode OpenMuse authenticates itself, so nginx
+# carries no basic auth and apache2-utils is not installed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        nginx apache2-utils openssl ca-certificates \
+        nginx openssl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

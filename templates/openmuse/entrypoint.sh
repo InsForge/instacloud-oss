@@ -1,18 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Neither gets a fallback on purpose. The manifest declares both required with no default and no
-# generator, so the platform always supplies them; a missing one means the image was started some
-# other way, and inventing `admin` there would publish a personal workspace, its files and its
-# browsing sessions to whoever finds the URL.
-: "${ADMIN_USERNAME:?ADMIN_USERNAME is required}"
-: "${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}"
-
-# apr1 rather than bcrypt: nginx documents apr1, crypt() and {SHA} as the forms it reads, and this
-# file is only ever read by the nginx worker in this container.
-htpasswd -bcm /etc/nginx/htpasswd "$ADMIN_USERNAME" "$ADMIN_PASSWORD" >/dev/null
-chown root:www-data /etc/nginx/htpasswd
-chmod 640 /etc/nginx/htpasswd
+# No credential is written here: in live mode OpenMuse authenticates itself with OPENMUSE_ACCESS_KEY
+# and the Bearer sessions it mints, and nginx carries no auth of its own. The access key reaches the
+# server straight from the platform's environment; this script never reads it.
 
 mkdir -p "$DATA_DIR"
 

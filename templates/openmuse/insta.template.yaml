@@ -91,7 +91,7 @@ meta:
   # and would cross-build, but nobody has run the pnpm install and the Expo export under QEMU or on
   # an arm64 machine. Adding the row means doing that, not editing this line.
   architectures: [amd64]
-  logo: none
+  logo: ./logo.png   # upstream's capybara mark (apps/mobile/assets/capybara.png), its square avatar, downscaled to 256px
   draft: true
   links:
     upstream: https://github.com/CopilotKit/OpenMuse

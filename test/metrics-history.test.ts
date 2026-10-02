@@ -336,12 +336,12 @@ test('liveSeries answers one reading per target that docker reported', () => {
 })
 
 describe('MetricsSampler', () => {
-  const PS = 'io-demo-main-app-web\trunning\nio-demo-main-pg-db\texited\nsomething-else\trunning\n'
+  const PS = 'io-demo-main-app-web\trunning\t000000000001\nio-demo-main-pg-db\texited\t000000000002\nsomething-else\trunning\t000000000003\n'
   const STATS = '{"Name":"io-demo-main-app-web","CPUPerc":"2.00%","MemUsage":"10MiB / 1GiB","NetIO":"0B / 0B"}\n'
-  const fakeDocker = (calls: string[][], stats: () => Promise<Buffer> = async () => Buffer.from(STATS)) =>
+  const fakeDocker = (calls: string[][], stats: () => Promise<Buffer> = async () => Buffer.from(STATS), ps = () => PS) =>
     async (args: string[]) => {
       calls.push(args)
-      if (args[0] === 'ps') return Buffer.from(PS)
+      if (args[0] === 'ps') return Buffer.from(ps())
       if (args[0] === 'stats') return stats()
       return Buffer.from('')
     }
@@ -352,12 +352,39 @@ describe('MetricsSampler', () => {
     const history = new MetricsHistory()
     const sampler = new MetricsSampler(history, { file: file(), docker: fakeDocker(calls), now: () => 1_000, log: () => {} })
     await sampler.sampleOnce()
+    expect(calls.find((c) => c[0] === 'ps')).toEqual(['ps', '-a', '--format', '{{.Names}}\t{{.State}}\t{{.ID}}'])
     const statsCall = calls.find((c) => c[0] === 'stats')!
     expect(statsCall.filter((a) => a.startsWith('io-'))).toEqual(['io-demo-main-app-web'])
     const targets = [APP, { container: 'io-demo-main-pg-db', group: 'db' }]
     const cpu = named(history.query(targets, 0, 2_000, 60), 'cpu_cores')
     expect(cpu.map((s) => [s.labels!.group, s.points[0]![1]])).toEqual([['web', 0.02], ['db', 0]])
     expect(history.sampled(on('something-else'))).toBe(false)
+    expect(history.toJSON().samples[APP.container]![5]).toBe(1)
+    expect(history.toJSON().samples['io-demo-main-pg-db']![5]).toBe(2)
+  })
+
+  test('redeploying under the same name starts a new network-counter generation', async () => {
+    const history = new MetricsHistory()
+    let now = 990
+    let id = '000000000001'
+    let rx = 100
+    const sampler = new MetricsSampler(history, {
+      file: file(), now: () => now,
+      docker: fakeDocker([], async () => Buffer.from(STATS.replace('0B / 0B', `${rx}B / ${rx * 2}B`)),
+        () => PS.replace('000000000001', id)),
+    })
+    await sampler.sampleOnce()
+    now += 30
+    id = '000000000004'
+    rx = 1_000
+    await sampler.sampleOnce()
+    now += 30
+    rx = 1_300
+    await sampler.sampleOnce()
+
+    const series = history.query([APP], 990, 1_050, 30)
+    expect(named(series, 'ingress_bytes_rate')[0]!.points).toEqual([[1_050, 10]])
+    expect(named(series, 'egress_bytes_rate')[0]!.points).toEqual([[1_050, 20]])
   })
 
   test('a failed docker stats still records the stopped containers', async () => {

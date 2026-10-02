@@ -1,0 +1,62 @@
+code: twenty
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+upstream:
+  repo: twentyhq/twenty
+  image: docker.io/twentycrm/twenty
+  pinned: v2.44.0
+  # The few `@license Enterprise` files stay off: billing is disabled and no enterprise key is set.
+  license: AGPL-3.0-only
+
+# Generated, not required: a required value is stored write-only and could never be read back.
+generated:
+  app_secret: secret:64
+  encryption_key: secret:64
+
+services:
+  db:
+    type: postgres
+
+  # Twenty hardcodes BullMQ and REDIS_URL has no default, so this cannot be dropped or swapped.
+  cache:
+    type: redis
+
+  crm:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/twenty:1.0.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 3000
+    healthcheck: /healthz
+    # The queue worker runs in this machine, and a stopped machine runs no scheduled or queued job.
+    alwaysOn: true
+    # Uploads and workflow code, shared by the server and the worker in this one container.
+    volume: true
+    env:
+      fixed:
+        NODE_PORT: "3000"
+        # Twenty's redis clients send no SNI, and the managed lane routes on it. See sni.cjs.
+        NODE_OPTIONS: --require /insta-sni.cjs
+        SERVER_URL: ${services.crm.url}
+        STORAGE_TYPE: local
+        STORAGE_LOCAL_PATH: /data/storage
+        # The managed postgres lane's certificate does not chain for node's pg client by default.
+        PG_SSL_ALLOW_SELF_SIGNED: "true"
+      platform:
+        PG_DATABASE_URL: ${{services.db.DATABASE_URL}}
+        REDIS_URL: ${{services.cache.REDIS_URL}}
+      generated:
+        APP_SECRET: ${app_secret}
+        ENCRYPTION_KEY: ${encryption_key}
+      # Nothing required: the first visitor signs up on Twenty's welcome page and becomes admin.
+
+meta:
+  name: Twenty
+  tagline: Open-source CRM for contacts, companies and deals
+  category: crm
+  tags: [crm, business]
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/twentyhq/twenty
+    documentation: https://twenty.com/developers/section/self-hosting

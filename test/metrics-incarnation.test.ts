@@ -166,3 +166,47 @@ test('recreated within the same second: a sample stamped in that second is still
   const after = await engine.runtimeMetrics(second.id, { component: 'compute', window })
   expect(after.series.flatMap((s) => s.points.map(([, v]) => v))).not.toContain(0.9)
 })
+
+for (const type of ['redis', 'mysql', 'mongodb'] as const) {
+  test(`${type}: renaming into a removed service name excludes the former service's samples`, async () => {
+    const { project } = await engine.createProject('demo')
+    const store = await engine.addManagedService(project.id, type, 'store')
+    const events = await engine.addManagedService(project.id, type, 'events')
+    const container = `io-demo-main-${store.id}`
+    const window = { from: T0, to: T0 + 3_600, step: 60 }
+    engine.metricsHistory.record(T0 + 60, [{ name: container, cpuCores: 0.77, memBytes: 777, rxBytes: 0, txBytes: 0 }])
+    vi.setSystemTime((T0 + 120) * 1000)
+    expect(valuesOf((await engine.runtimeMetrics(project.id, { component: type, group: 'store', window })).series)).toContain(0.77)
+
+    vi.setSystemTime((T0 + 600) * 1000)
+    expect((await engine.removeManagedService(project.id, store.id)).failed).toBe(0)
+    await engine.renameManagedService(project.id, events.id, 'store')
+    engine.metricsHistory.record(T0 + 660, [{ name: container, cpuCores: 0.1, memBytes: 100, rxBytes: 0, txBytes: 0 }])
+    vi.setSystemTime((T0 + 720) * 1000)
+
+    const after = await engine.runtimeMetrics(project.id, { component: type, group: 'store', window })
+    expect(after.series.find((s) => s.name === 'cpu_cores')!.points).toEqual([[T0 + 660, 0.1]])
+    expect(after.series.find((s) => s.name === 'memory_used_bytes')!.points).toEqual([[T0 + 660, 100]])
+  })
+
+  test(`${type}: removing and re-adding on main while feat retains it excludes main's earlier samples`, async () => {
+    const { project } = await engine.createProject('demo')
+    const store = await engine.addManagedService(project.id, type, 'store')
+    await engine.createBranch(project.id, 'feat', 'main')
+    const container = `io-demo-main-${store.id}`
+    const window = { from: T0, to: T0 + 3_600, step: 60 }
+    engine.metricsHistory.record(T0 + 60, [{ name: container, cpuCores: 0.77, memBytes: 777, rxBytes: 0, txBytes: 0 }])
+    vi.setSystemTime((T0 + 120) * 1000)
+    expect(valuesOf((await engine.runtimeMetrics(project.id, { component: type, group: 'store', window })).series)).toContain(0.77)
+
+    vi.setSystemTime((T0 + 600) * 1000)
+    expect((await engine.removeManagedService(project.id, store.id, { branch: 'main' })).failed).toBe(0)
+    await engine.addManagedService(project.id, type, 'store', { branch: 'main' })
+    engine.metricsHistory.record(T0 + 660, [{ name: container, cpuCores: 0.1, memBytes: 100, rxBytes: 0, txBytes: 0 }])
+    vi.setSystemTime((T0 + 720) * 1000)
+
+    const after = await engine.runtimeMetrics(project.id, { component: type, group: 'store', window })
+    expect(after.series.find((s) => s.name === 'cpu_cores')!.points).toEqual([[T0 + 660, 0.1]])
+    expect(after.series.find((s) => s.name === 'memory_used_bytes')!.points).toEqual([[T0 + 660, 100]])
+  })
+}

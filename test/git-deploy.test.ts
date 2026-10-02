@@ -5,7 +5,7 @@
 // live in gitdeploy-engine.test.ts (real Engine over the fake adapters); the real BuildKit git-context
 // build + SHA pinning + GIT_AUTH_TOKEN secret are covered by gitdeploy-build.int.test.ts (real Docker).
 import { test, expect, beforeEach, vi } from 'vitest'
-import { createHmac } from 'node:crypto'
+import { createHmac, randomUUID } from 'node:crypto'
 
 vi.mock('../src/docker', () => ({
   docker: vi.fn(async () => Buffer.from('')), // images/rmi (prune) go here; returns an empty listing
@@ -15,6 +15,7 @@ vi.mock('../src/docker', () => ({
 
 import { buildServer } from '../src/server'
 import { loadState, mutate } from '../src/state'
+import * as state from '../src/state'
 import type { Config } from '../src/config'
 import { docker, dockerCall } from '../src/docker'
 import * as govern from '../src/govern'
@@ -84,8 +85,17 @@ test('connect: bad inputs are rejected (project missing -> 404)', async () => {
   expect(r.statusCode).toBe(404)
 })
 
-test('webhook: unknown binding is a 404', async () => {
-  const r = await send('POST', '/webhooks/git/does-not-exist', { headers: { 'content-type': 'application/json', 'x-github-event': 'push' }, payload: {} })
+test.each(['does-not-exist', '00000000-0000-0000-0000-00000000000g', 'x' + randomUUID(), randomUUID() + 'x'])('webhook: malformed id %s is rejected without cloning state', async (id) => {
+  await app.ready()
+  const read = vi.spyOn(state, 'loadState')
+  const r = await send('POST', `/webhooks/git/${id}`, { headers: { 'content-type': 'application/json' }, payload: {} })
+  expect(r.statusCode).toBe(404)
+  expect(r.json()).toEqual({ error: 'unknown webhook' })
+  expect(read).not.toHaveBeenCalled()
+})
+
+test('webhook: unknown UUID binding is a 404', async () => {
+  const r = await send('POST', `/webhooks/git/${randomUUID()}`, { headers: { 'content-type': 'application/json' }, payload: {} })
   expect(r.statusCode).toBe(404)
 })
 

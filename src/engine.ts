@@ -3219,17 +3219,18 @@ export class Engine {
     }
     const now = Math.floor(Date.now() / 1000)
     const win = opts.window ?? { from: now - DEFAULT_WINDOW_SEC, to: now, step: DEFAULT_STEP_SEC }
-    const containers = targets.map((t) => t.container)
+    const series = this.metricsHistory.query(targets, win.from, win.to, win.step)
+    const unsampled = targets.filter((target) => !this.metricsHistory.sampled([target]))
     // A live reading is stamped now, so it answers only a window that contains now: a historical window
     // with no history is empty, not a point outside the range asked for.
-    if (this.metricsHistory.sampled(targets) || now < win.from || now > win.to) {
-      return { source: 'docker-stats', series: this.metricsHistory.query(targets, win.from, win.to, win.step) }
+    if (!unsampled.length || now < win.from || now > win.to) {
+      return { source: 'docker-stats', series }
     }
     let raw = ''
     // Not running (asleep, stopped): no reading, which the dashboard draws as zero usage, like the cloud.
-    try { raw = (await docker(['stats', '--no-stream', '--format', '{{json .}}', ...containers])).toString() }
-    catch { return { source: 'docker-stats', series: [] } }
-    return { source: 'docker-stats', series: liveSeries(statsToSamples(raw), targets, now) }
+    try { raw = (await docker(['stats', '--no-stream', '--format', '{{json .}}', ...unsampled.map((t) => t.container)])).toString() }
+    catch { return { source: 'docker-stats', series } }
+    return { source: 'docker-stats', series: [...series, ...liveSeries(statsToSamples(raw), unsampled, now)] }
   }
 
   /** Control-plane operation log (cloud: Neon operations) — here, the resource-event timeline. */

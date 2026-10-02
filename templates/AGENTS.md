@@ -12,6 +12,14 @@ IS the template code. Copying the closest existing template is the fastest way t
   `templates/<code>/` and pushes `ghcr.io/insforge/insta-oss/templates/<code>:<version>`, which the
   manifest then references as `image:`. Never add a `build:` key to the manifest. The catalog
   rejects a service carrying both `image:` and `build:`, and `image:` is the one that deploys.
+- **Companion images.** A template directory builds exactly one image, so a template that needs a
+  second one (a service built from source alongside the first, such as the browser worker `openmuse`
+  runs next to its API, the way upstream's blueprint splits them) puts that image in its own sibling
+  directory and references it. A service's `image:` may name a sibling template's published image,
+  `ghcr.io/insforge/insta-oss/templates/<sibling>:<sibling-version>`, as long as that sibling exists
+  here and the tag is its version; lint checks both. The sibling is usually `meta.draft: true`, so it
+  never shows in the gallery on its own. A version bump moves a template's own image and leaves a
+  companion alone: the companion moves when its own directory bumps.
 - `README.md`: the detail page shown in the gallery. Required, and factual: leave a fact out rather
   than guess it. Follow the section order the existing templates use, which is Overview, what you
   get by hosting it, what you need before deploying, Configuration (a row per variable saying what

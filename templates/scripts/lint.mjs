@@ -202,8 +202,24 @@ for (const dir of dirs) {
       const self = ref.startsWith(SELF_IMAGE_PREFIX) ? ref.slice(SELF_IMAGE_PREFIX.length) : null;
       if (self && !self.includes("@")) {
         const [imageCode, tag] = [self.split(":")[0], self.split(":")[1]];
-        if (imageCode !== dir) err(dir, `${name}: image is ${SELF_IMAGE_PREFIX}${imageCode}, which is another template's`);
-        else if (tag !== String(m.version)) err(dir, `${name}: image tag '${tag}' != version '${m.version}': the build tags from version:, so nothing would push '${tag}'`);
+        if (imageCode === dir) {
+          if (tag !== String(m.version)) err(dir, `${name}: image tag '${tag}' != version '${m.version}': the build tags from version:, so nothing would push '${tag}'`);
+        } else {
+          // A companion image: a SECOND image this template runs as another service, built by a
+          // sibling template directory here (openmuse runs openmuse-browser's Chromium worker, the
+          // way upstream's blueprint splits the API from its browser). A template directory builds
+          // exactly one image, so the only way to get a second is to reference a sibling's. Allowed,
+          // but the sibling has to exist and the tag has to be ITS version, or this is the typo from
+          // copying another template, or a dangling pin that only fails at deploy.
+          const siblingManifest = join(root, imageCode, "insta.template.yaml");
+          if (!existsSync(siblingManifest)) {
+            err(dir, `${name}: image is ${SELF_IMAGE_PREFIX}${imageCode}, which no template in this repo builds`);
+          } else {
+            let siblingVersion;
+            try { siblingVersion = yaml.load(readFileSync(siblingManifest, "utf8"))?.version; } catch { siblingVersion = undefined; }
+            if (tag !== String(siblingVersion)) err(dir, `${name}: companion image tag '${tag}' != ${imageCode}'s version '${siblingVersion}': its build tags from version:, so nothing would push '${tag}'`);
+          }
+        }
       }
     }
     if (svc.build && !existsSync(join(root, dir, svc.build.replace(/^\.\//, "")))) err(dir, `${name}: build file ${svc.build} not found`);

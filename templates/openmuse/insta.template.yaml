@@ -124,7 +124,7 @@ meta:
   # an arm64 machine. Adding the row means doing that, not editing this line.
   architectures: [amd64]
   logo: ./logo.png   # upstream's capybara mark (apps/mobile/assets/capybara.png), its square avatar, downscaled to 256px
-  draft: true
+  draft: false
   links:
     upstream: https://github.com/CopilotKit/OpenMuse
     documentation: https://github.com/CopilotKit/OpenMuse/blob/main/docs/README.md

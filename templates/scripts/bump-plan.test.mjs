@@ -202,7 +202,7 @@ describe('planBump: what it refuses', () => {
   });
 
   it('ignores a commented-out FROM when finding the one that builds', () => {
-    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/x:1.3.2');
+    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/n8n:1.3.2');
     const dockerfile = '# FROM docker.io/n8nio/n8n:2.36.5@sha256:old\nFROM docker.io/n8nio/n8n:2.36.5@sha256:aaaa\n';
     const out = applyBump({ manifest, dockerfile, drift: { kind: 'docker-tag', from: '2.36.5', to: '2.41.3', level: 'minor', digest: 'sha256:bbbb' } });
     expect(out.refused).toBeUndefined();
@@ -215,14 +215,14 @@ describe('planBump: what it refuses', () => {
   it('refuses a docker-tag move with no digest when the Dockerfile pins one', () => {
     // Moving the tag and leaving the digest ships the old image under the new number. If the
     // detector could not resolve the digest, there is no safe edit to make here.
-    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/x:1.3.2');
+    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/n8n:1.3.2');
     const dockerfile = 'FROM docker.io/n8nio/n8n:2.36.5@sha256:aaaa\n';
     const out = planBump({ manifest, dockerfile, drift: { kind: 'docker-tag', from: '2.36.5', to: '2.41.3', level: 'minor' } });
     expect(out.error).toMatch(/digest/i);
   });
 
   it('moves both halves when the digest is there', () => {
-    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/x:1.3.2');
+    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/n8n:1.3.2');
     const dockerfile = 'FROM docker.io/n8nio/n8n:2.36.5@sha256:aaaa\n';
     const plan = planBump({ manifest, dockerfile, drift: { kind: 'docker-tag', from: '2.36.5', to: '2.41.3', level: 'minor', digest: 'sha256:bbbb' } });
     const out = applyEdits({ manifest, dockerfile }, plan.edits);
@@ -257,6 +257,25 @@ describe('planBump: every service image, or none of it', () => {
     const out = applyBump({ manifest: both, drift: tag });
     expect(out.files.manifest).toContain('image: docker.io/n8nio/n8n:2.41.3');
     expect(out.files.manifest).toContain('image: docker.io/library/postgres:17.2');
+  });
+
+  it('leaves a companion image (ours, but a sibling template code) alone while our own moves', () => {
+    // openmuse runs openmuse-browser's worker image as a second service: an OURS image whose code is
+    // a sibling template, versioned there and not here. A bump of this template moves its own image
+    // and leaves the companion, the same as any sidecar. Before this every OURS prefix counted as
+    // "mine", so the companion's own version tripped the tag-must-equal-version check on the next bump.
+    const withCompanion = NPM_MANIFEST.replace(
+      '    port: 7681\n',
+      '    port: 7681\n  worker:\n    type: web\n    image: ghcr.io/insforge/insta-oss/templates/claude-code-worker:1.0.0\n    port: 8790\n',
+    );
+    const out = applyBump({
+      manifest: withCompanion,
+      dockerfile: NPM_DOCKERFILE,
+      drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
+    });
+    expect(out.refused).toBeUndefined();
+    expect(out.files.manifest).toContain('image: ghcr.io/insforge/insta-oss/templates/claude-code:0.8.4');
+    expect(out.files.manifest).toContain('image: ghcr.io/insforge/insta-oss/templates/claude-code-worker:1.0.0');
   });
 
   it('refuses when nothing deployed is ours or the one we track', () => {
@@ -386,7 +405,7 @@ services:
   it('moves every stage that builds on the tracked image, not the first', () => {
     // Docker takes the final stage by default, so stopping at the first match moved
     // `FROM upstream:2.36.5 AS base` and left the stage the image actually comes from behind.
-    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/x:1.3.2');
+    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/n8n:1.3.2');
     const tag = { kind: 'docker-tag', from: '2.36.5', to: '2.41.3', level: 'minor' };
     const out = applyBump({ manifest, dockerfile: 'FROM docker.io/n8nio/n8n:2.36.5 AS base\nFROM --platform=linux/amd64 docker.io/n8nio/n8n:2.36.5\n', drift: tag });
     expect(out.refused).toBeUndefined();
@@ -399,7 +418,7 @@ services:
   it('will not rewrite a base image whose tag happens to match', () => {
     // The FROM branch took any image carrying the drifting tag. A base image that shares it by
     // coincidence would have been moved to a tag of the upstream's that does not exist for it.
-    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/x:1.3.2');
+    const manifest = UPSTREAM_IMAGE_MANIFEST.replace('image: docker.io/n8nio/n8n:2.36.5', 'image: ghcr.io/insforge/insta-oss/templates/n8n:1.3.2');
     const tag = { kind: 'docker-tag', from: '2.36.5', to: '2.41.3', level: 'minor' };
     expect(applyBump({ manifest, dockerfile: 'FROM someone/else:2.36.5\n', drift: tag }).refused).toMatch(/no FROM builds on docker\.io\/n8nio\/n8n/);
     // And with both present, only the one the manifest tracks moves.

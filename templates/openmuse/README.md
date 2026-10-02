@@ -1,11 +1,8 @@
 # OpenMuse
 
-Personal agent with files, goals, tracking and a live Google workspace.
+Personal agent with a browser, files, goals and a live Google workspace.
 
-> **Draft.** Upstream calls itself alpha, and two things here are unverified: chat has not been
-> exercised end to end against a real CopilotKit Intelligence project key plus an OpenAI key, and
-> the image publishes `amd64` only because nobody has run its build on arm64. It stays out of the
-> catalog until both are settled.
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/openmuse)
 
 ## Overview
 

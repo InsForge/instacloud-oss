@@ -98,11 +98,16 @@ export function planBump({ manifest, dockerfile, drift }) {
   //
   // Two spaces of indent is `upstream.image`, which declares what we TRACK. Four or more is a
   // service, which declares what we DEPLOY. Anything else in there is a sidecar and is left alone.
+  const code = (/^code:\s*(\S+)/m.exec(text) ?? [])[1] ?? '';
   const tracked = (/^ {2}image:[ \t]*(\S+)/m.exec(text) ?? [])[1] ?? '';
   let images = 0;
   for (const [line, lead, ref] of text.matchAll(/^( {4,}image:[ \t]*)(\S+)/gm)) {
     const { repo, tag, digest } = splitTag(ref);
-    const mine = repo.startsWith(OURS);
+    // `mine` is THIS template's own published image, the one tagged with its version. An OURS image
+    // for a DIFFERENT code is a companion: a second service this template runs (a browser worker,
+    // say), built and versioned by a sibling template. It moves when that sibling bumps, not when
+    // this one does, so it is left alone here exactly like any other sidecar.
+    const mine = repo === `${OURS}${code}`;
     if (!mine && !(tracked && sameImage(repo, tracked))) continue;
     const want = mine ? version : drift.from;
     if (tag !== want) {

@@ -36,10 +36,10 @@ you share it.
 - A managed Redis for the cache and the BullMQ queues. Twenty hardcodes the BullMQ driver and
   `REDIS_URL` has no default, so this is required rather than an optimisation.
 - Twenty's queue worker running beside the server, so background work actually happens: workflow
-  runs, including their code steps, scheduled triggers, search index updates, and the message and
-  calendar sync if you connect an account. It starts once the server passes its health check, and
-  restarts on its own if it exits.
-- A persistent volume at `/data` holding uploaded attachments, workspace logos and the source of
+  runs, scheduled triggers, search index updates, file cleanup, and the message and calendar sync
+  if you connect an account. It starts once the server passes its health check, and restarts on
+  its own if it exits.
+- A persistent volume at `/data` holding uploaded attachments, workspace logos and the code of
   workflow code steps (`STORAGE_LOCAL_PATH=/data/storage`), so a restart keeps the files.
 - `APP_SECRET` and `ENCRYPTION_KEY` generated for you and stored as managed secrets. Twenty signs
   tokens with the first and encrypts stored third-party credentials with the second.
@@ -79,6 +79,12 @@ clients from `REDIS_URL` alone, with no TLS options and no setting to add any, s
 that name: the connection is opened, silently dropped, and retried forever with nothing logged. The
 image ships a short `sni.cjs` that fills the name in on outbound TLS connections that left it
 blank, and `NODE_OPTIONS` preloads it. It changes nothing else.
+
+**Workflow code steps are off, as upstream ships them.** A workflow with a **Code** step fails
+with *Logic function execution is disabled* until you turn them on with
+`insta secrets set LOGIC_FUNCTION_TYPE LOCAL --service compute/crm`, which redeploys `crm`. Twenty
+then runs that code in a child process on the same machine, with no sandbox, so turn it on only
+when you trust everyone who can edit workflows.
 
 **Boot order.** Every boot runs upstream's setup before the server starts: the migrations on an
 empty database, otherwise the upgrade and the two cache flushes, which do nothing when the schema
@@ -123,8 +129,8 @@ the CRM to yourself.
    else now that the workspace exists, so an invitation is the way in.
 4. Add a company and a person, or import a CSV from the record list, and the CRM is in use. The
    example records Twenty put there are yours to delete.
-5. A token from **Settings > APIs & Webhooks** gets you the REST API at `/rest/...` and the
-   GraphQL API at `/graphql` on the same URL.
+5. An API key from **Settings > MCP & APIs** is the bearer token for Twenty's REST and GraphQL
+   APIs and for its MCP server at `/mcp`, all on the same URL.
 
 ## Licensing
 

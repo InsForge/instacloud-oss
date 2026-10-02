@@ -152,7 +152,7 @@ test('a required variable reaches the listing so a form can be rendered from it'
   expect(cc.requiredVars.map((v: { name: string }) => v.name)).toEqual(['ADMIN_USERNAME', 'ADMIN_PASSWORD'])
   const detail = (await get('/templates/claude-code')).json().template
   expect(detail.variables.required.map((v: { name: string }) => v.name)).toEqual(['ADMIN_USERNAME', 'ADMIN_PASSWORD'])
-  expect(detail.variables.optional.map((v: { name: string }) => v.name)).toEqual(['ANTHROPIC_API_KEY'])
+  expect(detail.variables.optional.map((v: { name: string }) => v.name)).toEqual(['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'GH_TOKEN'])
 })
 
 // ---- manifest module ---------------------------------------------------------------------------

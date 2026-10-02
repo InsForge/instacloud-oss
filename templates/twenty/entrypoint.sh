@@ -29,26 +29,19 @@ wait "$holder_pid" 2>/dev/null || true
 node dist/main &
 server_pid=$!
 
-wait_for_server() {
-  until curl -fs -o /dev/null "http://127.0.0.1:${NODE_PORT}/healthz"; do sleep 1; done
-}
-
-# Kept off the health gate's clock; registration is idempotent, so every boot repairs a failed one.
+# Off the health gate's clock, and in sequence so the cron Nest context never overlaps the worker's.
 post_boot() {
-  wait_for_server
+  worker_pid=""
+  trap 'kill "$worker_pid" 2>/dev/null; wait "$worker_pid" 2>/dev/null; exit 0' TERM
+  until curl -fs -o /dev/null "http://127.0.0.1:${NODE_PORT}/healthz"; do sleep 1; done
+  # Idempotent, so every boot repairs a failed registration.
   node dist/command/command cron:register:all || echo "entrypoint: cron registration failed, the next boot retries it" >&2
   if [ "$(psql -tAc "SELECT count(*) FROM core.workspace" "${PG_DATABASE_URL}")" = 0 ]; then
     echo "entrypoint: no workspace yet, twenty's sign-up page is open to the first visitor"
   else
     echo "entrypoint: twenty is up, with the workspace it already had"
   fi
-}
-
-# Upstream starts the worker once the server is healthy and restarts it alone when it dies.
-run_worker() {
-  worker_pid=""
-  trap 'kill "$worker_pid" 2>/dev/null; wait "$worker_pid" 2>/dev/null; exit 0' TERM
-  wait_for_server
+  # Upstream starts the worker once the server is healthy and restarts it alone when it dies.
   while :; do
     echo "entrypoint: starting twenty's queue worker"
     node dist/queue-worker/queue-worker &
@@ -62,11 +55,9 @@ run_worker() {
 
 post_boot &
 post_boot_pid=$!
-run_worker &
-worker_loop_pid=$!
 
 stop_all() {
-  kill "$post_boot_pid" "$worker_loop_pid" "$server_pid" 2>/dev/null || true
+  kill "$post_boot_pid" "$server_pid" 2>/dev/null || true
   wait 2>/dev/null || true
 }
 trap 'stop_all; exit 0' TERM INT

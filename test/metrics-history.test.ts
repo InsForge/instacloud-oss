@@ -1,12 +1,15 @@
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import {
   liveSeries, MAX_POINTS, MAX_RATE_GAP_SEC, MetricsHistory, metricsWindow, parseStep, RETENTION_SEC, statsToSamples,
   type ContainerSample,
 } from '../src/metrics-history'
 import { MetricsSampler, PERSIST_INTERVAL_SEC } from '../src/metrics-sampler'
+
+vi.mock('node:fs/promises', async (importOriginal) => ({ ...await importOriginal<typeof import('node:fs/promises')>() }))
 
 const sample = (name: string, cpuCores: number, memBytes: number, rxBytes = 0, txBytes = 0): ContainerSample =>
   ({ name, cpuCores, memBytes, rxBytes, txBytes })
@@ -401,7 +404,9 @@ describe('MetricsSampler', () => {
     const path = file()
     let now = 1_000
     const first = new MetricsSampler(new MetricsHistory(), { file: path, docker: fakeDocker([]), now: () => now, intervalSec: 3_600, log: () => {} })
+    const firstSample = vi.spyOn(first, 'sampleOnce')
     first.start()
+    await firstSample.mock.results[0]!.value
     now += 30
     await first.stop()
     expect(statSync(path).mode & 0o777).toBe(0o600)
@@ -409,6 +414,70 @@ describe('MetricsSampler', () => {
     const second = new MetricsSampler(restored, { file: path, docker: fakeDocker([]), now: () => now, log: () => {} })
     second.load()
     expect(restored.sampled(on(APP.container))).toBe(true)
+  })
+
+  test('stop saves completed history without waiting for a blocked Docker sample', async () => {
+    const path = file()
+    const history = new MetricsHistory()
+    history.record(990, [sample(APP.container, 0.1, 100)])
+    const saved = structuredClone(history.toJSON())
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
+    const sampling = new Promise<void>((resolve) => { entered = resolve })
+    const sampler = new MetricsSampler(history, {
+      file: path, now: () => 1_020, intervalSec: 3_600,
+      docker: fakeDocker([], async () => { entered(); await blocked; return Buffer.from(STATS) }),
+    })
+    const sampleOnce = vi.spyOn(sampler, 'sampleOnce')
+    sampler.start()
+    await sampling
+    const stopping = sampler.stop()
+    try {
+      await expect.poll(() => existsSync(path), { timeout: 1_000 }).toBe(true)
+      await stopping
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(saved)
+    } finally {
+      release()
+      await sampleOnce.mock.results[0]!.value
+      await stopping
+    }
+    expect(history.toJSON()).toEqual(saved)
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(saved)
+  })
+
+  test('stop serializes its final save after a periodic save already writing', async () => {
+    const path = file()
+    let now = 1_000
+    const history = new MetricsHistory()
+    const sampler = new MetricsSampler(history, { file: path, docker: fakeDocker([]), now: () => now })
+    const firstSample = vi.spyOn(sampler, 'sampleOnce')
+    sampler.start()
+    await firstSample.mock.results[0]!.value
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
+    const writing = new Promise<void>((resolve) => { entered = resolve })
+    const writeFile = fs.writeFile
+    const writes = vi.spyOn(fs, 'writeFile').mockImplementationOnce(async (...args) => {
+      entered()
+      await blocked
+      return writeFile(...args)
+    })
+    now += PERSIST_INTERVAL_SEC
+    const periodic = sampler.sampleOnce()
+    await writing
+    const stopping = sampler.stop()
+    try {
+      await Promise.resolve()
+      expect(writes).toHaveBeenCalledTimes(1)
+    } finally {
+      release()
+      await periodic
+      await stopping
+    }
+    expect(writes).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(history.toJSON())
   })
 
   test('saves on its own every PERSIST_INTERVAL_SEC, not on every tick', async () => {

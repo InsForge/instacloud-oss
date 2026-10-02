@@ -40,6 +40,8 @@ export function generationOf(id: string | undefined): number {
 export class MetricsSampler {
   private timer: ReturnType<typeof setInterval> | undefined
   private inFlight: Promise<void> | undefined
+  private persistInFlight: Promise<void> | undefined
+  private epoch = 0
   private started = false
   private lastPersist = 0
   private readonly docker: DockerRead
@@ -77,6 +79,7 @@ export class MetricsSampler {
   }
 
   async sampleOnce(): Promise<void> {
+    const epoch = this.epoch
     const t = this.now()
     const ps = (await this.docker(['ps', '-a', '--format', '{{.Names}}\t{{.State}}\t{{.ID}}'])).toString()
     const rows: ContainerSample[] = []
@@ -98,9 +101,10 @@ export class MetricsSampler {
         this.log(`metrics history: docker stats failed: ${String(e)}`)
       }
     }
+    if (epoch !== this.epoch) return
     this.history.record(t, rows)
     this.history.prune(t)
-    if (t - this.lastPersist >= PERSIST_INTERVAL_SEC) await this.persist(t)
+    if (t - this.lastPersist >= PERSIST_INTERVAL_SEC) await (this.persistInFlight = this.persist(t))
   }
 
   start(): void {
@@ -113,13 +117,13 @@ export class MetricsSampler {
     this.timer.unref?.()
   }
 
-  /** Stop sampling, wait for a tick in progress, and save. A sampler never started saves nothing, so
-   *  it cannot overwrite a saved history with an empty one. */
+  // A never-started sampler must not overwrite an existing history file.
   async stop(): Promise<void> {
     if (!this.started) return
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
-    await this.inFlight
+    this.epoch++
+    await this.persistInFlight
     await this.persist(this.now())
     this.started = false
   }
@@ -131,10 +135,7 @@ export class MetricsSampler {
       .finally(() => { this.inFlight = undefined })
   }
 
-  /** Write-then-rename, owner-only, like state.json: a crash mid-write leaves the previous file. The
-   *  file I/O is asynchronous so a multi-megabyte write does not hold the event loop the API and the
-   *  router share; only the in-memory serialization is synchronous. Saves never overlap: every
-   *  caller is either a tick (one at a time) or stop(), which waits for the tick first. */
+  // The temporary file must share the destination filesystem for an atomic rename.
   private async persist(t: number): Promise<void> {
     const tmp = `${this.opts.file}.${process.pid}.tmp`
     try {

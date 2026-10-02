@@ -4,13 +4,14 @@
 // is how the cloud draws a stopped service: an asleep database reads as a flat line at 0, not a gap.
 
 import { readFileSync } from 'node:fs'
-import { rename, writeFile } from 'node:fs/promises'
+import { chmod, rename, unlink, writeFile } from 'node:fs/promises'
 import { dockerCall } from './docker'
 import { statsToSamples, type ContainerSample, type MetricsHistory } from './metrics-history'
 
 export const SAMPLE_INTERVAL_SEC = 30
 export const PERSIST_INTERVAL_SEC = 300
 const DOCKER_TIMEOUT_MS = 20_000
+let tmpSeq = 0
 /** Every container the daemon creates is named `io-…` (names.ts); nothing else on the host is sampled. */
 const MANAGED_PREFIX = 'io-'
 
@@ -137,12 +138,14 @@ export class MetricsSampler {
 
   // The temporary file must share the destination filesystem for an atomic rename.
   private async persist(t: number): Promise<void> {
-    const tmp = `${this.opts.file}.${process.pid}.tmp`
+    const tmp = `${this.opts.file}.tmp-${process.pid}-${++tmpSeq}`
     try {
       await writeFile(tmp, JSON.stringify(this.history.toJSON()), { mode: 0o600 })
+      await chmod(tmp, 0o600)
       await rename(tmp, this.opts.file)
       this.lastPersist = t
     } catch (e) {
+      await unlink(tmp).catch(() => {})
       this.log(`metrics history: could not save ${this.opts.file}: ${String(e)}`)
     }
   }

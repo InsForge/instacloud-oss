@@ -416,6 +416,37 @@ describe('MetricsSampler', () => {
     expect(restored.sampled(on(APP.container))).toBe(true)
   })
 
+  test('a reused temporary file is made owner-only before publication', async () => {
+    const path = file()
+    const write = fs.writeFile
+    const writer = vi.spyOn(fs, 'writeFile').mockImplementationOnce(async (...args) => {
+      writeFileSync(args[0], 'stale', { mode: 0o644 })
+      await write(...args)
+    })
+    try {
+      const sampler = new MetricsSampler(new MetricsHistory(), { file: path, docker: fakeDocker([]), now: () => 1_000 })
+      await sampler.sampleOnce()
+      expect(statSync(path).mode & 0o777).toBe(0o600)
+    } finally { writer.mockRestore() }
+  })
+
+  test('a save after a failed rename uses a new temporary file', async () => {
+    const path = file()
+    let now = 1_000
+    const writer = vi.spyOn(fs, 'writeFile')
+    const rename = vi.spyOn(fs, 'rename').mockRejectedValueOnce(new Error('rename failed'))
+    try {
+      const sampler = new MetricsSampler(new MetricsHistory(), { file: path, docker: fakeDocker([]), now: () => now, log: () => {} })
+      await sampler.sampleOnce()
+      expect(existsSync(writer.mock.calls[0]![0] as string)).toBe(false)
+      now += 300
+      await sampler.sampleOnce()
+      expect(writer.mock.calls).toHaveLength(2)
+      expect(writer.mock.calls[1]![0]).not.toBe(writer.mock.calls[0]![0])
+      expect(JSON.parse(readFileSync(path, 'utf8')).version).toBe(2)
+    } finally { writer.mockRestore(); rename.mockRestore() }
+  })
+
   test('stop saves completed history without waiting for a blocked Docker sample', async () => {
     const path = file()
     const history = new MetricsHistory()

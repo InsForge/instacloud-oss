@@ -1,0 +1,196 @@
+code: supabase
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# Upstream's self-hosted compose, one machine per service, on the managed database (see ./README.md).
+upstream:
+  repo: supabase/supabase
+  pinned: self-hosted/v0.8.2
+  commit: 564eab8ad7840b13324f68b1bfac074ef8d51c21
+  license: Apache-2.0
+
+# Shared by every service that signs or checks tokens. Nobody needs to read them back.
+generated:
+  jwt_secret: secret:64
+  studio_token: secret:48
+  realtime_api_secret: secret:64
+  realtime_secret_key_base: secret:64
+  realtime_db_enc_key: secret:16
+
+services:
+  # The one entry users hit: Envoy with upstream's routes, API key checks and Studio's basic auth.
+  gateway:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0   # built from ./Dockerfile
+    port: 8000
+    healthcheck: /   # Studio's basic auth answers 401, which the gate accepts
+    alwaysOn: true
+    env:
+      fixed:
+        INSTA_SUPABASE_ROLE: gateway
+        AUTH_URL: ${services.auth.url}
+        REST_URL: ${services.rest.url}
+        REALTIME_URL: ${services.realtime.url}
+        STORAGE_URL: ${services.storage.url}
+        STUDIO_URL: ${services.studio.url}
+      generated:
+        JWT_SECRET: ${jwt_secret}
+        STUDIO_TOKEN: ${studio_token}
+      required:
+        ADMIN_USERNAME:
+          description: "Username for the Studio dashboard, asked for by the browser when you open the gateway URL. Letters, digits and . _ @ - only"
+        ADMIN_PASSWORD:
+          description: "Password for the Studio dashboard. Studio has full access to your database, so pick a strong one"
+
+  # Holds websockets open, and boots in tens of seconds, so it stays on.
+  realtime:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0
+    port: 4000
+    healthcheck: /healthcheck
+    alwaysOn: true
+    env:
+      fixed:
+        INSTA_SUPABASE_ROLE: realtime
+        REALTIME_URL: ${services.realtime.url}
+        PORT: "4000"
+        DB_AFTER_CONNECT_QUERY: SET search_path TO _realtime
+        ERL_AFLAGS: -proto_dist inet_tcp
+        DNS_NODES: "''"
+        APP_NAME: realtime
+        RUN_JANITOR: "true"
+        DISABLE_HEALTHCHECK_LOGGING: "true"
+      generated:
+        JWT_SECRET: ${jwt_secret}
+        API_JWT_SECRET: ${realtime_api_secret}
+        METRICS_JWT_SECRET: ${realtime_api_secret}
+        SECRET_KEY_BASE: ${realtime_secret_key_base}
+        DB_ENC_KEY: ${realtime_db_enc_key}
+      platform:
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
+
+  # Storage API and imgproxy share one machine, since imgproxy reads the stored files off this volume.
+  storage:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0
+    port: 5000
+    healthcheck: /status
+    alwaysOn: false
+    volume: true
+    env:
+      fixed:
+        INSTA_SUPABASE_ROLE: storage
+        POSTGREST_URL: ${services.rest.url}
+        STORAGE_PUBLIC_URL: ${services.gateway.url}
+        REQUEST_ALLOW_X_FORWARDED_PATH: "true"
+        FILE_SIZE_LIMIT: "52428800"
+        GLOBAL_S3_BUCKET: stub
+        TENANT_ID: stub
+        REGION: stub
+      generated:
+        JWT_SECRET: ${jwt_secret}
+      platform:
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
+
+  # Studio and postgres-meta share one machine, so meta (which has no auth) never leaves loopback.
+  studio:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0
+    port: 3000
+    healthcheck: /healthz
+    alwaysOn: false
+    volume: true   # saved SQL snippets
+    env:
+      fixed:
+        INSTA_SUPABASE_ROLE: studio
+        SUPABASE_URL: ${services.gateway.url}
+        SUPABASE_PUBLIC_URL: ${services.gateway.url}
+        PGRST_DB_SCHEMAS: public,graphql_public
+        PGRST_DB_MAX_ROWS: "1000"
+        PGRST_DB_EXTRA_SEARCH_PATH: public
+        DEFAULT_ORGANIZATION_NAME: Default Organization
+        DEFAULT_PROJECT_NAME: Default Project
+        ENABLED_FEATURES_LOGS_ALL: "false"
+      generated:
+        JWT_SECRET: ${jwt_secret}
+        STUDIO_TOKEN: ${studio_token}
+      platform:
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
+
+  auth:
+    type: web
+    image: docker.io/supabase/gotrue:v2.196.0
+    port: 9999
+    healthcheck: /health
+    alwaysOn: false
+    # GoTrue logs in as supabase_auth_admin, so its URL is built from DATABASE_URL at start.
+    command: >-
+      rest="${DATABASE_URL#*://}";
+      export GOTRUE_DB_DATABASE_URL="postgres://supabase_auth_admin:${rest#*:}";
+      until auth migrate; do sleep 3; done;
+      exec auth
+    env:
+      fixed:
+        GOTRUE_API_HOST: 0.0.0.0
+        GOTRUE_API_PORT: "9999"
+        API_EXTERNAL_URL: ${services.gateway.url}/auth/v1
+        GOTRUE_DB_DRIVER: postgres
+        GOTRUE_SITE_URL: ${services.gateway.url}
+        GOTRUE_DISABLE_SIGNUP: "false"
+        GOTRUE_JWT_ADMIN_ROLES: service_role
+        GOTRUE_JWT_AUD: authenticated
+        GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+        GOTRUE_JWT_EXP: "3600"
+        GOTRUE_JWT_ISSUER: ${services.gateway.url}/auth/v1
+        GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+        GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
+        GOTRUE_MAILER_AUTOCONFIRM: "true"   # no SMTP, so no confirmation mail
+        GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
+        GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+        GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+        GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+        GOTRUE_EXTERNAL_PHONE_ENABLED: "true"
+        GOTRUE_SMS_AUTOCONFIRM: "true"
+      generated:
+        GOTRUE_JWT_SECRET: ${jwt_secret}
+      platform:
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
+
+  # PostgREST runs from the overlay, since upstream's amd64 image has no shell for a start command.
+  rest:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0
+    port: 3000
+    healthcheck: /
+    alwaysOn: false
+    env:
+      fixed:
+        INSTA_SUPABASE_ROLE: rest
+        PGRST_DB_SCHEMAS: public,graphql_public
+        PGRST_DB_MAX_ROWS: "1000"
+        PGRST_DB_EXTRA_SEARCH_PATH: public
+        PGRST_DB_ANON_ROLE: anon
+        PGRST_ADMIN_SERVER_PORT: "3001"
+        PGRST_ADMIN_SERVER_HOST: localhost
+        PGRST_DB_USE_LEGACY_GUCS: "false"
+        PGRST_APP_SETTINGS_JWT_EXP: "3600"
+      generated:
+        PGRST_JWT_SECRET: ${jwt_secret}
+      platform:
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
+
+  db:
+    type: postgres
+
+meta:
+  name: Supabase
+  tagline: Postgres backend with auth, storage, realtime and a dashboard
+  category: backend
+  tags: [backend, database, auth, storage]
+  # Every upstream image is a two-architecture index, and the overlay only copies their files together.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/supabase/supabase
+    documentation: https://supabase.com/docs/guides/self-hosting/docker

@@ -42,13 +42,13 @@ every request that did not come through the gateway, so the gateway's basic auth
 
 - One HTTPS URL, the gateway's, for everything: `/auth/v1`, `/rest/v1`, `/storage/v1`,
   `/realtime/v1`, `/graphql/v1`, and Studio at `/`. It is the URL you give `@supabase/supabase-js`.
-- Your data in a managed Postgres that the platform runs and backs up, rather than a database
+- Your data in a managed Postgres that the platform runs, rather than a database
   container inside the stack.
 - Studio behind HTTP basic auth with the username and password you choose at deploy.
 - The schema Supabase expects, created on first boot from upstream's own `supabase/postgres`
   migrations at the tag the compose file pins (`17.6.1.136`).
 - An anon key and a service role key, signed with a JWT secret generated at deploy. Studio shows
-  both under **Project Settings > API Keys**.
+  both under **Project Settings > API Keys**, on the **Legacy anon, service_role API keys** tab.
 - Uploaded files on a persistent volume, and image transformations through imgproxy.
 - Email sign-up that works without SMTP: new users are confirmed automatically.
 
@@ -71,8 +71,8 @@ Studio's machine, and Realtime's own secrets. You do not need to read any of the
 service role keys are derived from the JWT secret on every boot, so every service agrees on them.
 
 Every Supabase login role (`authenticator`, `supabase_auth_admin`, `supabase_storage_admin`,
-`supabase_admin`) gets the managed database's own password, the way upstream gives them all
-`POSTGRES_PASSWORD`.
+`supabase_admin`, `supabase_read_only_user`) gets the managed database's own password, the way
+upstream gives them all `POSTGRES_PASSWORD`.
 
 To change a setting upstream exposes as an environment variable, set it on the service it belongs
 to and restart that service. Common ones:
@@ -88,8 +88,9 @@ to and restart that service. Common ones:
 
 1. Open the gateway's URL. The browser asks for the username and password you deployed with, and
    Studio opens.
-2. Copy the keys from **Project Settings > API Keys**: `anon` for your app, `service_role` for
-   servers only.
+2. Copy the keys from **Project Settings > API Keys > Legacy anon, service_role API keys**: `anon`
+   for your app, `service_role` for servers only. The other tab, for publishable and secret keys,
+   is empty on purpose.
 3. Point the client at the gateway:
 
    ```js
@@ -109,11 +110,12 @@ to and restart that service. Common ones:
 
 - **GraphQL (`/graphql/v1`) is off.** The managed Postgres does not ship `pg_graphql` yet, and
   requests answer `pg_graphql extension is not enabled`. The template tries
-  `create extension pg_graphql` on every boot of `realtime`, `storage` and `studio` until it
+  `create extension pg_graphql` on every boot of `rest`, `realtime`, `storage` and `studio` until it
   succeeds, so once the database offers it, restarting one of them turns GraphQL on.
 - **Realtime `postgres_changes` does not deliver yet.** It needs logical decoding with the
-  `wal2json` output plugin, which the managed Postgres does not ship yet. Broadcast and Presence
-  work. Once the database offers `wal2json`:
+  `wal2json` output plugin, which the managed Postgres does not ship yet. A subscription still
+  answers "Subscribed to PostgreSQL", but no change ever arrives. Broadcast works.
+  Once the database offers `wal2json`:
   1. run `ALTER SYSTEM SET wal_level = logical;` in Studio's SQL editor,
   2. restart the database from the platform (`insta postgres restart`, or
      `POST /projects/{id}/database/restart`), then restart `realtime`,
@@ -124,8 +126,16 @@ to and restart that service. Common ones:
 - **Logs and analytics in Studio are off**, since Logflare and Vector are not part of the stack.
 - **The new `sb_publishable_` and `sb_secret_` keys are not configured.** Use the legacy anon and
   service role keys, which every Supabase SDK accepts.
-- **Six compute services.** `gateway` and `realtime` are always on. `auth`, `rest`, `storage` and
-  `studio` idle-stop and wake on the next request, and the first request after a wake waits for it.
+- **Six compute services, billed on actual usage.** `gateway` and `realtime` are always on.
+  `auth` and `studio` idle-stop and wake on the next request: measured, the first sign-in after
+  `auth` slept took about 3 seconds, and the first Studio page about 6. `rest` and `storage` may
+  idle-stop too, but their own steady background traffic (about 100 to 200 bytes a second,
+  measured) counts as activity, so in practice they stay up.
+- **The other services have their own URLs as well.** `auth`, `rest`, `realtime` and `storage` each
+  check JWTs themselves, so reaching one directly grants nothing the public anon key does not.
+  `studio` refuses any request that did not come through the gateway.
+- **Right after `realtime` restarts**, a client's first websocket attempt can fail while it boots.
+  The Supabase SDKs reconnect on their own.
 
 ## Links
 

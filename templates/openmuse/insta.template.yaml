@@ -31,7 +31,10 @@ services:
         # The API binds loopback and nginx is the public face. Not only hardening: a sample
         # workspace refuses to start on any other host, by design upstream.
         HOST: 127.0.0.1
-        PORT: "8787"
+        # PORT is deliberately absent. The platform injects its own PORT, equal to the routed port,
+        # and that value wins over anything declared here: a `PORT: "8787"` in this block was
+        # overridden with 8080, the API tried to bind the port nginx already held, and the service
+        # crash-looped on EADDRINUSE. The entrypoint pins the API's port instead.
         # Everything durable lives here: the PGlite database, imported PDFs, the session signing
         # key, and the minted token-encryption key.
         DATA_DIR: /data/openmuse

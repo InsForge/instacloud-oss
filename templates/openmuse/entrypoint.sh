@@ -33,7 +33,10 @@ fi
 stopping=0
 trap 'stopping=1; kill -TERM "${node_pid:-}" "${nginx_pid:-}" 2>/dev/null || true' TERM INT
 
-node /app/dist/apps/server/src/index.js &
+# PORT is pinned here rather than in the manifest because the platform injects its own PORT, equal
+# to the routed port, and it wins over env.fixed. nginx owns that port; the API answers on loopback
+# 8787 behind it, which is what nginx.conf proxies to.
+PORT=8787 node /app/dist/apps/server/src/index.js &
 node_pid=$!
 nginx -g 'daemon off;' &
 nginx_pid=$!

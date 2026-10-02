@@ -27,7 +27,7 @@ RUN arch="$(dpkg --print-architecture)"; \
     && chmod +x /usr/local/bin/ttyd
 
 # upstream pin: keep in sync with insta.template.yaml (upstream.pinned)
-RUN npm install -g @anthropic-ai/claude-code@2.1.235
+RUN npm install -g @anthropic-ai/claude-code@2.1.280
 
 ENV HOME=/data/home
 COPY entrypoint.sh /entrypoint.sh

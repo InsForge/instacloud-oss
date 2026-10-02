@@ -1,0 +1,76 @@
+#!/command/with-contenv sh
+# The authenticating face of this deployment.
+#
+# WHY THIS EXISTS. OpenBot's no-sign-in mode (OPENBOT_SINGLE_USER) admits every request as one
+# administrator, and upstream REFUSES TO START when it is combined with an address the public
+# internet reaches: see singleUserAllowed in server/src/config.ts. It is right to refuse. The only
+# alternative upstream offers is a registered OAuth client, whose redirect URI has to match a URL
+# that does not exist until the deploy does, so a template cannot ask for one. This closes the gap
+# the other way: OpenBot keeps its loopback-only listener and believes what it is told, and the
+# public port is HTTP basic auth in front of it.
+#
+# NOT A SECOND APPLICATION. It terminates nothing, rewrites nothing and stores nothing. Every
+# request that carries the credential is passed to 127.0.0.1:3001 unchanged.
+set -eu
+
+PORT_OUT="${PROXY_PORT:-8080}"
+# Neither gets a fallback on purpose. The manifest declares both required with no default, so the
+# platform always supplies them; a missing one means the image was started some other way, and
+# inventing `admin` there would publish a browser-driving agent to whoever finds the URL.
+USER_NAME="${ADMIN_USERNAME:?ADMIN_USERNAME is required}"
+PASS="${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}"
+
+# The username is written into a Caddyfile, so it has to be one token. Refused loudly rather than
+# left to produce a config error naming a line nobody wrote.
+case "$USER_NAME" in
+  '' | *[!A-Za-z0-9._-]*)
+    echo "proxy: ADMIN_USERNAME may contain only letters, digits, '.', '-' and '_'" >&2
+    exit 1 ;;
+esac
+
+# bcrypt hashes the first 72 BYTES and silently ignores the rest, so a longer password would
+# authenticate on a prefix of itself. Bytes, not characters: ${#PASS} counts characters, which
+# differ under a non-C locale. Fail rather than quietly shorten what guards the URL.
+PASS_BYTES=$(printf '%s' "$PASS" | wc -c)
+if [ "$PASS_BYTES" -gt 72 ]; then
+  echo "proxy: ADMIN_PASSWORD is $PASS_BYTES bytes; bcrypt reads only the first 72" >&2
+  exit 1
+fi
+
+# Piped, never `--plaintext`: an argument is visible in /proc to every process in this container,
+# and one of them is the shell a Bot is allowed to run. Caddy reads stdin when it is not a
+# terminal, which inside s6 it never is. The hash is captured, so it does not reach the log either.
+HASH=$(printf '%s' "$PASS" | /usr/local/bin/caddy hash-password)
+
+mkdir -p /run/caddy
+cat > /run/caddy/Caddyfile <<CADDYFILE
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:${PORT_OUT} {
+	# /health is the one route the platform's health gate reaches without a credential, because
+	# the gate wants a 2xx and a 401 is not one. It is OpenBot's own route and answers
+	# {"status":"ok"}: no version, no configuration, nothing about this deployment.
+	@gated not path /health
+	basic_auth @gated {
+		${USER_NAME} ${HASH}
+	}
+
+	reverse_proxy 127.0.0.1:3001 {
+		# OpenBot streams a turn as it happens and proxies a websocket for the Bot's screen.
+		# Buffering either would hold the answer until the turn ended.
+		flush_interval -1
+	}
+}
+CADDYFILE
+chown -R proxyuser:proxyuser /run/caddy
+
+# Not root. This is the one process on the public port, and it needs nothing but a socket above
+# 1024 and the file above. XDG_* point at the same tmpfs because Caddy wants somewhere to put a
+# data directory even with its admin API and config persistence turned off.
+exec s6-setuidgid proxyuser env \
+  HOME=/home/proxyuser XDG_CONFIG_HOME=/run/caddy XDG_DATA_HOME=/run/caddy \
+  /usr/local/bin/caddy run --config /run/caddy/Caddyfile --adapter caddyfile

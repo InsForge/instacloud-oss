@@ -1,0 +1,64 @@
+# OpenBot, with a door on it.
+#
+# Upstream already ships the whole product in one image: the built app, the API that serves it,
+# Chromium for the Bots to drive, and a PostgreSQL that `EMBEDDED_POSTGRES=on` turns on. Nothing
+# here rebuilds any of that. The overlay is two additions and they are both about the platform:
+#
+#   proxy     Caddy on the routed port, HTTP basic auth, proxying to the API on loopback. OpenBot
+#             refuses its no-sign-in mode on a public address and is right to; the only other way
+#             in that upstream offers is an OAuth client registered against a URL that does not
+#             exist until the deploy does. See s6/s6-rc.d/proxy/run.
+#   tpl-init  Pins the API's port away from the one the platform routes, and generates the
+#             credential vault's encryption key onto the volume once. See s6/scripts/tpl-init.sh.
+#
+# s6 is the image's PID 1, so both arrive as ordinary s6-rc services rather than as a new
+# entrypoint wrapping the old one. ENTRYPOINT ["/init"] is inherited untouched.
+
+# upstream pin: keep in sync with insta.template.yaml (upstream.pinned)
+# The digest is the OCI index's, read off the release's own container-images.json. That index
+# carries exactly one platform, linux/amd64, which is what meta.architectures declares.
+FROM ghcr.io/copilotkit/openbot:v0.0.15@sha256:29daf0d4f80ec6ff851ad2a5d82736ff3d49d3ff37f6acfde69ffdecd82b28dd
+
+# Caddy, for the basic auth and the reverse proxy. A single static binary, Apache-2.0, pinned to a
+# release and verified against the SHA-512 that release publishes, so a swapped or tampered asset
+# fails the build rather than shipping. Only the amd64 asset, because the base image above is
+# amd64 only and there is no second architecture to serve.
+ARG CADDY_VERSION=2.11.6
+ARG CADDY_SHA512_AMD64=422771007d505ea97efd1177a4905b2c1a471cd426668f2ace3bcda3d8e30b11f9b1610bfb02c6ad60f2a795f56124f2f5eec6409c17d5a0dd4c21a11375fb94
+RUN set -eu; \
+    arch="$(dpkg --print-architecture)"; \
+    [ "$arch" = "amd64" ] || { echo "this image is amd64 only, like the base it builds on; got $arch" >&2; exit 1; }; \
+    curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" \
+        -o /tmp/caddy.tar.gz; \
+    echo "${CADDY_SHA512_AMD64}  /tmp/caddy.tar.gz" | sha512sum -c -; \
+    tar -xzf /tmp/caddy.tar.gz -C /usr/local/bin caddy; \
+    rm /tmp/caddy.tar.gz; \
+    chmod 0755 /usr/local/bin/caddy; \
+    caddy version
+
+# A user of its own, matching how the base treats every other process in here: the browser and the
+# Bot's shell run as pwuser, the API as apiuser, the database as postgres. The proxy is the one
+# process the public internet talks to, so it shares a skin with none of them. The uid continues
+# the base's own sequence (ubuntu 1000, pwuser 1001, apiuser 1002) and is pinned for the same
+# reason the base pins those: a number that only happens to land here today is not a contract.
+RUN useradd --uid 1003 --create-home --shell /usr/sbin/nologin proxyuser
+
+COPY s6 /etc/s6-overlay
+RUN chmod 0755 /etc/s6-overlay/scripts/tpl-init.sh /etc/s6-overlay/s6-rc.d/proxy/run
+
+# The wiring, as empty marker files, which is what s6-rc reads. Written here rather than committed
+# because an empty file in a repository is a thing reviewers delete by accident and nothing
+# notices until a service silently stops being started.
+#
+#   user/contents.d  both services belong to the bundle s6 brings up.
+#   api depends on tpl-init   so `with-contenv` reads a PORT and a KEY_ENCRYPTION_KEY that are
+#                             already settled rather than whatever the platform passed in.
+#   proxy depends on api      ordering only, so the log does not open with a page of 502s.
+RUN mkdir -p /etc/s6-overlay/s6-rc.d/proxy/dependencies.d \
+    && touch /etc/s6-overlay/s6-rc.d/user/contents.d/tpl-init \
+             /etc/s6-overlay/s6-rc.d/user/contents.d/proxy \
+             /etc/s6-overlay/s6-rc.d/api/dependencies.d/tpl-init \
+             /etc/s6-overlay/s6-rc.d/proxy/dependencies.d/api
+
+# 3001 stays where it was and stays on loopback; this is the only port out.
+EXPOSE 8080

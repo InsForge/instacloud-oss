@@ -170,10 +170,11 @@ the catalog holds only a reference, and it is served from a CDN pinned to the pu
 - Fair-code upstreams such as n8n: reference the official image, and never rebuild or rebrand it.
 - A template that exposes a terminal MUST require an access credential (for ttyd, the `-c` flag).
 - Categories are `ai-agent`, `llm`, `automation`, `backend` (database, auth, storage and functions
-  shipped as one backend, such as Supabase) and `database` (a single datastore, such as
-  ClickHouse). Propose a new one in your PR rather than reaching for `other`. A new category also
-  needs a label in the console (`TEMPLATE_CATEGORIES`) and the marketing gallery (`CATEGORIES`),
-  or it is listed only under All, and it belongs in both `TEMPLATE_CATEGORY_ORDER` and `LABELS` in
+  shipped as one backend, such as Supabase), `database` (a single datastore, such as ClickHouse) and
+  `crm` (customer relationship management, such as Twenty). Propose a new one in your PR rather than
+  reaching for `other`. A new category also needs a label in the console (`TEMPLATE_CATEGORIES`) and
+  the marketing gallery (`CATEGORIES`), or it is listed only under All, and it belongs in both
+  `TEMPLATE_CATEGORY_ORDER` and `LABELS` in
   [ui/src/lib/templatePicker.ts](../ui/src/lib/templatePicker.ts), which mirrors the console's list
   and labels for this repo's own UI. That third place is easy to miss: a category absent from it
   still gets a rail entry and a guessed label, it just sorts in alphabetically after the ones the

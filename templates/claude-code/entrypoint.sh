@@ -16,4 +16,6 @@ if [ "$CRED_BYTES" -gt 186 ]; then
   echo "ADMIN_USERNAME:ADMIN_PASSWORD is $CRED_BYTES bytes; ttyd accepts at most 186" >&2
   exit 1
 fi
-exec ttyd -p 7681 -W -c "$CRED" bash
+# ttyd kills its child when a tab closes, so every tab attaches to one tmux session that outlives it.
+# tmux takes the mouse, so a Mac needs Option+drag to select text, which xterm.js leaves off by default.
+exec ttyd -p 7681 -W -c "$CRED" -t macOptionClickForcesSelection=true tmux -u new-session -A -s main

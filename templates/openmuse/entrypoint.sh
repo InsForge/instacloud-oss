@@ -15,7 +15,10 @@ mkdir -p "$DATA_DIR"
 KEY_FILE="$DATA_DIR/token-encryption-key"
 if [ -z "${TOKEN_ENCRYPTION_KEY:-}" ]; then
   if [ ! -s "$KEY_FILE" ]; then
-    ( umask 077; openssl rand -base64 32 > "$KEY_FILE" )
+    # Write to a temp file and rename it into place. A rename on the same volume is atomic, so an
+    # interrupted or failed openssl never leaves a half-written key that the next boot would read as
+    # valid (-s passes on any nonempty file) and OpenMuse would then reject on its round-trip check.
+    ( umask 077; openssl rand -base64 32 > "$KEY_FILE.tmp" && mv -f "$KEY_FILE.tmp" "$KEY_FILE" )
   fi
   TOKEN_ENCRYPTION_KEY="$(cat "$KEY_FILE")"
   export TOKEN_ENCRYPTION_KEY

@@ -9,6 +9,7 @@ import { DEPLOY_BUTTON_ASSET, findDeployButtons } from "./publish-lib.mjs";
 import { ARCHITECTURES } from "./build-targets.mjs";
 import { checkServiceRuntime } from "./service-runtime.mjs";
 import { checkDockerfilePin, checkUpstreamFrom } from "./dockerfile-pin.mjs";
+import { validateCompanionRef } from "./companions.mjs";
 
 // Template dirs live beside this script's parent (templates/<code>/): runs from any cwd.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -209,16 +210,11 @@ for (const dir of dirs) {
           // sibling template directory here (openmuse runs openmuse-browser's Chromium worker, the
           // way upstream's blueprint splits the API from its browser). A template directory builds
           // exactly one image, so the only way to get a second is to reference a sibling's. Allowed,
-          // but the sibling has to exist and the tag has to be ITS version, or this is the typo from
-          // copying another template, or a dangling pin that only fails at deploy.
-          const siblingManifest = join(root, imageCode, "insta.template.yaml");
-          if (!existsSync(siblingManifest)) {
-            err(dir, `${name}: image is ${SELF_IMAGE_PREFIX}${imageCode}, which no template in this repo builds`);
-          } else {
-            let siblingVersion;
-            try { siblingVersion = yaml.load(readFileSync(siblingManifest, "utf8"))?.version; } catch { siblingVersion = undefined; }
-            if (tag !== String(siblingVersion)) err(dir, `${name}: companion image tag '${tag}' != ${imageCode}'s version '${siblingVersion}': its build tags from version:, so nothing would push '${tag}'`);
-          }
+          // but the sibling has to exist, ship a Dockerfile so the image workflow actually publishes
+          // its tag, and carry the version this names, or the reference is a typo from copying
+          // another template, or a pin that only fails at publish or deploy.
+          const e = validateCompanionRef({ imageCode, tag }, root);
+          if (e) err(dir, `${name}: ${e}`);
         }
       }
     }

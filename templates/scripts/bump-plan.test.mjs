@@ -278,6 +278,19 @@ describe('planBump: every service image, or none of it', () => {
     expect(out.files.manifest).toContain('image: ghcr.io/insforge/insta-oss/templates/claude-code-worker:1.0.0');
   });
 
+  it('recognizes the own image when code is written with YAML quotes', () => {
+    // `code: "claude-code"` is valid to the linter and publisher. A naive parse that kept the quotes
+    // would not match the OURS image and would refuse the bump as "nothing is ours".
+    const quoted = NPM_MANIFEST.replace('code: claude-code', 'code: "claude-code"');
+    const out = applyBump({
+      manifest: quoted,
+      dockerfile: NPM_DOCKERFILE,
+      drift: { kind: 'npm', from: '2.1.235', to: '2.1.274', level: 'patch' },
+    });
+    expect(out.refused).toBeUndefined();
+    expect(out.files.manifest).toContain('image: ghcr.io/insforge/insta-oss/templates/claude-code:0.8.4');
+  });
+
   it('refuses when nothing deployed is ours or the one we track', () => {
     // A sidecar is none of our business, but a manifest whose only image is one would publish a
     // release that changed no running service.

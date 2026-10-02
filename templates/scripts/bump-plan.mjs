@@ -98,7 +98,9 @@ export function planBump({ manifest, dockerfile, drift }) {
   //
   // Two spaces of indent is `upstream.image`, which declares what we TRACK. Four or more is a
   // service, which declares what we DEPLOY. Anything else in there is a sidecar and is left alone.
-  const code = (/^code:\s*(\S+)/m.exec(text) ?? [])[1] ?? '';
+  // Optional YAML quotes stripped: `code: "openmuse"` is valid, and the quotes are not part of the
+  // image identity, so a naive capture would stop the template's own image being recognized.
+  const code = (/^code:\s*(?:"([^"]+)"|'([^']+)'|(\S+))/m.exec(text) ?? []).slice(1).find(Boolean) ?? '';
   const tracked = (/^ {2}image:[ \t]*(\S+)/m.exec(text) ?? [])[1] ?? '';
   let images = 0;
   for (const [line, lead, ref] of text.matchAll(/^( {4,}image:[ \t]*)(\S+)/gm)) {

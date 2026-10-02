@@ -39,7 +39,7 @@ services:
         STUDIO_TOKEN: ${studio_token}
       required:
         ADMIN_USERNAME:
-          description: "Username for the Studio dashboard, asked for by the browser when you open the gateway URL"
+          description: "Username for the Studio dashboard, asked for by the browser when you open the gateway URL. Letters, digits and . _ @ - only"
         ADMIN_PASSWORD:
           description: "Password for the Studio dashboard. Studio has full access to your database, so pick a strong one"
 

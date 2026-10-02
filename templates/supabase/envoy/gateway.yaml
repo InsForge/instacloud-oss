@@ -47,9 +47,14 @@ static_resources:
                     typed_config:
                       '@type': >-
                         type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      # No query strings: they carry ?apikey= keys, auth codes and verify tokens.
                       log_format:
                         text_format_source:
-                          inline_string: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT% - - [%START_TIME(%d/%b/%Y:%H:%M:%S %z)%] \"%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%\" %RESPONSE_CODE% %BYTES_SENT% \"%REQ(REFERER)%\" \"%REQ(USER-AGENT)%\"\n"
+                          inline_string: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT% - - [%START_TIME(%d/%b/%Y:%H:%M:%S %z)%] \"%REQ(:METHOD)% %REQ_WITHOUT_QUERY(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%\" %RESPONSE_CODE% %BYTES_SENT% \"%REQ_WITHOUT_QUERY(REFERER)%\" \"%REQ(USER-AGENT)%\"\n"
+                        formatters:
+                          - name: envoy.formatter.req_without_query
+                            typed_config:
+                              '@type': type.googleapis.com/envoy.extensions.formatter.req_without_query.v3.ReqWithoutQuery
 
                 route_config:
                   name: supabase_route

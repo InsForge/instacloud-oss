@@ -20,7 +20,7 @@ const templates = readdirSync(root)
   .map((dir) => ({ dir, manifest: yaml.load(readFileSync(join(root, dir, 'insta.template.yaml'), 'utf8')) }));
 
 // Set by the Dockerfile, not by the manifest, so an entrypoint may read them freely.
-const IMAGE_PROVIDED = new Set(['HOME', 'PATH', 'PWD', 'SHELL', 'TERM', 'USER', 'LANG']);
+const IMAGE_PROVIDED = new Set(['HOME', 'PATH', 'PWD', 'SHELL', 'TERM', 'USER', 'LANG', 'BASH_SOURCE']);
 
 describe('valueSource: the platform resolution order', () => {
   it('prefers a supplied value over both generator and default', () => {

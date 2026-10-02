@@ -62,7 +62,7 @@ again, because a template variable is stored write-only.
 
 | Variable | Required | What it does |
 |---|---|---|
-| `ADMIN_USERNAME` | yes | Username for Studio's basic auth on the gateway. You choose it. |
+| `ADMIN_USERNAME` | yes | Username for Studio's basic auth on the gateway. You choose it, using letters, digits and `.` `_` `@` `-` only. Any other character stops the gateway from starting, with the reason in its logs. |
 | `ADMIN_PASSWORD` | yes | Password for Studio. You choose it. |
 
 Generated at deploy and shared by the services that need them, never shown back by the platform:

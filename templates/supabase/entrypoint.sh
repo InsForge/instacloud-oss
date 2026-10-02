@@ -130,17 +130,28 @@ EOF
 
 # Fills an Envoy template's placeholders like upstream's envoy entrypoint. Unset ones become empty.
 render() {
-    local src="$1" dst="$2" name script=""
+    local src="$1" dst="$2" name text
     shift 2
-    for name in "$@"; do script="$script s|\${$name}|${!name:-}|g;"; done
-    sed -e "$script" "$src" > "$dst"
+    IFS= read -r -d '' text < "$src" || true
+    # Quoted pattern and replacement are literal, so a value's & | \ stays as typed (sed's did not).
+    for name in "$@"; do text=${text//"\${$name}"/"${!name:-}"}; done
+    printf '%s' "$text" > "$dst"
+}
+
+# Envoy reads one user:{SHA}hash per line, inside a single-quoted YAML scalar.
+basic_auth_record() {
+    if [[ ! $1 =~ ^[A-Za-z0-9._@-]+$ ]]; then
+        log "ADMIN_USERNAME may only use letters, digits and . _ @ -"
+        return 1
+    fi
+    printf '%s:{SHA}%s' "$1" "$(printf '%s' "$2" | openssl sha1 -binary | openssl base64 -A)"
 }
 
 run_gateway() {
     api_keys
     : "${ADMIN_USERNAME:?ADMIN_USERNAME is not set}" "${ADMIN_PASSWORD:?ADMIN_PASSWORD is not set}" "${STUDIO_TOKEN:?STUDIO_TOKEN is not set}"
     local config=/tmp/envoy-gateway.yaml
-    DASHBOARD_BASIC_AUTH="${ADMIN_USERNAME}:{SHA}$(printf '%s' "$ADMIN_PASSWORD" | openssl sha1 -binary | openssl base64 -A)"
+    DASHBOARD_BASIC_AUTH=$(basic_auth_record "$ADMIN_USERNAME" "$ADMIN_PASSWORD")
     # The asymmetric and sb_ keys stay unset, so upstream's key translation filters are no-ops.
     render /insta/envoy/gateway.yaml "$config" ANON_KEY SERVICE_ROLE_KEY DASHBOARD_BASIC_AUTH STUDIO_TOKEN \
         ANON_KEY_ASYMMETRIC SERVICE_ROLE_KEY_ASYMMETRIC SUPABASE_PUBLISHABLE_KEY SUPABASE_SECRET_KEY
@@ -161,6 +172,7 @@ run_studio() {
     bootstrap
     : "${STUDIO_TOKEN:?STUDIO_TOKEN is not set}"
     local crypto_key
+    # Encrypts only each request's connstring header from Studio to meta. Nothing is stored under it.
     crypto_key=$(openssl rand -hex 24)
     mkdir -p /data/snippets
     # postgres-meta is unauthenticated, so it listens on loopback only.
@@ -238,6 +250,9 @@ run_realtime() {
     bin/realtime eval 'Realtime.Release.seeds(Realtime.Repo)'
     exec bin/server
 }
+
+# Sourced, as the tests do, it only defines the functions above.
+[[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
 
 case "$role" in
     gateway) run_gateway ;;

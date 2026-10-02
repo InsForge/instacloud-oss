@@ -4,6 +4,8 @@ const openSlideConfig: OpenSlideConfig = {
   // The three content directories live on the volume; the workspace itself, its node_modules and
   // the pinned runtime stay in the image, where an image pull replaces them wholesale. Absolute
   // paths are resolved as given, and Vite's fs guard is told about each one.
+  // A deck's bare imports resolve by walking up from the FILE, so entrypoint.sh links
+  // /data/node_modules at the workspace's own tree. Without it every deck fails to transform.
   slidesDir: '/data/slides',
   themesDir: '/data/themes',
   assetsDir: '/data/assets',

@@ -27,6 +27,19 @@ for dir in slides themes assets; do
     fi
 done
 
+# A deck is ordinary React: `slides/<id>/index.tsx` imports @open-slide/core, react and
+# react/jsx-dev-runtime by bare specifier, and Vite resolves those by walking up from the FILE, not
+# from the workspace. With the decks on the volume that walk is /data/slides -> /data -> /, none of
+# which holds a node_modules, and every deck fails to transform with "Failed to resolve import
+# @open-slide/core" while the deck browser around it renders fine. This is the walk's one rung:
+# the realpath is the workspace's own tree, so react stays a single copy and `dedupe` still holds.
+# Relinked every boot so it follows the image rather than whatever an older one left behind, but
+# only when it is this link: a real directory there is an operator's own install, and -n would
+# write the link INSIDE it.
+if [ -L /data/node_modules ] || [ ! -e /data/node_modules ]; then
+    ln -sfn /opt/open-slide/node_modules /data/node_modules
+fi
+
 mkdir -p /run/open-slide
 
 # Regenerated every boot so rotating the credentials takes effect on restart.

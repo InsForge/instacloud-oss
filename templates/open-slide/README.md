@@ -58,7 +58,9 @@ source waiting for one.
   forwarding or tunnel.
 - A persistent volume mounted at `/data`. `slides/`, `themes/` and `assets/` live there, so your
   decks, your uploads and your themes survive restarts, redeploys and version upgrades. The
-  workspace itself, its `node_modules` and the pinned runtime stay in the image.
+  workspace itself, its `node_modules` and the pinned runtime stay in the image, with
+  `/data/node_modules` linked at the workspace's copy so a deck's `import … from
+  '@open-slide/core'` resolves from where the file actually sits.
 - A deck to start from: the `getting-started` deck upstream's scaffolder writes is copied onto the
   volume on first boot.
 - The sign-in credentials kept as service variables rather than baked into the image, so you can

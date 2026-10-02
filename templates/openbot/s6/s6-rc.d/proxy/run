@@ -11,6 +11,9 @@
 #
 # NOT A SECOND APPLICATION. It terminates nothing, rewrites nothing and stores nothing. Every
 # request that carries the credential is passed to 127.0.0.1:3001 unchanged.
+#
+# It depends on no other service on purpose, so that whatever happens inside upstream's startup
+# chain the routed port is still answering and says 502 rather than refusing the connection.
 set -eu
 
 PORT_OUT="${PROXY_PORT:-8080}"

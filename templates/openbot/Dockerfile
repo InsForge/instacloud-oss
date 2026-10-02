@@ -10,8 +10,11 @@
 #             exist until the deploy does. See s6/s6-rc.d/proxy/run.
 #   tpl-init  Pins the API's port away from the one the platform routes, and generates the
 #             credential vault's encryption key onto the volume once. See s6/scripts/tpl-init.sh.
+#   pg-wait   Holds `migrate` until the embedded cluster is accepting connections rather than
+#             merely started. Upstream's dependency says the latter, and the first deploy of this
+#             template lost that race by 66 ms. See s6/scripts/pg-wait.sh.
 #
-# s6 is the image's PID 1, so both arrive as ordinary s6-rc services rather than as a new
+# s6 is the image's PID 1, so all three arrive as ordinary s6-rc services rather than as a new
 # entrypoint wrapping the old one. ENTRYPOINT ["/init"] is inherited untouched.
 
 # upstream pin: keep in sync with insta.template.yaml (upstream.pinned)
@@ -44,21 +47,30 @@ RUN set -eu; \
 RUN useradd --uid 1003 --create-home --shell /usr/sbin/nologin proxyuser
 
 COPY s6 /etc/s6-overlay
-RUN chmod 0755 /etc/s6-overlay/scripts/tpl-init.sh /etc/s6-overlay/s6-rc.d/proxy/run
+RUN chmod 0755 /etc/s6-overlay/scripts/tpl-init.sh /etc/s6-overlay/scripts/pg-wait.sh \
+               /etc/s6-overlay/s6-rc.d/proxy/run
 
 # The wiring, as empty marker files, which is what s6-rc reads. Written here rather than committed
 # because an empty file in a repository is a thing reviewers delete by accident and nothing
 # notices until a service silently stops being started.
 #
-#   user/contents.d  both services belong to the bundle s6 brings up.
+#   user/contents.d           all three belong to the bundle s6 brings up.
 #   api depends on tpl-init   so `with-contenv` reads a PORT and a KEY_ENCRYPTION_KEY that are
 #                             already settled rather than whatever the platform passed in.
-#   proxy depends on api      ordering only, so the log does not open with a page of 502s.
-RUN mkdir -p /etc/s6-overlay/s6-rc.d/proxy/dependencies.d \
+#   pg-wait depends on postgres, and migrate on pg-wait, which puts the readiness check between
+#                             the two services upstream left racing.
+#
+# `proxy` deliberately depends on NOTHING. It holds the only port the platform routes, so tying it
+# to upstream's startup chain would turn any failure inside that chain into a dead socket and the
+# platform's only report would be that the app was not ready. Started on its own it answers 502
+# until the API is up, which is a thing an operator can curl.
+RUN mkdir -p /etc/s6-overlay/s6-rc.d/pg-wait/dependencies.d \
     && touch /etc/s6-overlay/s6-rc.d/user/contents.d/tpl-init \
+             /etc/s6-overlay/s6-rc.d/user/contents.d/pg-wait \
              /etc/s6-overlay/s6-rc.d/user/contents.d/proxy \
              /etc/s6-overlay/s6-rc.d/api/dependencies.d/tpl-init \
-             /etc/s6-overlay/s6-rc.d/proxy/dependencies.d/api
+             /etc/s6-overlay/s6-rc.d/pg-wait/dependencies.d/postgres \
+             /etc/s6-overlay/s6-rc.d/migrate/dependencies.d/pg-wait
 
 # 3001 stays where it was and stays on loopback; this is the only port out.
 EXPOSE 8080

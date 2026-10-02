@@ -50,6 +50,7 @@ services:
         # reaches, and those three are the only values it reads to decide that. They are unused
         # here: the app is served same-origin by the API, and trustedOrigins is read only when an
         # identity provider is configured.
+        OPENBOT_SINGLE_USER: "true"
         INTELLIGENCE_API_URL: https://api.intelligence.copilotkit.ai
         INTELLIGENCE_GATEWAY_WS_URL: wss://realtime.intelligence.copilotkit.ai
         # Where the overlay's Caddy listens. The API keeps 3001 on loopback; tpl-init pins its

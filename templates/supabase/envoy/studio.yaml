@@ -1,4 +1,4 @@
-# Studio has no auth of its own and its machine has a public URL: only requests the gateway signed reach it.
+# Studio has no auth and its machine has a public URL, so only gateway-signed requests get through.
 admin:
   address:
     socket_address:
@@ -28,7 +28,7 @@ static_resources:
                       domains:
                         - '*'
                       routes:
-                        # The platform's health gate: upstream's own Studio healthcheck, open without the token.
+                        # The platform's health gate: upstream's Studio healthcheck, open without the token.
                         - match:
                             path: /healthz
                           route:

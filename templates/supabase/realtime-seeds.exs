@@ -1,7 +1,4 @@
-# Upstream's self-host seed (priv/repo/seeds.exs, realtime v2.134.10), changed in three places only.
-# 1. The tenant keeps its row: updated in place, never deleted and re-inserted on every boot.
-# 2. ssl_enforced follows DB_SSL, since the managed database refuses plaintext.
-# 3. The tenant verifies client JWTs with JWT_SECRET; API_JWT_SECRET guards only the admin API.
+# Upstream's self-host seed (realtime v2.134.10), but the tenant row is upserted and SSL follows DB_SSL.
 require Logger
 
 alias Realtime.Api
@@ -16,6 +13,7 @@ tenant_name = System.fetch_env!("SELF_HOST_TENANT_NAME")
 params = %{
   "name" => tenant_name,
   "external_id" => tenant_name,
+  # Client tokens are checked with JWT_SECRET, so API_JWT_SECRET only guards the tenant admin API.
   "jwt_secret" => System.fetch_env!("JWT_SECRET"),
   "extensions" => [
     %{

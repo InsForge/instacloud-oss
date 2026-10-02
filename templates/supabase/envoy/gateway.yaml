@@ -1,6 +1,4 @@
-# Derived from supabase/supabase self-hosted/v0.8.2 docker/volumes/api/envoy/{envoy.yaml,lds.template.yaml}.
-# Changes: static instead of file-based xDS, every route rewrites Host to its upstream, no functions or /pg/ routes,
-# and the Studio route carries the token Studio's own machine checks. The entrypoint fills ${...} and appends clusters.
+# Upstream's self-hosted/v0.8.2 envoy config made static, routes rewrite Host, Studio gets the gateway token.
 node:
   cluster: supabase_cluster
   id: supabase_node

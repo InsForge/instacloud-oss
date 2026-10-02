@@ -1,5 +1,5 @@
 #!/bin/bash
-# One image, four of the template's machines: INSTA_SUPABASE_ROLE picks the Supabase component this one runs.
+# One image for five of the machines: INSTA_SUPABASE_ROLE picks the Supabase component to run.
 set -euo pipefail
 
 role="${INSTA_SUPABASE_ROLE:?INSTA_SUPABASE_ROLE is not set}"
@@ -20,7 +20,7 @@ api_keys() {
     SERVICE_ROLE_KEY=$(jwt service_role)
 }
 
-# The platform gives each service the managed database as one URL; Supabase's components log in as their own roles.
+# The platform hands over one DATABASE_URL, and each component logs in as its own role on that host.
 parse_database_url() {
     local rest userinfo hostport dbpath
     rest="${DATABASE_URL:?DATABASE_URL is not set}"
@@ -39,7 +39,7 @@ parse_database_url() {
 }
 role_url() { printf 'postgres://%s:%s@%s' "$1" "$db_password_encoded" "$db_hostpath"; }
 
-# Replays supabase/postgres's init scripts and migrations once per database, in one transaction under a lock.
+# Replays supabase/postgres's schema once per database, in one transaction under a lock.
 bootstrap() {
     local sql=/tmp/bootstrap.sql file name
     {
@@ -51,7 +51,7 @@ bootstrap() {
         echo 'create table if not exists _supabase_template.migrations (name text primary key, applied_at timestamptz not null default now());'
         for file in /opt/supabase-db/init-scripts/*.sql /opt/supabase-db/migrations/*.sql; do
             name="${file##*/}"
-            # The demotion would strip the platform's own superuser; pgbouncer is not part of this stack.
+            # The demotion would strip the platform's own superuser, and pgbouncer is not in this stack.
             case "$name" in 10000000000000_demote-postgres.sql | *pgbouncer*.sql) continue ;; esac
             echo "select not exists (select 1 from _supabase_template.migrations where name = '$name') as todo \\gset"
             echo '\if :todo'
@@ -72,7 +72,7 @@ bootstrap() {
     done
 }
 
-# Exits as soon as any child does, so the platform restarts the machine rather than leaving half of it running.
+# Exits when any child does, so the platform restarts the whole machine.
 wait_any() {
     local status=0
     wait -n || status=$?
@@ -80,7 +80,7 @@ wait_any() {
     exit "$status"
 }
 
-# Envoy needs an upstream cluster per service; https URLs get TLS with SNI, which the platform's router requires.
+# One Envoy cluster per service. https URLs get TLS with SNI, as the platform's router needs.
 cluster() {
     local name="$1" url="$2" scheme host port
     scheme="${url%%://*}"
@@ -94,6 +94,10 @@ cluster() {
     - name: $name
       type: LOGICAL_DNS
       dns_lookup_family: V4_PREFERRED
+      dns_refresh_rate: 5s
+      dns_failure_refresh_rate:
+        base_interval: 1s
+        max_interval: 1s
       connect_timeout: 10s
       load_assignment:
         cluster_name: $name
@@ -121,7 +125,7 @@ EOF
     fi
 }
 
-# Fills the named placeholders in an Envoy template the way upstream's envoy entrypoint does; unset ones become empty.
+# Fills an Envoy template's placeholders like upstream's envoy entrypoint. Unset ones become empty.
 render() {
     local src="$1" dst="$2" name script=""
     shift 2
@@ -185,7 +189,7 @@ run_storage() {
     parse_database_url
     bootstrap
     mkdir -p /data/storage
-    # imgproxy reads the files straight off the shared volume and has no auth, so it listens on loopback only.
+    # imgproxy has no auth and reads files off this volume, so it listens on loopback only.
     (
         export IMGPROXY_BIND=127.0.0.1:5001 IMGPROXY_LOCAL_FILESYSTEM_ROOT=/ IMGPROXY_USE_ETAG=true
         export IMGPROXY_AUTO_WEBP=true IMGPROXY_MAX_SRC_RESOLUTION=16.8
@@ -193,7 +197,7 @@ run_storage() {
     ) &
     (
         cd /opt/storage
-        # node-pg reads sslmode=require as verify-full unless asked for libpq's meaning, which every other component uses.
+        # node-pg treats sslmode=require as verify-full unless told to use libpq's meaning.
         DATABASE_URL="$(role_url supabase_storage_admin)"
         case "$DATABASE_URL" in *\?*) DATABASE_URL="$DATABASE_URL&uselibpqcompat=true" ;; esac
         export DATABASE_URL ANON_KEY SERVICE_KEY="$SERVICE_ROLE_KEY" AUTH_JWT_SECRET="$JWT_SECRET"
@@ -202,6 +206,14 @@ run_storage() {
         exec node dist/start/server.js
     ) &
     wait_any
+}
+
+run_rest() {
+    parse_database_url
+    bootstrap
+    PGRST_DB_URI="$(role_url authenticator)"
+    export PGRST_DB_URI
+    exec postgrest
 }
 
 run_realtime() {
@@ -226,8 +238,9 @@ run_realtime() {
 
 case "$role" in
     gateway) run_gateway ;;
+    rest) run_rest ;;
     studio) run_studio ;;
     storage) run_storage ;;
     realtime) run_realtime ;;
-    *) log "unknown role (expected gateway, studio, storage or realtime)"; exit 64 ;;
+    *) log "unknown role (expected gateway, rest, studio, storage or realtime)"; exit 64 ;;
 esac

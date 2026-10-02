@@ -3,14 +3,14 @@ version: 0.1.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
-# Upstream's self-hosted compose, split into one machine per service on the managed database (see ./README.md).
+# Upstream's self-hosted compose, one machine per service, on the managed database (see ./README.md).
 upstream:
   repo: supabase/supabase
   pinned: self-hosted/v0.8.2
   commit: 564eab8ad7840b13324f68b1bfac074ef8d51c21
   license: Apache-2.0
 
-# Shared by every service that signs or checks tokens; nobody needs to read them back from the platform.
+# Shared by every service that signs or checks tokens. Nobody needs to read them back.
 generated:
   jwt_secret: secret:64
   studio_token: secret:48
@@ -22,7 +22,7 @@ services:
   # The one entry users hit: Envoy with upstream's routes, API key checks and Studio's basic auth.
   gateway:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0   # built from ./Dockerfile
     port: 8000
     healthcheck: /   # Studio's basic auth answers 401, which the gate accepts
     alwaysOn: true
@@ -124,7 +124,7 @@ services:
     port: 9999
     healthcheck: /health
     alwaysOn: false
-    # GoTrue logs in as supabase_auth_admin with the database's password, so its URL is put together at start.
+    # GoTrue logs in as supabase_auth_admin, so its URL is built from DATABASE_URL at start.
     command: >-
       rest="${DATABASE_URL#*://}";
       export GOTRUE_DB_DATABASE_URL="postgres://supabase_auth_admin:${rest#*:}";
@@ -145,7 +145,7 @@ services:
         GOTRUE_JWT_ISSUER: ${services.gateway.url}/auth/v1
         GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
         GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
-        GOTRUE_MAILER_AUTOCONFIRM: "true"   # no SMTP is configured, so confirmation mail could never arrive
+        GOTRUE_MAILER_AUTOCONFIRM: "true"   # no SMTP, so no confirmation mail
         GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
         GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
         GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
@@ -157,19 +157,16 @@ services:
       platform:
         DATABASE_URL: ${{services.db.DATABASE_URL}}
 
+  # PostgREST runs from the overlay: a start command on upstream's image fails to roll on the platform.
   rest:
     type: web
-    image: docker.io/postgrest/postgrest:v14.17
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0
     port: 3000
     healthcheck: /
     alwaysOn: false
-    # PostgREST logs in as authenticator with the database's password, so its URL is put together at start.
-    command: >-
-      rest="${DATABASE_URL#*://}";
-      export PGRST_DB_URI="postgres://authenticator:${rest#*:}";
-      exec postgrest
     env:
       fixed:
+        INSTA_SUPABASE_ROLE: rest
         PGRST_DB_SCHEMAS: public,graphql_public
         PGRST_DB_MAX_ROWS: "1000"
         PGRST_DB_EXTRA_SEARCH_PATH: public

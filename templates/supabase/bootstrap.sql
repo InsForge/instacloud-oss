@@ -1,5 +1,4 @@
--- Run on every boot, inside the bootstrap transaction, after the upstream schema replay.
--- Every Supabase login role shares the managed database's password, as all of upstream's share POSTGRES_PASSWORD.
+-- Every boot, after the schema replay: each Supabase login role gets the database's password, like upstream.
 \getenv pw INSTA_DB_PASSWORD
 alter role supabase_admin with password :'pw';
 alter role authenticator with password :'pw';
@@ -15,7 +14,7 @@ create schema if not exists _realtime;
 alter schema _realtime owner to supabase_admin;
 alter database :"dbname" set "app.settings.jwt_exp" to '3600';
 
--- Upstream ships pg_graphql off; try once per database, and retry on later boots until it exists.
+-- Upstream ships pg_graphql off. Try it once per database, retrying on later boots until it exists.
 select not exists (select 1 from _supabase_template.migrations where name = 'enable-pg_graphql') as todo \gset
 \if :todo
 do $$

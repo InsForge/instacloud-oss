@@ -1,5 +1,5 @@
 code: supabase
-version: 0.1.0
+version: 0.1.1
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -22,7 +22,7 @@ services:
   # The one entry users hit: Envoy with upstream's routes, API key checks and Studio's basic auth.
   gateway:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0   # built from ./Dockerfile
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.1   # built from ./Dockerfile
     port: 8000
     healthcheck: /   # Studio's basic auth answers 401, which the gate accepts
     alwaysOn: true
@@ -46,7 +46,7 @@ services:
   # Holds websockets open, and boots in tens of seconds, so it stays on.
   realtime:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.1
     port: 4000
     healthcheck: /healthcheck
     alwaysOn: true
@@ -73,7 +73,7 @@ services:
   # Storage API and imgproxy share one machine, since imgproxy reads the stored files off this volume.
   storage:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.1
     port: 5000
     healthcheck: /status
     alwaysOn: false
@@ -96,7 +96,7 @@ services:
   # Studio and postgres-meta share one machine, so meta (which has no auth) never leaves loopback.
   studio:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.1
     port: 3000
     healthcheck: /healthz
     alwaysOn: false
@@ -120,18 +120,14 @@ services:
 
   auth:
     type: web
-    image: docker.io/supabase/gotrue:v2.196.0
+    # From the overlay, so it bootstraps the schema itself: the gallery may deploy it before the rest.
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.1
     port: 9999
     healthcheck: /health
     alwaysOn: false
-    # GoTrue logs in as supabase_auth_admin, so its URL is built from DATABASE_URL at start.
-    command: >-
-      rest="${DATABASE_URL#*://}";
-      export GOTRUE_DB_DATABASE_URL="postgres://supabase_auth_admin:${rest#*:}";
-      until auth migrate; do sleep 3; done;
-      exec auth
     env:
       fixed:
+        INSTA_SUPABASE_ROLE: auth
         GOTRUE_API_HOST: 0.0.0.0
         GOTRUE_API_PORT: "9999"
         API_EXTERNAL_URL: ${services.gateway.url}/auth/v1
@@ -160,7 +156,7 @@ services:
   # PostgREST runs from the overlay, since upstream's amd64 image has no shell for a start command.
   rest:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0
+    image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.1
     port: 3000
     healthcheck: /
     alwaysOn: false

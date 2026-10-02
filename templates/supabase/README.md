@@ -21,18 +21,21 @@ file, each component gets its own service, and the database is a managed InstaCl
 | Service | Runs | Image | Always on |
 |---|---|---|---|
 | `gateway` | Envoy, with upstream's routes, API key checks and Studio's basic auth. **The one URL you use** | this template's image | yes |
-| `auth` | GoTrue (Supabase Auth) | `supabase/gotrue:v2.196.0` | no |
+| `auth` | GoTrue (Supabase Auth) | this template's image | no |
 | `rest` | PostgREST | this template's image | no |
 | `realtime` | Supabase Realtime | this template's image | yes |
 | `storage` | Storage API and imgproxy, on one volume | this template's image | no |
 | `studio` | Studio and postgres-meta | this template's image | no |
 | `db` | Managed Postgres 16 | platform managed | platform managed |
 
-The template's own image only puts upstream's binaries side by side (Envoy, PostgREST, the Realtime
-release, Studio, postgres-meta, the Storage API and imgproxy) and adds an entrypoint that picks one
-component per machine. Nothing is rebuilt from source except the Storage API's `fs-xattr` addon,
-which upstream ships built for Alpine and is rebuilt against glibc. `auth` runs upstream's GoTrue
-image unchanged, with a start command that builds its database URL.
+The template's own image only puts upstream's binaries side by side (Envoy, GoTrue, PostgREST, the
+Realtime release, Studio, postgres-meta, the Storage API and imgproxy) and adds an entrypoint that
+picks one component per machine. Nothing is rebuilt from source except the Storage API's `fs-xattr`
+addon, which upstream ships built for Alpine and is rebuilt against glibc.
+
+Every service that uses the database (`auth`, `rest`, `realtime`, `storage` and `studio`) creates
+the schema Supabase expects when it boots, if no other service has yet, so the stack comes up in
+whatever order the platform starts it.
 
 Two pairs share a machine on purpose. postgres-meta has no authentication, so it runs next to Studio
 and listens on loopback only. imgproxy has none either, and reads the stored files straight off the

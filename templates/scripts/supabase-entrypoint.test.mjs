@@ -8,6 +8,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import yaml from 'js-yaml';
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'supabase');
 const entrypoint = join(dir, 'entrypoint.sh');
@@ -48,6 +49,27 @@ describe('basic_auth_record', () => {
     expect(r.status).not.toBe(0);
     expect(r.stdout).toBe('');
     expect(r.stderr).toMatch(/ADMIN_USERNAME/);
+  });
+});
+
+// The registry keeps manifests as jsonb, which reorders services (a gallery deploy ran auth first
+// and it waited forever for a schema another service creates). So no service may rely on another
+// having booted: every one that reads DATABASE_URL bootstraps the schema itself.
+describe('database bootstrap', () => {
+  const manifest = yaml.load(readFileSync(join(dir, 'insta.template.yaml'), 'utf8'));
+  const script = readFileSync(entrypoint, 'utf8');
+  const readers = Object.entries(manifest.services).filter(([, s]) => s.env?.platform?.DATABASE_URL);
+
+  it('runs in every service that reads DATABASE_URL, before that service starts its process', () => {
+    expect(readers.map(([name]) => name).sort()).toEqual(['auth', 'realtime', 'rest', 'storage', 'studio']);
+    for (const [name, svc] of readers) {
+      expect(svc.image, name).toMatch(/^ghcr\.io\/insforge\/insta-oss\/templates\/supabase:/);
+      const role = svc.env.fixed?.INSTA_SUPABASE_ROLE;
+      const body = script.match(new RegExp(`^run_${role}\\(\\) \\{\\n([\\s\\S]*?)^\\}`, 'm'))?.[1];
+      expect(body, `${name}: run_${role}()`).toBeDefined();
+      expect(body.indexOf('bootstrap'), name).toBeGreaterThan(-1);
+      expect(body.indexOf('bootstrap'), name).toBeLessThan(body.indexOf('exec '));
+    }
   });
 });
 

@@ -58,6 +58,12 @@ test("delete, recreate under the same name: the new project's metrics carry none
   const after = await engine.runtimeMetrics(second.id, { component: 'compute', window })
   expect(pointTimes(after.series).filter((t) => t <= old[1]!)).toEqual([])
   expect(after.series.flatMap((s) => s.points.map(([, v]) => v))).not.toContain(0.9)
+
+  vi.setSystemTime((T0 + 660) * 1000)
+  engine.metricsHistory.record(T0 + 660, [{ name: CONTAINER, cpuCores: 0.1, memBytes: 100, rxBytes: 0, txBytes: 0 }])
+  const sampled = await engine.runtimeMetrics(second.id, { component: 'compute', window })
+  expect(sampled.series.find((s) => s.name === 'cpu_cores')!.points).toEqual([[T0 + 660, 0.1]])
+  expect(sampled.series.find((s) => s.name === 'memory_used_bytes')!.points).toEqual([[T0 + 660, 100]])
 })
 
 // A rename moves a service's name, and so its container's name, without moving its creation time. Renamed

@@ -111,7 +111,11 @@ export function TimeSeriesChart({ card, height, domain }: { card: MetricCardData
             stroke={line.color}
             strokeWidth={2}
             fill={`url(#${gradientId}-${line.key})`}
-            dot={false}
+            dot={({ cx, cy, index }) => {
+              const isolated = index !== undefined && rows[index]?.[line.key] !== undefined
+                && rows[index - 1]?.[line.key] === undefined && rows[index + 1]?.[line.key] === undefined
+              return isolated ? <circle cx={cx} cy={cy} r={2} fill={line.color} /> : null
+            }}
             isAnimationActive={false}
             activeDot={{ r: 3, fill: line.color, strokeWidth: 0 }}
           />

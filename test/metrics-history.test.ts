@@ -438,6 +438,7 @@ describe('MetricsSampler', () => {
     try {
       const sampler = new MetricsSampler(new MetricsHistory(), { file: path, docker: fakeDocker([]), now: () => now, log: () => {} })
       await sampler.sampleOnce()
+      expect(existsSync(writer.mock.calls[0]![0] as string)).toBe(false)
       now += 300
       await sampler.sampleOnce()
       expect(writer.mock.calls).toHaveLength(2)

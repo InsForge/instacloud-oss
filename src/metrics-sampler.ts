@@ -4,7 +4,7 @@
 // is how the cloud draws a stopped service: an asleep database reads as a flat line at 0, not a gap.
 
 import { readFileSync } from 'node:fs'
-import { chmod, rename, writeFile } from 'node:fs/promises'
+import { chmod, rename, unlink, writeFile } from 'node:fs/promises'
 import { dockerCall } from './docker'
 import { statsToSamples, type ContainerSample, type MetricsHistory } from './metrics-history'
 
@@ -145,6 +145,7 @@ export class MetricsSampler {
       await rename(tmp, this.opts.file)
       this.lastPersist = t
     } catch (e) {
+      await unlink(tmp).catch(() => {})
       this.log(`metrics history: could not save ${this.opts.file}: ${String(e)}`)
     }
   }

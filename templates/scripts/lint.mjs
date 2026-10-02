@@ -7,6 +7,7 @@ import yaml from "js-yaml";
 import { FIXED_REF_RE, checkFixedRef, MANAGED_TYPES } from "./manifest-refs.mjs";
 import { DEPLOY_BUTTON_ASSET, findDeployButtons } from "./publish-lib.mjs";
 import { ARCHITECTURES } from "./build-targets.mjs";
+import { checkServiceRuntime } from "./service-runtime.mjs";
 import { checkDockerfilePin, checkUpstreamFrom } from "./dockerfile-pin.mjs";
 
 // Template dirs live beside this script's parent (templates/<code>/): runs from any cwd.
@@ -182,7 +183,7 @@ for (const dir of dirs) {
       // empty shell. That tolerance is a storage round-trip concern: a NORMALIZED stored manifest
       // always carries an env record, and it must still parse on every by-code deploy. This linter
       // only ever sees hand-authored files, where an empty env shell is noise no author writes.
-      for (const field of ["image", "build", "port", "healthcheck", "volume", "volumeGib", "alwaysOn", "env"]) {
+      for (const field of ["image", "build", "port", "healthcheck", "volume", "volumeGib", "alwaysOn", "command", "mountPath", "env"]) {
         if (svc[field] !== undefined) err(dir, `${name}: a ${svc.type} service is platform-managed and carries no ${field}, declare it bare`);
       }
       continue;
@@ -218,6 +219,9 @@ for (const dir of dirs) {
     if (svc.alwaysOn !== undefined && typeof svc.alwaysOn !== "boolean") {
       err(dir, `${name}: alwaysOn must be a boolean`);
     }
+    const runtime = checkServiceRuntime(name, svc);
+    for (const e of runtime.errors) err(dir, e);
+    for (const w of runtime.warnings) console.warn(`~ ${dir}: ${w}`);
     // rule 2: required vars need description (unless generated)
     for (const [k, spec] of Object.entries(svc.env?.required ?? {})) {
       if (!spec?.generate && !spec?.description) err(dir, `required var ${k} needs a description`);

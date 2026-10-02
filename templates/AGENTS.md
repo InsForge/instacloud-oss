@@ -86,6 +86,13 @@ IS the template code. Copying the closest existing template is the fastest way t
    self-hosted runtime (`src/`) still parses only `web`, `worker` and `postgres`, so it skips a
    template that declares one of the other three, logging a warning, until it gains support for
    them. `npm run lint` warns on this too and never fails the run over it.
+14. `command` overrides the image's start command and runs through `sh -c`, on a web or worker service.
+   It must be a non-empty string. `npm run lint` refuses an empty one, and so does publish. It is
+   cloud-only today: the self-hosted runtime refuses to run it, and lint prints a warning.
+15. `mountPath` moves the volume off `/data`. It needs `volume: true` and an absolute path.
+   `npm run lint` refuses a missing `volume: true` and a relative path. Publish also refuses system
+   directories, `..`, and characters other than letters, digits, `.`, `-`, `_` and `/`. It is
+   cloud-only today, like `command`.
 
 ## Architectures
 
@@ -158,8 +165,8 @@ the catalog holds only a reference, and it is served from a CDN pinned to the pu
 
 ## Conventions
 
-- Volumes mount at `/data`, which the platform fixes. Point the app's data directory there with its
-  own env var (`HERMES_HOME`, `N8N_USER_FOLDER`, `HOME`) and check upstream docs for the right one.
+- Volumes mount at `/data` unless the service declares `mountPath` (rule 15). Prefer `/data` and point
+  the app's data directory there with its own env var (`HERMES_HOME`, `N8N_USER_FOLDER`, `HOME`).
 - Fair-code upstreams such as n8n: reference the official image, and never rebuild or rebrand it.
 - A template that exposes a terminal MUST require an access credential (for ttyd, the `-c` flag).
 - Categories are `ai-agent`, `llm`, `automation`, `backend` (database, auth, storage and functions

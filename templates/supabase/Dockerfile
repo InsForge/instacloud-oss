@@ -47,7 +47,7 @@ ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
 # Studio and postgres-meta keep the Node 22 their addons were built for. Storage uses this base's 24.
 COPY --from=meta /usr/local/bin/node /usr/local/bin/node22
 COPY --from=envoy /usr/local/bin/envoy /usr/local/bin/envoy
-COPY --from=postgrest /usr/bin/postgrest /usr/local/bin/postgrest
+COPY --from=postgrest /bin/postgrest /usr/local/bin/postgrest
 COPY --from=imgproxy /opt/imgproxy /opt/imgproxy
 COPY --from=realtime /app /opt/realtime
 COPY --from=studio /app /opt/studio

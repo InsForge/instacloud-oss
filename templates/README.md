@@ -63,7 +63,7 @@ Where the record stands, and what each row rests on:
 | `n8n` | yes | yes | The official `n8nio/n8n:2.36.5` index carries both. Nothing is rebuilt here |
 | `openclaw` | yes | yes | Upstream's index carries both; this image only adds an entrypoint |
 | `pi` | yes | yes | Same base and ttyd asset as the other terminal templates |
-| `supabase` | yes | yes | Every upstream image the overlay copies from (Studio, postgres-meta, Storage API, imgproxy, Envoy, Realtime) and the two it deploys directly (GoTrue, PostgREST) is a two-architecture index. The only compiled step is `npm rebuild fs-xattr` for glibc, which builds on both |
+| `supabase` | yes | yes | Every upstream image the overlay copies from (Studio, postgres-meta, Storage API, imgproxy, Envoy, PostgREST, Realtime) and the GoTrue image it deploys directly is a two-architecture index. PostgREST's two halves differ: amd64 is a static binary with no shell, arm64 is Ubuntu with a dynamic one, so the overlay copies `/bin/postgrest` and installs `libpq5` and `libgmp10` for the arm64 build. The only compiled step is `npm rebuild fs-xattr` for glibc |
 | `whisper-turbo` | yes | **no** | `debian:bookworm-slim` carries both, but upstream's `make server` target compiles `-DWHISPER_X86` against the AVX2/AVX-512/VNNI kernels in `src/x86`. The generic C fallback in the tree is not wired into that target, so there is nothing to build for arm64 and the row says so rather than shipping a broken index |
 
 Every row above except `clickhouse`, which says what it rests on instead, was checked by building

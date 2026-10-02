@@ -157,7 +157,7 @@ services:
       platform:
         DATABASE_URL: ${{services.db.DATABASE_URL}}
 
-  # PostgREST runs from the overlay: a start command on upstream's image fails to roll on the platform.
+  # PostgREST runs from the overlay, since upstream's amd64 image has no shell for a start command.
   rest:
     type: web
     image: ghcr.io/insforge/insta-oss/templates/supabase:0.1.0

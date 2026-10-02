@@ -55,7 +55,12 @@ COPY Caddyfile /etc/caddy/Caddyfile
 # stdin uses bufio.ReadBytes('\n') and returns whatever error that gives back, so input with no
 # trailing newline hands it io.EOF and the command dies with the single word "EOF". That shipped
 # once; this is what would have caught it.
+#
+# `fmt` first, because Caddy warns on every start that a config it did not format is not formatted,
+# and a warning in a template's log is a thing a reviewer has to stop and rule out. The committed
+# file stays as a person wrote it; the one in the image is Caddy's own rendering of it.
 RUN set -eu; \
+    caddy fmt --overwrite /etc/caddy/Caddyfile; \
     probe="$(printf 'probe\n' | caddy hash-password)"; \
     case "$probe" in '$2'*) ;; *) echo "hash-password did not return a bcrypt hash" >&2; exit 1 ;; esac; \
     PROXY_PORT=8080 ADMIN_USERNAME=probe PROXY_PASSWORD_HASH="$probe" \

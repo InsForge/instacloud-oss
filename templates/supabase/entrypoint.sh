@@ -70,6 +70,9 @@ bootstrap() {
         log "bootstrap failed, retrying in 5s"
         sleep 5
     done
+    # Matches upstream's wal_level=logical. Run alone: ALTER SYSTEM refuses a transaction.
+    PGCONNECT_TIMEOUT=10 psql "$DATABASE_URL" -X -q -c 'alter system set wal_level = logical' >/dev/null ||
+        log "could not set wal_level=logical, postgres_changes stays off"
 }
 
 # Exits when any child does, so the platform restarts the whole machine.

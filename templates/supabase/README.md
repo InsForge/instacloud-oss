@@ -103,23 +103,27 @@ to and restart that service. Common ones:
    `supabase.channel(...)` broadcast then work as on Supabase's own platform.
 5. To connect to the database directly, use the `db` service's connection string from the console.
    The console's **Database > Extensions** tab lists only the extensions turned on from that tab, so
-   the ones Supabase created over SQL (`pgcrypto`, `uuid-ossp` and the rest) show as off there.
-   Do not switch them off in that tab: it runs `DROP EXTENSION` and breaks Supabase.
+   the ones Supabase created over SQL (`pgcrypto`, `uuid-ossp`, `pg_graphql` and the rest) show as
+   off there. Studio's own Extensions page shows the real state. Turning one on in the console is
+   harmless, but turning it off afterwards runs `DROP EXTENSION`, which for `pg_graphql` turns
+   GraphQL off.
 
 ## Known limitations
 
 - **GraphQL (`/graphql/v1`) is off.** The managed Postgres does not ship `pg_graphql` yet, and
   requests answer `pg_graphql extension is not enabled`. The template tries
   `create extension pg_graphql` on every boot of `rest`, `realtime`, `storage` and `studio` until it
-  succeeds, so once the database offers it, restarting one of them turns GraphQL on.
+  succeeds. A deploy made after the database offers it gets GraphQL on first boot. An earlier
+  deploy keeps its database running on the old image, so restart the database from the platform
+  (`insta postgres restart`, or `POST /projects/{id}/database/restart`) and then restart `rest`.
 - **Realtime `postgres_changes` does not deliver yet.** It needs logical decoding with the
   `wal2json` output plugin, which the managed Postgres does not ship yet. A subscription still
-  answers "Subscribed to PostgreSQL", but no change ever arrives. Broadcast works.
-  Once the database offers `wal2json`:
-  1. run `ALTER SYSTEM SET wal_level = logical;` in Studio's SQL editor,
-  2. restart the database from the platform (`insta postgres restart`, or
+  answers "Subscribed to PostgreSQL", but no change ever arrives. Broadcast works. The template
+  already sets `wal_level = logical` at boot, like upstream's own database, but Postgres only reads
+  it at start. Once the database offers `wal2json`:
+  1. restart the database from the platform (`insta postgres restart`, or
      `POST /projects/{id}/database/restart`), then restart `realtime`,
-  3. add your tables to the `supabase_realtime` publication, for example
+  2. add your tables to the `supabase_realtime` publication, for example
      `alter publication supabase_realtime add table public.messages;`.
 - **No Edge Functions and no Supavisor.** The functions runtime is not part of this template, and
   the managed database brings its own connection pooler.

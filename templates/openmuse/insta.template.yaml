@@ -1,0 +1,94 @@
+code: openmuse
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# Upstream publishes no image and no git tag, so the image is built here from a commit (see
+# ./Dockerfile). `pinned` carries the version the repository calls itself, which is what the
+# catalog shows; `commit` is what actually gets built.
+upstream:
+  repo: CopilotKit/OpenMuse
+  pinned: "0.1.0"
+  commit: 9ec439fbaa878197d9d44c2aa982cca55676dd68
+  license: MIT
+
+services:
+  openmuse:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/openmuse:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    # nginx, not the API. It serves the Expo web bundle and proxies /api to the API on loopback,
+    # because the template gets one routed port and upstream's own blueprint needs two: its API
+    # answers `/` with JSON, so the UI ships as a separate static site there.
+    port: 8080
+    healthcheck: /api/health
+    # The task worker runs inside the API process: tracking watches re-check pages on a schedule,
+    # and SQL leases recover tasks interrupted mid-run. Nothing inbound would wake either, so this
+    # is the n8n case rather than the browser-terminal one.
+    alwaysOn: true
+    volume: true  # mounts at /data
+    env:
+      fixed:
+        # The API binds loopback and nginx is the public face. Not only hardening: a sample
+        # workspace refuses to start on any other host, by design upstream.
+        HOST: 127.0.0.1
+        PORT: "8787"
+        # Everything durable lives here: the PGlite database, imported PDFs, the session signing
+        # key, and the minted token-encryption key.
+        DATA_DIR: /data/openmuse
+        TASK_WORKER_ENABLED: "true"
+        # The optional Linux computer drives a Docker engine from inside the container, which a
+        # compute machine does not have.
+        COMPUTER_ENABLED: "false"
+        # Signed document and browser-preview links are absolute and built from this, so a wrong
+        # value shows up as PDFs that will not open. It is also the origin the API accepts.
+        PUBLIC_API_URL: ${services.openmuse.url}
+        ALLOWED_ORIGINS: ${services.openmuse.url}
+      required:
+        # Neither a `default:` nor a `generate:`, so the deploy form shows empty required fields and
+        # cannot be submitted until they are filled. A sample workspace opens without a key of its
+        # own, so this pair is the whole of what stands between the public internet and an app that
+        # reads mail, holds files and drives a browser.
+        ADMIN_USERNAME:
+          description: "Username for the OpenMuse sign-in"
+        ADMIN_PASSWORD:
+          description: "Password for the OpenMuse sign-in"
+        # Required because the server refuses to start without it, in every mode, before it binds a
+        # port. It is not optional configuration upstream and it is not optional here.
+        CPK_INTELLIGENCE_API_KEY:
+          description: "CopilotKit Intelligence project key. Run `npx copilotkit@latest login` then `npx copilotkit@latest project select`; the server refuses to start without it"
+      optional:
+        WORKSPACE_MODE:
+          description: "`sample` (default) opens a fictional workspace with no key of its own; `live` serves real Google data and then also needs OPENMUSE_ACCESS_KEY"
+        AGENT_BACKEND:
+          description: "`sample` for the scripted agent, or `model` to use MODEL and a provider key. Defaults to sample in a sample workspace, model in a live one"
+        MODEL:
+          description: "Provider-qualified model id for AGENT_BACKEND=model, such as openai/gpt-5"
+        OPENAI_API_KEY:
+          description: "OpenAI key, for an openai/* MODEL"
+        ANTHROPIC_API_KEY:
+          description: "Anthropic key, for an anthropic/* MODEL"
+        GOOGLE_API_KEY:
+          description: "Google AI key, for a google/* MODEL"
+        OPENMUSE_ACCESS_KEY:
+          description: "Workspace access key the app asks for, at least 24 characters. Required when WORKSPACE_MODE=live, unused otherwise"
+        TOKEN_ENCRYPTION_KEY:
+          description: "32 random bytes in standard base64, encrypting stored Google tokens. Leave blank and one is minted onto the volume on first start"
+        GOOGLE_CLIENT_ID:
+          description: "Google OAuth client id for Gmail and Calendar. Its redirect URI is this service's URL plus /api/google/callback"
+        GOOGLE_CLIENT_SECRET:
+          description: "Google OAuth client secret, paired with GOOGLE_CLIENT_ID"
+
+meta:
+  name: OpenMuse
+  tagline: Personal agent with a browser, terminal, files and work that keeps going
+  category: ai-agent
+  tags: [ai-agent, ai]
+  # amd64 only by declaration rather than by upstream limit: everything in the build is JavaScript
+  # and would cross-build, but nobody has run the pnpm install and the Expo export under QEMU or on
+  # an arm64 machine. Adding the row means doing that, not editing this line.
+  architectures: [amd64]
+  logo: none
+  draft: true
+  links:
+    upstream: https://github.com/CopilotKit/OpenMuse
+    documentation: https://github.com/CopilotKit/OpenMuse/blob/main/docs/README.md

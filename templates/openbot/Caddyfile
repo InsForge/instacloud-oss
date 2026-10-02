@@ -1,0 +1,34 @@
+# The public face of this deployment. See s6/s6-rc.d/proxy/run for why it exists at all.
+#
+# A static file with three values substituted from the environment, rather than a heredoc in the
+# run script, so that the build can `caddy validate` this exact text. A Caddyfile typo is otherwise
+# only discovered by deploying, and a deploy here costs the platform's full health-gate timeout.
+#
+# Substitution is a single pass over the raw bytes before tokenizing and it does not re-scan what
+# it inserted, so the `$` separators in a bcrypt hash are ordinary characters by the time the
+# parser sees them.
+
+{
+	# Nothing administers this. The admin API would be a second listener holding the power to
+	# rewrite the config, persist_config would write a copy of the credential hash to disk, and
+	# TLS is the platform's at the edge: this origin is plain HTTP on a loopback-ish hop.
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:{$PROXY_PORT} {
+	# The one route reachable without the credential, because the platform's health gate wants a
+	# 2xx and a 401 is not one. It is OpenBot's own /health and answers {"status":"ok"}: no
+	# version, no configuration, nothing about this deployment.
+	@gated not path /health
+	basic_auth @gated {
+		{$ADMIN_USERNAME} {$PROXY_PASSWORD_HASH}
+	}
+
+	reverse_proxy 127.0.0.1:3001 {
+		# OpenBot streams a turn as it happens and proxies a websocket carrying the Bot's screen.
+		# Buffering either would hold the answer back until the turn ended.
+		flush_interval -1
+	}
+}

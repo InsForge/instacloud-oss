@@ -10,70 +10,58 @@
 # public port is HTTP basic auth in front of it.
 #
 # NOT A SECOND APPLICATION. It terminates nothing, rewrites nothing and stores nothing. Every
-# request that carries the credential is passed to 127.0.0.1:3001 unchanged.
+# request that carries the credential is passed to 127.0.0.1:3001 unchanged. The config it runs is
+# /etc/caddy/Caddyfile, committed beside this file and validated at build time.
 #
 # It depends on no other service on purpose, so that whatever happens inside upstream's startup
 # chain the routed port is still answering and says 502 rather than refusing the connection.
 set -eu
 
-PORT_OUT="${PROXY_PORT:-8080}"
 # Neither gets a fallback on purpose. The manifest declares both required with no default, so the
 # platform always supplies them; a missing one means the image was started some other way, and
 # inventing `admin` there would publish a browser-driving agent to whoever finds the URL.
-USER_NAME="${ADMIN_USERNAME:?ADMIN_USERNAME is required}"
-PASS="${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}"
+: "${ADMIN_USERNAME:?ADMIN_USERNAME is required}"
+: "${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}"
+PROXY_PORT="${PROXY_PORT:-8080}"
 
-# The username is written into a Caddyfile, so it has to be one token. Refused loudly rather than
-# left to produce a config error naming a line nobody wrote.
-case "$USER_NAME" in
+# The username is substituted into a Caddyfile, so it has to be one token. Refused loudly rather
+# than left to produce a config error naming a line nobody wrote.
+case "$ADMIN_USERNAME" in
   '' | *[!A-Za-z0-9._-]*)
     echo "proxy: ADMIN_USERNAME may contain only letters, digits, '.', '-' and '_'" >&2
     exit 1 ;;
 esac
 
-# bcrypt hashes the first 72 BYTES and silently ignores the rest, so a longer password would
-# authenticate on a prefix of itself. Bytes, not characters: ${#PASS} counts characters, which
-# differ under a non-C locale. Fail rather than quietly shorten what guards the URL.
-PASS_BYTES=$(printf '%s' "$PASS" | wc -c)
+# bcrypt will not take more than 72 bytes of password. Bytes, not characters: ${#ADMIN_PASSWORD}
+# counts characters, which differ under a non-C locale. Said here, with the number, rather than
+# left to surface as whatever the hashing step does with the 73rd byte.
+PASS_BYTES=$(printf '%s' "$ADMIN_PASSWORD" | wc -c)
 if [ "$PASS_BYTES" -gt 72 ]; then
-  echo "proxy: ADMIN_PASSWORD is $PASS_BYTES bytes; bcrypt reads only the first 72" >&2
+  echo "proxy: ADMIN_PASSWORD is $PASS_BYTES bytes; bcrypt will not take more than 72" >&2
   exit 1
 fi
 
-# Piped, never `--plaintext`: an argument is visible in /proc to every process in this container,
-# and one of them is the shell a Bot is allowed to run. Caddy reads stdin when it is not a
-# terminal, which inside s6 it never is. The hash is captured, so it does not reach the log either.
-HASH=$(printf '%s' "$PASS" | /usr/local/bin/caddy hash-password)
+# Piped, never `--plaintext`: an argument is visible in /proc/<pid>/cmdline to every process in
+# this container, and one of them is the shell a Bot is allowed to run. /proc/<pid>/environ is not,
+# which is why the hash travels to Caddy as an exported variable below rather than as an argument.
+#
+# THE TRAILING NEWLINE IS LOAD-BEARING. With stdin not a terminal, `hash-password` reads with
+# bufio.ReadBytes('\n') and returns the error that comes back verbatim, so input with no newline
+# gives it io.EOF and the command fails with the single word "EOF". That is what the first build of
+# this template did, once a second, forever, with the deploy reporting only an unready port.
+PROXY_PASSWORD_HASH=$(printf '%s\n' "$ADMIN_PASSWORD" | /usr/local/bin/caddy hash-password)
+export PROXY_PASSWORD_HASH PROXY_PORT ADMIN_USERNAME
 
+# The password itself has no further use here, and the process below is the one on the public port.
+unset ADMIN_PASSWORD
+
+# Caddy wants somewhere to put a data directory even with its admin API and config persistence
+# turned off, so both XDG roots point at a directory of its own under the container's tmpfs.
 mkdir -p /run/caddy
-cat > /run/caddy/Caddyfile <<CADDYFILE
-{
-	admin off
-	auto_https off
-	persist_config off
-}
+chown proxyuser:proxyuser /run/caddy
+export HOME=/home/proxyuser XDG_CONFIG_HOME=/run/caddy XDG_DATA_HOME=/run/caddy
 
-:${PORT_OUT} {
-	# /health is the one route the platform's health gate reaches without a credential, because
-	# the gate wants a 2xx and a 401 is not one. It is OpenBot's own route and answers
-	# {"status":"ok"}: no version, no configuration, nothing about this deployment.
-	@gated not path /health
-	basic_auth @gated {
-		${USER_NAME} ${HASH}
-	}
-
-	reverse_proxy 127.0.0.1:3001 {
-		# OpenBot streams a turn as it happens and proxies a websocket for the Bot's screen.
-		# Buffering either would hold the answer until the turn ended.
-		flush_interval -1
-	}
-}
-CADDYFILE
-chown -R proxyuser:proxyuser /run/caddy
-
-# Not root. This is the one process on the public port, and it needs nothing but a socket above
-# 1024 and the file above. XDG_* point at the same tmpfs because Caddy wants somewhere to put a
-# data directory even with its admin API and config persistence turned off.
-exec s6-setuidgid proxyuser env \
-  HOME=/home/proxyuser XDG_CONFIG_HOME=/run/caddy XDG_DATA_HOME=/run/caddy \
-  /usr/local/bin/caddy run --config /run/caddy/Caddyfile --adapter caddyfile
+# Not root. This is the one process the public internet talks to, and the base image is careful
+# that the browser, the API and the database each run as someone different; this continues that.
+exec s6-setuidgid proxyuser \
+  /usr/local/bin/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile

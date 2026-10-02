@@ -2,7 +2,7 @@
 #
 # Upstream already ships the whole product in one image: the built app, the API that serves it,
 # Chromium for the Bots to drive, and a PostgreSQL that `EMBEDDED_POSTGRES=on` turns on. Nothing
-# here rebuilds any of that. The overlay is two additions and they are both about the platform:
+# here rebuilds any of that. The overlay is three s6 services and nothing else:
 #
 #   proxy     Caddy on the routed port, HTTP basic auth, proxying to the API on loopback. OpenBot
 #             refuses its no-sign-in mode on a public address and is right to; the only other way
@@ -45,6 +45,21 @@ RUN set -eu; \
 # the base's own sequence (ubuntu 1000, pwuser 1001, apiuser 1002) and is pinned for the same
 # reason the base pins those: a number that only happens to land here today is not a contract.
 RUN useradd --uid 1003 --create-home --shell /usr/sbin/nologin proxyuser
+
+COPY Caddyfile /etc/caddy/Caddyfile
+
+# Both halves of the proxy's start-up, run here so a mistake in either is a red build rather than a
+# container that restarts once a second while the platform reports an unready port.
+#
+# The pipe is the point of the first half, not a convenience. `hash-password` reading a non-terminal
+# stdin uses bufio.ReadBytes('\n') and returns whatever error that gives back, so input with no
+# trailing newline hands it io.EOF and the command dies with the single word "EOF". That shipped
+# once; this is what would have caught it.
+RUN set -eu; \
+    probe="$(printf 'probe\n' | caddy hash-password)"; \
+    case "$probe" in '$2'*) ;; *) echo "hash-password did not return a bcrypt hash" >&2; exit 1 ;; esac; \
+    PROXY_PORT=8080 ADMIN_USERNAME=probe PROXY_PASSWORD_HASH="$probe" \
+      caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
 COPY s6 /etc/s6-overlay
 RUN chmod 0755 /etc/s6-overlay/scripts/tpl-init.sh /etc/s6-overlay/scripts/pg-wait.sh \

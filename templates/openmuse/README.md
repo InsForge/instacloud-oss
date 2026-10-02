@@ -22,21 +22,25 @@ by a real model. This template follows that blueprint: it builds its own image f
 `/api` to the Node API on loopback, because a template gets one routed port while upstream's API
 answers `/` with JSON and expects its UI to be a separate static site.
 
-Two parts of upstream are not in this image:
+The **browser worker** is included, the way upstream's own blueprint splits it: upstream's
+`apps/worker` (a Playwright Chromium service) is a second image, so it is built by the companion
+[`openmuse-browser`](../openmuse-browser) template and run here as the `browser` service, which the
+API reaches over the network. It gives the agent page reads, screenshots and Take control. The two
+services share a `WORKER_TOKEN` minted at deploy, so there is nothing to configure.
 
-- **The browser worker.** It is a second image (`apps/worker/Dockerfile`, a Playwright Chromium
-  service upstream runs as a private service) and upstream publishes no image for it. A template's
-  CI builds exactly one image per directory, so pulling the worker in would mean maintaining a
-  separate ~2 GB image outside that build. Upstream's own blueprint documents removing it, and the
-  API boots either way. Without it the agent cannot browse pages or take control of a session.
-- **The Linux computer.** It drives a Docker engine from inside the container, which a compute
-  machine does not have. `COMPUTER_ENABLED` is fixed to `false`.
+One part of upstream is still not here:
+
+- **The Linux computer.** Its Terminal and Files run shell commands inside a container the API
+  repeatedly `docker exec`s into, which needs a Docker engine the compute machine does not provide.
+  `COMPUTER_ENABLED` is fixed to `false`.
 
 ## What you get by hosting it
 
 - The web app and the API behind one HTTPS URL.
 - A live workspace: the agent runs against a real model, and Gmail and Calendar connect through
   Google OAuth.
+- A browser the agent drives: page reads, screenshots and Take control, served by the `browser`
+  service that ships with this template.
 - A persistent volume at `/data`, holding the PGlite database, imported and filled PDFs, the
   session signing key and the token-encryption key, so a restart keeps your work.
 - The task worker running in-process: tracking watches re-check pages on their own schedule and

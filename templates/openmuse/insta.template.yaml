@@ -12,6 +12,11 @@ upstream:
   commit: 9ec439fbaa878197d9d44c2aa982cca55676dd68
   license: MIT
 
+# One shared secret the API and the browser worker authenticate between themselves with. Minted once
+# here and handed to both services below, so it never appears on the deploy form.
+generated:
+  worker_token: secret:32
+
 services:
   openmuse:
     type: web
@@ -53,6 +58,10 @@ services:
         # that will not open and a callback that is rejected.
         PUBLIC_API_URL: ${services.openmuse.url}
         ALLOWED_ORIGINS: ${services.openmuse.url}
+        # The browser worker runs as the `browser` service below (upstream's apps/worker, the same
+        # split render.yaml uses). With this set the agent can read pages and Take control; without it
+        # the Agent computer shows the browser offline. The worker's own auth gates it.
+        BROWSER_WORKER_URL: ${services.browser.url}
       required:
         # In live mode this IS the app's auth. OpenMuse gates POST /api/session with it (timing-safe
         # compare, 24+ characters) and every other /api call needs the Bearer session that mints, so
@@ -81,10 +90,33 @@ services:
           description: "Anthropic key, for an anthropic/* MODEL instead of the default OpenAI one"
         GOOGLE_API_KEY:
           description: "Google AI key, for a google/* MODEL instead of the default OpenAI one"
+      generated:
+        # The shared worker token, minted once above. The worker checks every non-health call it gets.
+        WORKER_TOKEN: ${worker_token}
+
+  # OpenMuse's browser worker: upstream's apps/worker, a Playwright Chromium service the API drives for
+  # page reads, screenshots and Take control. It is a second image (a template directory builds one),
+  # so it is built by the companion `openmuse-browser` template and referenced here. render.yaml runs
+  # the same binary as its own service too. No volume: browser profiles live on the container's own
+  # disk, so a restart starts them fresh, which avoids a non-root-user write to a root-owned volume.
+  browser:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/openmuse-browser:0.1.0   # built by the openmuse-browser template
+    port: 8790
+    healthcheck: /health
+    # Nothing inbound wakes it except the API's own calls, so it stays up.
+    alwaysOn: true
+    env:
+      fixed:
+        # 0.0.0.0 so the platform proxy can reach it; the WORKER_TOKEN bearer is the gate, not the bind.
+        WORKER_HOST: "0.0.0.0"
+        WORKER_DATA_DIR: /data
+      generated:
+        WORKER_TOKEN: ${worker_token}
 
 meta:
   name: OpenMuse
-  tagline: Personal agent with files, goals, tracking and a live Google workspace
+  tagline: Personal agent with a browser, files, goals and a live Google workspace
   category: ai-agent
   tags: [ai-agent, ai]
   # amd64 only by declaration rather than by upstream limit: everything in the build is JavaScript

@@ -67,8 +67,13 @@ describe('database bootstrap', () => {
       const role = svc.env.fixed?.INSTA_SUPABASE_ROLE;
       const body = script.match(new RegExp(`^run_${role}\\(\\) \\{\\n([\\s\\S]*?)^\\}`, 'm'))?.[1];
       expect(body, `${name}: run_${role}()`).toBeDefined();
-      expect(body.indexOf('bootstrap'), name).toBeGreaterThan(-1);
-      expect(body.indexOf('bootstrap'), name).toBeLessThan(body.indexOf('exec '));
+      // The call lines themselves, so a comment or log string naming either word proves nothing.
+      const lines = body.split('\n');
+      const bootstrapAt = lines.findIndex((l) => /^\s*bootstrap\s*$/.test(l));
+      const execAt = lines.findIndex((l) => /^\s*exec\s/.test(l));
+      expect(bootstrapAt, `${name}: a bootstrap call`).toBeGreaterThan(-1);
+      expect(execAt, `${name}: an exec`).toBeGreaterThan(-1);
+      expect(bootstrapAt, name).toBeLessThan(execAt);
     }
   });
 });

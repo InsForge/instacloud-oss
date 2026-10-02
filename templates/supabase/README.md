@@ -118,7 +118,7 @@ to and restart that service. Common ones:
 
 - **GraphQL (`/graphql/v1`) is off.** The managed Postgres does not ship `pg_graphql` yet, and
   requests answer `pg_graphql extension is not enabled`. The template tries
-  `create extension pg_graphql` on every boot of `rest`, `realtime`, `storage` and `studio` until it
+  `create extension pg_graphql` on every boot of `auth`, `rest`, `realtime`, `storage` and `studio` until it
   succeeds. A deploy made after the database offers it gets GraphQL on first boot. An earlier
   deploy keeps its database running on the old image, so restart the database from the platform
   (`insta postgres restart`, or `POST /projects/{id}/database/restart`) and then restart `rest`.

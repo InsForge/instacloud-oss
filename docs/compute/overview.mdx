@@ -33,7 +33,7 @@ Any plan can attach the default 1 Gi; larger sizes are paid and plan-capped. Vol
 
 ## Lifecycle
 
-New compute services are always-on and never scale to zero, on every branch. Opt one into scale-to-zero and an idle machine suspends until the next request wakes it in seconds. Control the lifecycle directly:
+New compute services scale to zero, on every branch: an idle machine suspends until the next request wakes it in seconds. Outbound traffic counts as activity as well as inbound requests, so an app calling out to a model or polling an API stays up while it works. A worker (`--port 0`) has nothing routed to it, so it is always-on regardless. Control the lifecycle directly:
 
 ```bash
 insta compute status    # desired vs actual state
@@ -42,7 +42,7 @@ insta compute stop
 insta compute suspend
 ```
 
-`insta compute always-on on|off` overrides that on any branch, and `--no-always-on` at creation starts a service scale-to-zero. Billing is actual usage either way, so an always-on machine bills continuously while a sleeping one costs almost nothing. Scale-to-zero also stops any background work running in the container, which [limitations](/limitations/overview) covers. Machine counts and specs move with `insta compute scale` and `insta compute limits` on paid plans. Custom domains attach per branch with `insta domain attach`.
+`insta compute always-on on|off` overrides that on any branch, and `--always-on` at creation starts a service always-on. Billing is actual usage either way, so an always-on machine bills continuously while a sleeping one costs almost nothing. Scale-to-zero also stops any background work running in the container, which [limitations](/limitations/overview) covers. Machine counts and specs move with `insta compute scale` and `insta compute limits` on paid plans. Custom domains attach per branch with `insta domain attach`.
 
 <Note>
 On self-hosted InstaCloud OSS, `compute scale` is cloud-only, while `compute limits`, `--always-on`, and custom domains work as they do here. `insta secrets bind` answers `501`: every compute container already receives each service's credentials under their own names, so read those (`insta secrets list` names them) or set your own with `insta secrets set`. The command-by-command list is in [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md).

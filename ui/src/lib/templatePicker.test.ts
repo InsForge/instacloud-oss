@@ -6,6 +6,8 @@ const catalog = [
   { code: 'hermes', name: 'Hermes', tagline: 'Messaging agent', category: 'ai-agent', tags: ['ai'] },
   { code: 'n8n', name: 'n8n', tagline: 'Workflow automation', category: 'automation', tags: [] },
   { code: 'ollama', name: 'Ollama', tagline: 'Local models', category: 'llm', tags: [] },
+  { code: 'supabase', name: 'Supabase', tagline: 'One backend', category: 'backend', tags: [] },
+  { code: 'clickhouse', name: 'ClickHouse', tagline: 'Analytics database', category: 'database', tags: [] },
   { code: 'misc', name: 'Misc', tagline: 'Something else', category: 'data-tools', tags: [] },
 ]
 
@@ -14,6 +16,8 @@ describe('templateCategoryLabel', () => {
     expect(templateCategoryLabel('ai-agent')).toBe('AI Agent')
     expect(templateCategoryLabel('llm')).toBe('LLM')
     expect(templateCategoryLabel('automation')).toBe('Automation')
+    expect(templateCategoryLabel('backend')).toBe('Backend')
+    expect(templateCategoryLabel('database')).toBe('Database')
     expect(templateCategoryLabel('data-tools')).toBe('Data tools')
   })
 })
@@ -21,10 +25,12 @@ describe('templateCategoryLabel', () => {
 describe('pickerView', () => {
   it("lists the categories in the console's order, others after, with counts", () => {
     const v = pickerView(catalog, '', 'all')
-    expect(v.categories.map((c) => c.key)).toEqual(['ai-agent', 'llm', 'automation', 'data-tools'])
+    // backend and database are in TEMPLATE_CATEGORY_ORDER, so they come before data-tools, which is
+    // not. Without them on that list both would sort in with data-tools and database would follow it.
+    expect(v.categories.map((c) => c.key)).toEqual(['ai-agent', 'llm', 'automation', 'backend', 'database', 'data-tools'])
     expect(v.categories.find((c) => c.key === 'ai-agent')?.count).toBe(2)
-    expect(v.total).toBe(5)
-    expect(v.results).toHaveLength(5)
+    expect(v.total).toBe(7)
+    expect(v.results).toHaveLength(7)
   })
   it('counts what the search found, and drops categories it left empty', () => {
     const v = pickerView(catalog, 'agent', 'all')

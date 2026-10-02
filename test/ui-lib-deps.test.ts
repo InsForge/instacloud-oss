@@ -1,19 +1,7 @@
-// The root vitest config runs `ui/src/lib/**/*.test.ts` (plan 07: no second vitest install under
-// ui/). CI installs ONLY the root package (`.github/workflows/ci.yml`: `npm ci`, never
-// `npm --prefix ui ci`), so nothing under ui/ can resolve a ui-only dependency during `npm test`.
-//
-// A test beside a module that imports one fails to LOAD, and that failure mode is nastier than it
-// sounds: vitest reports it as a failed FILE, so the summary reads "N passed" with zero failing
-// tests while the process exits 1. It looks green and turns CI red — which is exactly what
-// happened when localPref.test.ts landed beside a module importing `react`, and the whole point of
-// those tests (they never ran) was lost for three commits.
-//
-// So: a module under ui/src/lib that has a co-located test may not import a ui-only package. Put
-// the pure half in its own module and test that, as localPrefStore.ts does for localPref.ts.
-
+// Root tests run without ui/node_modules; their UI imports must not require UI-only packages.
 import { test, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 
 const LIB = join(import.meta.dirname, '..', 'ui', 'src', 'lib')
 
@@ -23,14 +11,22 @@ const UI_ONLY = /^(react|react-dom|react-router-dom|recharts|lucide-react|@insfo
 const importsOf = (src: string): string[] =>
   [...src.matchAll(/^\s*import\s[^'"]*['"]([^'"]+)['"]/gm)].map((m) => m[1])
 
-test('a ui/src/lib module with a co-located test imports nothing the root install lacks', () => {
+test('ui/src/lib modules imported by root tests import nothing the root install lacks', () => {
   const files = readdirSync(LIB).filter((f) => f.endsWith('.ts'))
-  const tested = new Set(files.filter((f) => f.endsWith('.test.ts')).map((f) => f.replace('.test.ts', '.ts')))
-  expect(tested.size).toBeGreaterThan(5) // the guard is worthless if it scans nothing
+  const tested = new Set(files.filter((f) => f.endsWith('.test.ts')).map((f) => f.replace('.test.ts', '.ts')).filter((f) => files.includes(f)))
+  for (const file of readdirSync(import.meta.dirname, { recursive: true }) as string[]) {
+    if (!file.endsWith('.test.ts')) continue
+    const path = join(import.meta.dirname, file)
+    for (const spec of importsOf(readFileSync(path, 'utf8'))) {
+      if (!spec.startsWith('.')) continue
+      const target = relative(LIB, resolve(dirname(path), spec))
+      if (!target.startsWith('..')) tested.add(target.endsWith('.ts') ? target : `${target}.ts`)
+    }
+  }
+  expect(tested.size).toBeGreaterThan(5)
 
   const offenders: string[] = []
-  for (const f of files) {
-    if (f.endsWith('.test.ts') || !tested.has(f)) continue
+  for (const f of tested) {
     for (const spec of importsOf(readFileSync(join(LIB, f), 'utf8'))) {
       if (UI_ONLY.test(spec)) offenders.push(`${f} imports ${spec}`)
     }

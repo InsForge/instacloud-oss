@@ -102,7 +102,7 @@ test('GET /templates lists the bundled non-draft codes with every list field typ
   // openclaw declares meta.draft, so it is not in the listing. twenty is absent for a different
   // reason: it declares a managed `redis` service, which this runtime's manifest parser does not
   // know yet, so the catalog warns and skips it. Cloud-only until src/ learns the type.
-  expect(templates.map((t: { code: string }) => t.code)).toEqual(['9router', 'claude-code', 'codex', 'dsh', 'hermes', 'laya', 'n8n', 'pi'])
+  expect(templates.map((t: { code: string }) => t.code)).toEqual(['9router', 'claude-code', 'clickhouse', 'codex', 'dsh', 'hermes', 'laya', 'lev', 'n8n', 'pi', 'whisper-turbo'])
   const n8n = templates.find((t: { code: string }) => t.code === 'n8n')
   expect(n8n).toMatchObject({
     version: '1.3.2', name: 'n8n', category: 'automation', tags: ['automation', 'ai'],
@@ -198,6 +198,27 @@ test('manifest parity: the refusals the platform makes, one case each', () => {
   // An authored size is refused; a STORED one is read leniently and dropped.
   refuses({ ...base, services: { web: { ...base.services.web, volume: { sizeGib: 20 } } } }, /the size is the daemon's to choose/, { rejectAuthoredSizing: true })
   expect(parse({ ...base, services: { web: { ...base.services.web, volume: { sizeGib: 20 } } } }).services.web.volume).toBe(true)
+})
+
+test('manifest parity: command and mountPath are kept on the parsed service so the digest matches the cloud', () => {
+  const m = parse({ ...base, services: { web: { ...base.services.web, volume: true, mountPath: '/app/storage', command: 'run' } } })
+  expect(m.services.web.command).toBe('run')
+  expect(m.services.web.mountPath).toBe('/app/storage')
+  // Declared only when authored, so an old manifest hashes byte-identically.
+  expect(Object.keys(parse(base).services.web)).not.toContain('command')
+  expect(Object.keys(parse(base).services.web)).not.toContain('mountPath')
+  const svc = (extra: Record<string, unknown>) => ({ ...base, services: { web: { ...base.services.web, ...extra } } })
+  refuses(svc({ command: '  ' }), /services\.web\.command must be a non-empty string/)
+  for (const command of [42, false, [], {}]) refuses(svc({ command }), /services\.web\.command must be a non-empty string/)
+  refuses(svc({ mountPath: '/a' }), /mountPath requires volume: true/)
+  refuses(svc({ volume: true, mountPath: ' ' }), /services\.web\.mountPath must be an absolute path/)
+  refuses(svc({ volume: true, mountPath: 'a' }), /services\.web\.mountPath must be an absolute path/)
+  refuses(svc({ volume: true, mountPath: '/a'.repeat(200) }), /services\.web\.mountPath must be at most 255 characters/)
+  refuses(svc({ volume: true, mountPath: '/a b' }), /services\.web\.mountPath may contain only letters, digits, '\.', '-', '_' and '\/'/)
+  refuses(svc({ volume: true, mountPath: '/a/../b' }), /services\.web\.mountPath must not contain \.\./)
+  refuses(svc({ volume: true, mountPath: '/etc' }), /services\.web\.mountPath is reserved by the container runtime/)
+  refuses({ ...base, services: { db: { type: 'postgres', command: 'x' } } }, /carries no command/)
+  refuses({ ...base, services: { db: { type: 'postgres', mountPath: '/x' } } }, /carries no mountPath/)
 })
 
 // The parser claims to apply the engine's grammar, and it did not: both regexes were local copies
@@ -337,6 +358,15 @@ test('a version mismatch, a draft code and an unrunnable manifest are refused be
   const r2 = await post(`/projects/${id}/template-deployments`, { manifest: worker, branch: 'main' })
   expect(r2.statusCode).toBe(400)
   expect(r2.json().error).toMatch(/support web services only/)
+  // command and mountPath parse (the digest matches the cloud) but this runtime does not run them.
+  const withCommand = { code: 'c', version: '1', services: { app: { type: 'web', image: 'i', healthcheck: '/', command: 'run' } } }
+  const r3 = await post(`/projects/${id}/template-deployments`, { manifest: withCommand, branch: 'main' })
+  expect(r3.statusCode).toBe(400)
+  expect(r3.json().error).toMatch(/services\.app\.command is cloud-only today/)
+  const withMount = { code: 'm', version: '1', services: { app: { type: 'web', image: 'i', healthcheck: '/', volume: true, mountPath: '/app/storage' } } }
+  const r4 = await post(`/projects/${id}/template-deployments`, { manifest: withMount, branch: 'main' })
+  expect(r4.statusCode).toBe(400)
+  expect(r4.json().error).toMatch(/services\.app\.mountPath is cloud-only today/)
   // A branch that does not exist is a 404, before any variable check.
   expect((await post(`/projects/${id}/template-deployments`, { templateCode: 'claude-code', branch: 'ghost' })).statusCode).toBe(404)
 })

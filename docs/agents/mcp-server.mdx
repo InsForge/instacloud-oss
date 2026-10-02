@@ -31,8 +31,8 @@ Two options, both a Bearer credential the server forwards to the platform — it
 
 The [MCP tools reference](/reference/mcp-tools) tables the tools by area. Two things to know up front:
 
-- Project-scoped tools take an explicit `projectId`, branch-scoped tools take `branch` too — the CLI's linked directory does not carry over. Discover IDs with `insta_org_list` → `insta_project_list`.
-- `insta_manifest` returns the agent-legible view of a project: branches, services with bound secret names, and URLs.
+- Project-scoped tools take an explicit `projectId`, branch-scoped tools take `branch` too — the CLI's linked directory does not carry over. Discover IDs with `insta_list_orgs` → `insta_list_projects`.
+- `insta_get_agent_manifest` returns the agent-legible view of a project: branches, services with bound secret names, and URLs.
 
 ## Staging server
 

@@ -7,6 +7,8 @@ import yaml from "js-yaml";
 import { FIXED_REF_RE, checkFixedRef, MANAGED_TYPES } from "./manifest-refs.mjs";
 import { DEPLOY_BUTTON_ASSET, findDeployButtons } from "./publish-lib.mjs";
 import { ARCHITECTURES } from "./build-targets.mjs";
+import { checkServiceRuntime } from "./service-runtime.mjs";
+import { checkDockerfilePin, checkUpstreamFrom } from "./dockerfile-pin.mjs";
 
 // Template dirs live beside this script's parent (templates/<code>/): runs from any cwd.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -36,6 +38,21 @@ for (const dir of dirs) {
   if (m?.version && !SEMVER_RE.test(String(m.version))) err(dir, `version '${m.version}' is not semver`);
   if (!m?.meta?.category) err(dir, "missing meta.category");
   if (!m?.upstream?.pinned) err(dir, "missing upstream.pinned");
+
+  // The version is written twice when we build the image ourselves, and the two must agree. Drafts
+  // included: this is internal consistency, not publishing readiness, and a draft that drifts is a
+  // published drift the day it ships. Templates that deploy an upstream image (n8n) have no
+  // Dockerfile and nothing to compare.
+  if (existsSync(join(root, dir, "Dockerfile"))) {
+    const dockerfile = readFileSync(join(root, dir, "Dockerfile"), "utf8");
+    const drift = checkDockerfilePin(m?.upstream ?? {}, dockerfile);
+    if (drift) err(dir, drift.error);
+    // And where the image is built ON the upstream's own, the FROM has to name the pinned tag
+    // outright. Whether that tag still resolves to the digest beside it is a question only the
+    // registry can answer, so check-upstreams asks it and this stays offline.
+    const stale = checkUpstreamFrom(m?.upstream ?? {}, dockerfile);
+    if (stale) err(dir, stale.error);
+  }
 
   // Which CPU architectures the deployable image is published for. Mandatory, drafts included:
   // the image workflow derives its buildx `platforms` from this, the catalog serves it, and the
@@ -96,7 +113,7 @@ for (const dir of dirs) {
     // A looser test passes a README carrying something publish will never strip: a fenced sample
     // satisfying the requirement while GitHub shows no button at all, or a neighbouring filename
     // validated as if it were the button. One matcher, so the two cannot drift.
-    const expected = `https://console.instacloud.com/templates/${dir}`;
+    const expected = `https://instacloud.com/templates/${dir}`;
     const buttons = findDeployButtons(text);
     if (buttons.length) {
       if (draft) {
@@ -166,7 +183,7 @@ for (const dir of dirs) {
       // empty shell. That tolerance is a storage round-trip concern: a NORMALIZED stored manifest
       // always carries an env record, and it must still parse on every by-code deploy. This linter
       // only ever sees hand-authored files, where an empty env shell is noise no author writes.
-      for (const field of ["image", "build", "port", "healthcheck", "volume", "volumeGib", "alwaysOn", "env"]) {
+      for (const field of ["image", "build", "port", "healthcheck", "volume", "volumeGib", "alwaysOn", "command", "mountPath", "env"]) {
         if (svc[field] !== undefined) err(dir, `${name}: a ${svc.type} service is platform-managed and carries no ${field}, declare it bare`);
       }
       continue;
@@ -202,6 +219,9 @@ for (const dir of dirs) {
     if (svc.alwaysOn !== undefined && typeof svc.alwaysOn !== "boolean") {
       err(dir, `${name}: alwaysOn must be a boolean`);
     }
+    const runtime = checkServiceRuntime(name, svc);
+    for (const e of runtime.errors) err(dir, e);
+    for (const w of runtime.warnings) console.warn(`~ ${dir}: ${w}`);
     // rule 2: required vars need description (unless generated)
     for (const [k, spec] of Object.entries(svc.env?.required ?? {})) {
       if (!spec?.generate && !spec?.description) err(dir, `required var ${k} needs a description`);

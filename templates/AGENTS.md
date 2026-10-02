@@ -19,7 +19,7 @@ IS the template code. Copying the closest existing template is the fastest way t
   Links (upstream, the image or package, the license). A draft template opens with a note saying
   why it is draft.
 - The **deploy button**, in its own paragraph under the title and tagline, for every publishable
-  template: `[![Deploy on InstaCloud](<cdn>/assets/deploy-button.svg)](https://console.instacloud.com/templates/<code>)`.
+  template: `[![Deploy on InstaCloud](<cdn>/assets/deploy-button.svg)](https://instacloud.com/templates/<code>)`.
   CI rejects a publishable template that omits it, checks that the href names this template's own
   code, and rejects one on a draft, whose gallery page does not exist until it publishes. Since
   copying the nearest template is the fastest way to start, a code carried over from the one you
@@ -46,31 +46,36 @@ IS the template code. Copying the closest existing template is the fastest way t
 3. `code`, `version` (semver), `maintainer`, `upstream.pinned` and `meta.category` are mandatory.
 4. A changed template must bump its `version`. The canonical image tag is derived from it, so
    editing a template without bumping would overwrite an image that published instances pull.
-5. A service may not carry both `image:` and `build:`.
-6. `constraints[].oneOf` and `allOf` may only name variables the manifest declares.
-7. A manifest never sizes a service. There is no `spec:`, and `volume:` is the boolean `true`, not
+5. A template with a `Dockerfile` names its pin there too: `upstream.pinned` or `upstream.commit`
+   has to appear in it, and where the `FROM` builds on `upstream.image`, that instruction's tag has
+   to be the pinned one and its digest, if the manifest carries one, has to match. The version is
+   written twice and nothing else notices when the two disagree: the image would be built from one
+   version while the catalog advertises another, and the build would succeed.
+6. A service may not carry both `image:` and `build:`.
+7. `constraints[].oneOf` and `allOf` may only name variables the manifest declares.
+8. A manifest never sizes a service. There is no `spec:`, and `volume:` is the boolean `true`, not
    a size. CPU, memory and disk are the platform's to choose and are capped for the org's plan, so
    a number here could only drift from it: every template once carried `size: 1` because that was
    the free cap the day it was written. `npm run lint` refuses both, and so does publish.
-8. Never commit `index.json`. CI generates it.
-9. `meta.architectures` is mandatory, drafts included: a non-empty list of `amd64`, `arm64`, or
+9. Never commit `index.json`. CI generates it.
+10. `meta.architectures` is mandatory, drafts included: a non-empty list of `amd64`, `arm64`, or
    both. See [Architectures](#architectures).
-10. A `${...}` inside an `env.fixed` value may only be `${services.<name>.url}` or
+11. A `${...}` inside an `env.fixed` value may only be `${services.<name>.url}` or
    `${services.<name>.host}`, naming a service the manifest declares that is not a managed
    database and not a worker. A managed database has no address: its credentials belong under
    `env.platform` as `${{services.<name>.<KEY>}}`, with doubled braces, and putting that form in
-   `fixed` is rejected. A worker has no address either, see rule 11. So is a generator ref, even a
+   `fixed` is rejected. A worker has no address either, see rule 12. So is a generator ref, even a
    declared one: composed into a fixed string it is stored only as the final value, so a retry
    could not recover it and would silently rotate the secret. Declare the variable under
    `env.generated` instead. `npm run lint` mirrors the platform's check.
-11. A `type: worker` service is portless. The platform runs it with no routed port: nothing is
+12. A `type: worker` service is portless. The platform runs it with no routed port: nothing is
    routed to it, nothing probes it, and it stays always-on because no request could wake it. So
    it carries no `port`, no `healthcheck` and no `alwaysOn: false`, and no other service may
    reference its `url` or `host`. Its health is the machine's state (started and not crashed). Use
    it for queue consumers, schedulers and bots that only make outbound connections, and give it a
    `volume: true` if it keeps state, since a restart clears the root filesystem. `npm run lint`
    refuses the four shapes, and so does publish.
-12. A service is `web`, `worker`, or one of the managed datastores `postgres`, `redis`, `mysql` and
+13. A service is `web`, `worker`, or one of the managed datastores `postgres`, `redis`, `mysql` and
    `mongodb`. A managed datastore is declared **bare**, as `{ type: redis }` and nothing else: the
    platform owns its image, port, version, sizing and credentials, and a manifest that named any of
    them could only drift from the platform's catalog. Consume it through `env.platform` with
@@ -81,6 +86,13 @@ IS the template code. Copying the closest existing template is the fastest way t
    self-hosted runtime (`src/`) still parses only `web`, `worker` and `postgres`, so it skips a
    template that declares one of the other three, logging a warning, until it gains support for
    them. `npm run lint` warns on this too and never fails the run over it.
+14. `command` overrides the image's start command and runs through `sh -c`, on a web or worker service.
+   It must be a non-empty string. `npm run lint` refuses an empty one, and so does publish. It is
+   cloud-only today: the self-hosted runtime refuses to run it, and lint prints a warning.
+15. `mountPath` moves the volume off `/data`. It needs `volume: true` and an absolute path.
+   `npm run lint` refuses a missing `volume: true` and a relative path. Publish also refuses system
+   directories, `..`, and characters other than letters, digits, `.`, `-`, `_` and `/`. It is
+   cloud-only today, like `command`.
 
 ## Architectures
 
@@ -129,16 +141,20 @@ upstream has no vector mark: keep it square, roughly 128 to 512 px, and under ab
 - Check the project's **product site**, not just its repository. A repo often carries only a banner
   or a README screenshot while the site serves a real mark. `pi.dev/logo-auto.svg` is where pi's
   came from, after its repository appeared to have none.
-- A mark that adapts to dark mode is strictly better than one that does not, and worth asking for.
-  pi's carries its own `@media (prefers-color-scheme: dark)` rule, so one file works on light and
-  dark surfaces alike.
+- **A mark must not theme itself.** No `@media (prefers-color-scheme)` rule. Every surface that
+  shows a logo (the console, this repo's UI, the marketing gallery) draws it inside its own neutral
+  tile, and the gallery pins that tile to the light scheme. Firefox ignores the pin inside an
+  `<img>`, so a mark that repaints itself white for dark mode disappears on the light tile. pi's
+  mark predates this rule and still themes itself.
 - Reject a `<text>`-based mark even when it is upstream's own favicon. A glyph in `system-ui`
   renders differently on every machine, and two of the upstreams here ship exactly that.
-- The asset must have **real transparency**. Check the corner pixels' alpha rather than the colour
-  type, because an RGBA file can still be fully opaque. A mark baked onto a solid background reads
-  as a coloured tile and fights whichever theme it was not drawn for.
-- Where upstream publishes nothing transparent, say so in the attribution table in
-  [README.md](README.md) and let the card put a neutral tile behind it. Do not hand-cut one.
+- Use upstream's **current** brand colours. Prefer a transparent file, and check transparency from
+  the corner pixels' alpha rather than the colour type, because an RGBA file can still be fully
+  opaque. When upstream ships its current mark only on its own plate, as an app icon or favicon,
+  use that file unchanged rather than a monochrome or retired transparent one: the surface's tile
+  frames it, so the plate reads as an app icon. `hermes` and `clickhouse` both do this.
+- Whichever file you take, record the choice in the attribution table in [README.md](README.md),
+  including why when it carries a plate. Do not hand-cut one.
 - If upstream has no mark at all, declare `meta.logo: none`. Consumers fall back to a monogram.
   That declaration gets reviewed; a missing file does not.
 
@@ -149,12 +165,19 @@ the catalog holds only a reference, and it is served from a CDN pinned to the pu
 
 ## Conventions
 
-- Volumes mount at `/data`, which the platform fixes. Point the app's data directory there with its
-  own env var (`HERMES_HOME`, `N8N_USER_FOLDER`, `HOME`) and check upstream docs for the right one.
+- Volumes mount at `/data` unless the service declares `mountPath` (rule 15). Prefer `/data` and point
+  the app's data directory there with its own env var (`HERMES_HOME`, `N8N_USER_FOLDER`, `HOME`).
 - Fair-code upstreams such as n8n: reference the official image, and never rebuild or rebrand it.
 - A template that exposes a terminal MUST require an access credential (for ttyd, the `-c` flag).
-- Categories are `ai-agent`, `llm` and `automation`. Propose a new one in your PR rather than
-  reaching for `other`.
+- Categories are `ai-agent`, `llm`, `automation`, `backend` (database, auth, storage and functions
+  shipped as one backend, such as Supabase) and `database` (a single datastore, such as
+  ClickHouse). Propose a new one in your PR rather than reaching for `other`. A new category also
+  needs a label in the console (`TEMPLATE_CATEGORIES`) and the marketing gallery (`CATEGORIES`),
+  or it is listed only under All, and it belongs in both `TEMPLATE_CATEGORY_ORDER` and `LABELS` in
+  [ui/src/lib/templatePicker.ts](../ui/src/lib/templatePicker.ts), which mirrors the console's list
+  and labels for this repo's own UI. That third place is easy to miss: a category absent from it
+  still gets a rail entry and a guessed label, it just sorts in alphabetically after the ones the
+  console orders deliberately, which is a difference nothing fails on.
 - `meta.draft: true` keeps a template out of the gallery while it is unfinished. Drafts are exempt
   from the logo and version-bump rules, because they publish nothing.
 - Everything in this tree is **English**, comments included. A comment only some contributors can

@@ -43,7 +43,7 @@ domain. See [self-hosting](https://docs.instacloud.com/self-hosting/overview).
 | policy get and set | implemented as routes (`GET /projects/:id/policy`, `PUT /projects/:id/policy/:action`) and in the dashboard. The CLI has no `policy` command of its own, on the cloud or here |
 | `agent approvals list/approve/deny` | one-shot grants, same `202` flow. `--always`, which flips the project policy to allow, is a field on the approve route (`{"always": true}`) and a control in the dashboard; the CLI does not expose a flag for it |
 | `agent events` | resource and governance timeline, agent ingest with dedup; the newest 5000 rows are kept. `limit` defaults to 50, clamps at 1000, and anything that is not an integer of 1 or more is a `400` |
-| `metrics` / `logs` | docker-backed, cloud response shapes; targets `postgres`, `compute`, `redis`, `mysql`, `mongodb`, and `--group` selects among several databases. Metrics: the daemon samples `docker stats` every 30 s, keeps 7 days in `<data dir>/metrics-history.json`, and answers `from`/`to`/`step` with the cloud's series (`cpu_cores`, `memory_used_bytes`, `egress_bytes_rate`, `ingress_bytes_rate`); no disk series. Logs: a `docker logs` tail. `logs --deploy` is `501`, use `insta agent events` |
+| `metrics` / `logs` | docker-backed, cloud response shapes; targets `postgres`, `compute`, `redis`, `mysql`, `mongodb`, and `--group` selects among several databases. Metrics: the daemon samples `docker stats` every 30 s, keeps 7 days plus 1 hour in `<data dir>/metrics-history.json`, and answers `from`/`to`/`step` with the cloud's series (`cpu_cores`, `memory_used_bytes`, `egress_bytes_rate`, `ingress_bytes_rate`); no disk series. Logs: a `docker logs` tail. `logs --deploy` is `501`, use `insta agent events` |
 | `storage list/get/delete` | object listing (prefix and cursor paging), presigned GET download, single delete; gated `storage.read` and `storage.delete`. Presigned-POST upload and bulk delete serve the console file browser |
 | `db query` (`POST /projects/:id/database/query`) | ONE ad-hoc SQL statement against the branch database, for the console's SQL editor and Data tab (several statements in one request answer `400` without executing anything). Row-shaped statements (SELECT/VALUES/TABLE, and a WITH whose top-level statement is a SELECT) answer `{columns, rows, rowCount, ms}` with every value as its exact TEXT (numerics never round through IEEE doubles), the first 5000 rows, under a 30 s statement timeout; anything else runs as written and answers psql's command tag. An empty result answers `columns: []` (column names come from the rows of the ONE execution). Gated `db.query` (default allow) and audited (`db.query` events, never the SQL text); a statement psql refused is a `400` quoting psql's first ERROR line; a sleeping instance is a `503` and is never woken by this route (wake it with `services wake` or the dashboard's gate) |
 | redis key browser (`GET .../services/:sid/redis/keys`, `/redis/value`, `/redis/stats`) | one SCAN page per logical db (`db` 0-15, `cursor`, `count` up to 1000) plus the keyspace summary, one key's type/TTL/value (collections bounded at 200 entries), and the INFO counters picked into the console's Stats shape. Gated `db.read` (default allow); `503` while the instance sleeps; redis only, since mysql and mongodb have no browser yet |
@@ -55,10 +55,13 @@ domain. See [self-hosting](https://docs.instacloud.com/self-hosting/overview).
 
 ## API tokens
 
-Server mode mints bearer tokens for the CLI, MCP and agents. The CLI has no `tokens` command:
-create one in the dashboard, on the Account page, or with `POST /tokens` and a session cookie.
-`GET /tokens` lists them and `DELETE /tokens/:id` revokes one. In local mode those routes stay
-`501`, because there is nothing to authenticate.
+Server mode mints bearer tokens for the CLI, MCP and agents. `insta tokens list` and
+`insta tokens revoke <id>` work as on the hosted platform; `insta tokens create <name>` needs
+`--account`, because the CLI binds a new token to an organization by default and a single-tenant
+daemon answers `400 orgId must be omitted on a single-tenant daemon`. Tokens are also created in
+the dashboard, on the Account page, or with `POST /tokens`. `GET /tokens` lists them and
+`DELETE /tokens/:id` revokes one. In local mode those routes stay `501`, because there is nothing
+to authenticate.
 
 `scopes` is accepted on create and echoed back on the record, matching the hosted platform's wire
 shape, and like the platform it is never enforced: every valid `insta_` key acts as the one admin

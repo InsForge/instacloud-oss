@@ -3,7 +3,7 @@
 Autonomous AI agent from Nous Research, with chat in the browser and messaging channels you
 connect when you want them.
 
-[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/hermes)
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/hermes)
 
 ## Overview
 

@@ -2,10 +2,9 @@
 
 Open-source backend platform your coding agent can operate.
 
-> **Draft.** It stays out of the catalog while two calls are pending: this registry has no
-> category that fits a backend platform (it is filed under `ai-agent`, the closest of the three),
-> and the image is amd64 only while both upstream images publish arm64. Neither is a defect in the
-> template; both are decisions someone else makes.
+> **Draft.** It stays out of the catalog while one call is pending: the image is amd64 only while
+> both upstream images publish arm64. That is not a defect in the template but a decision someone
+> else makes.
 
 ## Overview
 

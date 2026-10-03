@@ -83,11 +83,7 @@ services:
 meta:
   name: InsForge
   tagline: Open-source backend platform your coding agent can operate
-  # The closest of the three categories this registry defines. InsForge is not itself an agent: it
-  # is the database, auth, storage and functions an agent drives over MCP. A `backend` category
-  # would fit better, and AGENTS.md asks for that to be proposed in the pull request rather than
-  # invented here.
-  category: ai-agent
+  category: backend
   tags: [ai, backend, database]
   # amd64 only, declared rather than hoped for. Both upstream images publish arm64, but the
   # PostgREST asset pinned here is the x86-64 static build and the arm64 leg would compile the

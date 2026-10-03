@@ -62,7 +62,8 @@
             "pages": [
               "introduction",
               "quickstart",
-              "projects/branches"
+              "projects/branches",
+              "multi-tenant"
             ]
           },
           {
@@ -244,6 +245,7 @@
                       "GET /orgs/{orgId}/billing/invoices",
                       "GET /orgs/{orgId}/billing/overview",
                       "POST /orgs/{orgId}/billing/portal",
+                      "POST /orgs/{orgId}/billing/redeem",
                       "GET /orgs/{orgId}/usage"
                     ]
                   }
@@ -283,9 +285,11 @@
                       "PATCH /projects/{projectId}/services/{serviceId}",
                       "DELETE /projects/{projectId}/services/{serviceId}",
                       "PUT /projects/{projectId}/services/{serviceId}/access",
+                      "GET /projects/{projectId}/services/{serviceId}/access/impact",
                       "PUT /projects/{projectId}/services/{serviceId}/always-on",
                       "GET /projects/{projectId}/services/{serviceId}/builds",
                       "POST /projects/{projectId}/services/{serviceId}/exec",
+                      "DELETE /projects/{projectId}/services/{serviceId}/instances/{instanceId}",
                       "GET /projects/{projectId}/services/{serviceId}/limits",
                       "PUT /projects/{projectId}/services/{serviceId}/limits",
                       "POST /projects/{projectId}/services/{serviceId}/rename",

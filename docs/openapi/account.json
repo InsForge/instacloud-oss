@@ -351,6 +351,7 @@
         "tags": [
           "Catalog"
         ],
+        "security": [],
         "responses": {
           "200": {
             "description": "Default Response",
@@ -386,7 +387,6 @@
             }
           }
         },
-        "security": [],
         "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nList the regions available for postgres/compute services.",
         "x-mint": {
           "metadata": {
@@ -1197,7 +1197,7 @@
             "type": "boolean"
           },
           "alwaysOn": {
-            "description": "idle mode at creation. Omitted = the platform default (compute is born always-on); explicit false = opt this service into scale-to-zero (refused on a worker: nothing is routed to it, so nothing could wake it); true = always-on, for work that arrives on an outbound connection. A managed database may not declare it either: the platform owns its idle policy.",
+            "description": "idle mode at creation. Omitted = the platform default (compute is born scale-to-zero, a worker always-on); explicit false = opt this service into scale-to-zero (refused on a worker: nothing is routed to it, so nothing could wake it); true = always-on, for work that arrives on an outbound connection. A managed database may not declare it either: the platform owns its idle policy.",
             "type": "boolean"
           },
           "env": {

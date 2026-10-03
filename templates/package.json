@@ -6,7 +6,8 @@
   "scripts": {
     "deploy": "node scripts/deploy.mjs",
     "lint": "node scripts/lint.mjs",
-    "version-guard": "node scripts/version-guard.mjs"
+    "version-guard": "node scripts/version-guard.mjs",
+    "check-upstreams": "node scripts/check-upstreams.mjs"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"

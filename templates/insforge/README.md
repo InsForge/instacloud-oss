@@ -21,7 +21,7 @@ What the template does add is a single container. Upstream ships a four-service 
 (its Postgres image, PostgREST, a Deno runtime, the Node server) wired together over a private
 Docker network, and a template has no such network: `${services.<name>.host}` resolves to the edge
 router, which routes HTTP and nothing else. A managed `{ type: postgres }` cannot stand in for
-upstream's database either, because that database is not stock — it preloads
+upstream's database either, because that database is not stock. It preloads
 `pg_cron, http, pgcrypto, insforge_pg_utils`, and `insforge_pg_utils` is a C extension that exists
 only in `ghcr.io/insforge/postgres`. So `./Dockerfile` builds an overlay on that image and
 `./entrypoint.sh` supervises all four processes behind the one routed port.

@@ -26,10 +26,11 @@
 # ---------------------------------------------------------------------------------------------
 FROM node:20-bookworm-slim AS source
 WORKDIR /src
-# No --checksum: GitHub's on-the-fly tarballs are not promised to be byte-stable across
-# regenerations, so a pinned digest here would turn into a red build for no change upstream. The
-# tag is the pin, and the version assertion below is what actually catches a wrong tree.
-ADD https://codeload.github.com/InsForge/InsForge/tar.gz/refs/tags/v2.3.2 /tmp/insforge.tar.gz
+# Fetched by the commit v2.3.2 points at, not by the tag: a tag can be moved, a commit cannot.
+# Still no --checksum, because GitHub's on-the-fly tarballs are not promised to be byte-stable
+# across regenerations, so a pinned digest would turn red for no change upstream. The version
+# assertion below catches a sha bumped without its version, or the reverse.
+ADD https://codeload.github.com/InsForge/InsForge/tar.gz/ccb1703242bd1b5ffbc250f0acb866cd36e56ce1 /tmp/insforge.tar.gz
 RUN tar -xzf /tmp/insforge.tar.gz --strip-components=1 -C /src \
  && rm /tmp/insforge.tar.gz \
  && test "$(node -p "require('./package.json').version")" = "2.3.2"
@@ -140,8 +141,9 @@ COPY --from=build /src/packages/shared-schemas/src ./packages/shared-schemas/src
 COPY --from=build /src/functions /opt/insforge-functions
 
 # tsx is a devDependency upstream, but `migrate:bootstrap` runs a script through it at every boot,
-# so the runtime image needs it globally. Same line upstream's own runner stage carries.
-RUN npm install -g "tsx@^4.7.1" && npm cache clean --force
+# so the runtime image needs it globally. Upstream's runner stage installs `tsx@^4.7.1`, a range;
+# this is the exact version upstream's lockfile resolves at v2.3.2, so a rebuild cannot drift.
+RUN npm install -g "tsx@4.23.1" && npm cache clean --force
 
 # Upstream's Postgres configuration, from the same commit as the app: the preload list, the
 # grant-role settings insforge_pg_utils reads, the internal-schema allowlist PostgREST is scoped

@@ -178,6 +178,21 @@ if ! npm run --silent migrate:up; then
 fi
 log "migrations finished in $(( $(date +%s) - migrate_started ))s"
 
+# The restart loops above keep a broken PostgREST or Deno from failing the container, and the
+# health gate probes only the server's /api/health, so either could be dead on arrival and the
+# deploy would still go green. Each has to answer once before the server starts.
+wait_for() {
+  local name=$1 url=$2
+  for _i in $(seq 1 60); do
+    node -e "fetch(process.argv[1]).then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))" "$url" && return 0
+    sleep 1
+  done
+  log "$name did not answer on $url within 60s; not starting the server"
+  return 1
+}
+wait_for postgrest http://127.0.0.1:3000/ || exit 1
+wait_for deno http://127.0.0.1:7133/health || exit 1
+
 log "starting the insforge server"
 node /app/dist/server.js &
 app_pid=$!

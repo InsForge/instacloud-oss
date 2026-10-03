@@ -148,6 +148,20 @@ describe('retention and persistence', () => {
     expect(restored.query([APP], 0, 200, 60)).toEqual(h.query([APP], 0, 200, 60))
   })
 
+  test.each([1, 2])('version %s preserves stopped/running boundaries and rates', (version) => {
+    const samples = [
+      [0, 0.1, 100, 1_000, 1_000],
+      [30, 0, 0, 0, 0],
+      [60, 0, 0, 0, 0],
+      [90, 0.1, 100, 2_000, 2_000],
+      [120, 0.1, 100, 5_000, 5_000],
+    ].flatMap((row) => version === 2 ? [...row, 123] : row)
+    const h = new MetricsHistory()
+    h.load({ version, samples: { [APP.container]: samples } }, 120)
+    h.record(150, [{ ...sample(APP.container, 0.1, 100, 8_000, 8_000), generation: version === 2 ? 123 : 0, running: true }])
+    expect(named(h.query([APP], 0, 150, 30), 'egress_bytes_rate')[0]!.points).toEqual([[60, 0], [120, 100], [150, 100]])
+  })
+
   test('load skips malformed containers and past-retention samples instead of failing', () => {
     const h = new MetricsHistory()
     h.load({ version: 1, samples: {
@@ -247,7 +261,11 @@ describe('a redeployed container (regression: a new container differenced agains
     const h = new MetricsHistory()
     gen(APP.container, 1, 100, 100, 0, h)
     gen(APP.container, 2, 1_000, 1_000, 30, h) // a fresh container that already sent more than the old one had
-    expect(named(h.query([APP], 0, 60, 60), 'egress_bytes_rate')).toEqual([])
+    const restored = new MetricsHistory()
+    restored.load(JSON.parse(JSON.stringify(h.toJSON())), 60)
+    for (const history of [h, restored]) {
+      expect(named(history.query([APP], 0, 60, 60), 'egress_bytes_rate')).toEqual([])
+    }
   })
 
   test('rates carry on within one generation', () => {
@@ -261,7 +279,7 @@ describe('a redeployed container (regression: a new container differenced agains
     const h = new MetricsHistory()
     h.load({ version: 1, samples: { [APP.container]: [0, 0.1, 100, 0, 0, 30, 0.1, 100, 3_000, 3_000] } }, 60)
     expect(named(h.query([APP], 0, 60, 60), 'egress_bytes_rate')[0]!.points).toEqual([[0, 100]])
-    expect(h.toJSON().version).toBe(2)
+    expect(h.toJSON().version).toBe(3)
   })
 })
 
@@ -366,6 +384,41 @@ describe('MetricsSampler', () => {
     expect(history.toJSON().samples['io-demo-main-pg-db']![5]).toBe(2)
   })
 
+  test('network rates use Docker state when memory readings are unavailable', async () => {
+    const history = new MetricsHistory()
+    let now = 990
+    let state = 'running'
+    let memory = '-- / --'
+    let rx = 5e9
+    const sampler = new MetricsSampler(history, {
+      file: file(), now: () => now,
+      docker: fakeDocker([], async () => Buffer.from(STATS.replace('10MiB / 1GiB', memory).replace('0B / 0B', `${rx}B / ${rx * 2}B`)),
+        () => PS.replace('\trunning\t', `\t${state}\t`)),
+    })
+    await sampler.sampleOnce()
+    now += 30
+    state = 'paused'
+    await sampler.sampleOnce()
+    now += 30
+    await sampler.sampleOnce()
+    now += 30
+    state = 'running'
+    rx += 3_000
+    await sampler.sampleOnce()
+    now += 30
+    memory = '10MiB / 1GiB'
+    rx += 300
+    await sampler.sampleOnce()
+
+    const restored = new MetricsHistory()
+    restored.load(JSON.parse(JSON.stringify(history.toJSON())), now)
+    for (const h of [history, restored]) {
+      const series = h.query([APP], 990, now, 30)
+      expect(named(series, 'ingress_bytes_rate')[0]!.points).toEqual([[1_050, 0], [1_110, 10]])
+      expect(named(series, 'egress_bytes_rate')[0]!.points).toEqual([[1_050, 0], [1_110, 20]])
+    }
+  })
+
   test('redeploying under the same name starts a new network-counter generation', async () => {
     const history = new MetricsHistory()
     let now = 990
@@ -414,6 +467,37 @@ describe('MetricsSampler', () => {
     const second = new MetricsSampler(restored, { file: path, docker: fakeDocker([]), now: () => now, log: () => {} })
     second.load()
     expect(restored.sampled(on(APP.container))).toBe(true)
+  })
+
+  test('a reused temporary file is made owner-only before publication', async () => {
+    const path = file()
+    const write = fs.writeFile
+    const writer = vi.spyOn(fs, 'writeFile').mockImplementationOnce(async (...args) => {
+      writeFileSync(args[0], 'stale', { mode: 0o644 })
+      await write(...args)
+    })
+    try {
+      const sampler = new MetricsSampler(new MetricsHistory(), { file: path, docker: fakeDocker([]), now: () => 1_000 })
+      await sampler.sampleOnce()
+      expect(statSync(path).mode & 0o777).toBe(0o600)
+    } finally { writer.mockRestore() }
+  })
+
+  test('a save after a failed rename uses a new temporary file', async () => {
+    const path = file()
+    let now = 1_000
+    const writer = vi.spyOn(fs, 'writeFile')
+    const rename = vi.spyOn(fs, 'rename').mockRejectedValueOnce(new Error('rename failed'))
+    try {
+      const sampler = new MetricsSampler(new MetricsHistory(), { file: path, docker: fakeDocker([]), now: () => now, log: () => {} })
+      await sampler.sampleOnce()
+      expect(existsSync(writer.mock.calls[0]![0] as string)).toBe(false)
+      now += 300
+      await sampler.sampleOnce()
+      expect(writer.mock.calls).toHaveLength(2)
+      expect(writer.mock.calls[1]![0]).not.toBe(writer.mock.calls[0]![0])
+      expect(JSON.parse(readFileSync(path, 'utf8')).version).toBe(3)
+    } finally { writer.mockRestore(); rename.mockRestore() }
   })
 
   test('stop saves completed history without waiting for a blocked Docker sample', async () => {

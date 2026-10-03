@@ -91,7 +91,7 @@ meta:
   # the Architectures table in ../README.md for what winning the second row would take.
   architectures: [amd64]
   draft: true
-  logo: ./logo.svg
+  logo: ./logo.png
   links:
     upstream: https://github.com/InsForge/InsForge
     documentation: https://docs.insforge.dev

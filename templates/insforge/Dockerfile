@@ -24,7 +24,7 @@
 # ---------------------------------------------------------------------------------------------
 # Stage 1: upstream's source at the pinned tag, shared by the build and prod-deps stages.
 # ---------------------------------------------------------------------------------------------
-FROM node:20-bookworm-slim AS source
+FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS source
 WORKDIR /src
 # Fetched by the commit v2.3.2 points at, not by the tag: a tag can be moved, a commit cannot.
 # Still no --checksum, because GitHub's on-the-fly tarballs are not promised to be byte-stable
@@ -108,8 +108,8 @@ FROM ghcr.io/insforge/postgres:v15.13.4@sha256:23b767e82e17da08cec1dc0c1214e3002
 # Node, copied file by file rather than as a whole /usr/local/bin. The node image ships its own
 # /usr/local/bin/docker-entrypoint.sh, and a directory-level copy would overwrite the Postgres
 # entrypoint this image is chosen for.
-COPY --from=node:20-bookworm-slim /usr/local/bin/node /usr/local/bin/node
-COPY --from=node:20-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
  && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
  && node --version && npm --version
@@ -120,6 +120,13 @@ COPY --from=binaries /out/deno /usr/local/bin/deno
 WORKDIR /app
 COPY --from=prod-deps /src/node_modules ./node_modules
 COPY --from=build /src/dist ./dist
+# The server logs the full admin API key on every boot, and anyone who can read this service's logs
+# would hold it. The dashboard's Connect dialog shows it to the people meant to have it. Fails the
+# build if upstream rewords the line, rather than shipping the leak again unnoticed.
+RUN grep -qF 'API key generated: ${apiKey}' dist/server.js \
+ && sed -i 's/API key generated: \${apiKey}/API key generated and stored, read it from the dashboard/' dist/server.js \
+ && ! grep -qF 'API key generated: ${apiKey}' dist/server.js \
+ && grep -qF 'API key generated and stored, read it from the dashboard' dist/server.js
 COPY --from=build /src/docs ./docs
 COPY --from=build /src/.agents/docs ./.agents/docs
 # tsx resolves the backend's @/* aliases from tsconfig.json, and node-pg-migrate reads the .sql

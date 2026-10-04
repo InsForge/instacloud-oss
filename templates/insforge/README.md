@@ -2,9 +2,11 @@
 
 Open-source backend platform your coding agent can operate.
 
-> **Draft.** It stays out of the catalog while one call is pending: the image is amd64 only while
-> both upstream images publish arm64. That is not a defect in the template but a decision someone
-> else makes.
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/insforge)
+
+**This service is always-on and billed the whole time it exists.** Its Postgres, the `pg_cron`
+schedules and realtime connections all live in this one machine, so it cannot scale to zero. A
+deployment you are done with is a deployment to delete.
 
 ## Overview
 

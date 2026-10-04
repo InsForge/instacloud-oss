@@ -90,7 +90,7 @@ meta:
   # whole Node monorepo under QEMU. Neither has been done, so the row says one architecture. See
   # the Architectures table in ../README.md for what winning the second row would take.
   architectures: [amd64]
-  draft: true
+  draft: false
   logo: ./logo.png
   links:
     upstream: https://github.com/InsForge/InsForge

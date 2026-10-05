@@ -17,6 +17,7 @@ An image, its environment, and a listen port:
 - **Image** — built remotely from your Dockerfile on `insta deploy .`, or supplied prebuilt with `--image`. See [build & deploy](/deploy/overview).
 - **Environment** — user secrets plus explicitly bound provider credentials, injected at deploy time. The [quickstart](/quickstart) shows the binding step.
 - **Port** — an explicit `--port` wins; otherwise the Dockerfile's last `EXPOSE` line; otherwise 8080.
+- **User** — the app and everything it starts run as the image's `USER`, resolved against the image's own `/etc/passwd` and `/etc/group` as Docker does; with no `USER` they run as root. On InstaCloud only the user's primary group applies (supplementary groups listed in `/etc/group` are not added), and `insta compute exec` sessions always run as root. This depends on a fleet-wide runtime rollout still in progress — until it completes, warm launches may still start as root regardless of the image's `USER`, and already-running containers keep their current user until their next launch.
 
 A branch can run several compute services, each its own group with its own URL and deploys. WebSocket apps deploy with `--websocket` for a larger guest and connection-based concurrency.
 

@@ -70,7 +70,7 @@ const VOLUME_MOUNT_PATH = '/data'
 // ---- region WP5 (templates/parity) ----
 /** The major version of the postgres image the adapter runs (adapters/postgres.ts IMAGE), served
  *  as the `pg_version` column of a postgres services row. */
-const PG_VERSION = 16
+export const PG_VERSION = 16
 
 /** One row of `GET /projects/:id/services`, and what every add/rename returns. */
 export interface ServiceRow {

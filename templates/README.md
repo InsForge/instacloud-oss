@@ -38,7 +38,7 @@ case; a browser terminal is not, because opening it is itself the inbound reques
 
 A value under `env.fixed` may interpolate another service's address as `${services.<name>.url}` or
 `${services.<name>.host}`, resolved before anything deploys, including a service's own address. A
-**managed database is different**: it has no URL, and its credentials arrive under `env.platform`
+**managed database or a bucket is different**: it has no URL, and its credentials arrive under `env.platform`
 as `${{services.<name>.<KEY>}}` — note the doubled braces. The two are not interchangeable, and
 each is rejected in the other's place. See [AGENTS.md](AGENTS.md) for the field rules.
 

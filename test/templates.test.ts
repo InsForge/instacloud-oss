@@ -32,10 +32,10 @@ function fakeDocker(args: string[] = []): Promise<Buffer> {
 }
 
 import { buildServer } from '../src/server'
-import { Engine } from '../src/engine'
+import { Engine, PG_VERSION } from '../src/engine'
 import { TemplateExecutor } from '../src/templates/executor'
 import {
-  collectVariables, generateValue, manifestDigest, parseTemplateManifest, resolveTemplateString,
+  collectVariables, DIGEST_EPOCH, generateValue, manifestDigest, parseTemplateManifest, resolveTemplateString,
 } from '../src/templates/manifest'
 import { loadState } from '../src/state'
 import { hostArch, initHostArch } from '../src/hostarch'
@@ -222,6 +222,63 @@ test('manifest parity: command and mountPath are kept on the parsed service so t
   refuses({ ...base, services: { db: { type: 'postgres', mountPath: '/x' } } }, /carries no mountPath/)
 })
 
+test('manifest parity: pgVersion, public and storage are kept on the parsed service so the digest matches the cloud', () => {
+  const m = parse({ ...base, services: { ...base.services, db: { type: 'postgres', pgVersion: 17 }, files: { type: 'storage', public: true } } })
+  expect(m.services.db).toMatchObject({ type: 'postgres', pgVersion: 17 })
+  expect(m.services.files).toMatchObject({ type: 'storage', public: true })
+  // Declared only when authored, so an old manifest hashes byte-identically.
+  const old = parse({ ...base, services: { ...base.services, db: { type: 'postgres' }, files: { type: 'storage' } } })
+  expect(Object.keys(old.services.db)).not.toContain('pgVersion')
+  expect(Object.keys(old.services.files)).not.toContain('public')
+  expect(Object.keys(parse(base).services.web)).not.toContain('pgVersion')
+  expect(Object.keys(parse(base).services.web)).not.toContain('public')
+  expect(manifestDigest(m)).not.toBe(manifestDigest(old))
+  // false is the default, normalized away as the platform does, so it digests like no public at all.
+  const privateBucket = parse({ ...base, services: { files: { type: 'storage', public: false } } })
+  expect(Object.keys(privateBucket.services.files)).not.toContain('public')
+  expect(manifestDigest(privateBucket)).toBe(manifestDigest(parse({ ...base, services: { files: { type: 'storage' } } })))
+  // The empty env shell a stored manifest carries is tolerated, as for postgres.
+  const shell = { fixed: {}, generated: {}, platform: {}, required: {}, optional: {} }
+  expect(parse({ ...base, services: { files: { type: 'storage', env: shell } } }).services.files.type).toBe('storage')
+
+  const withDb = (db: Record<string, unknown>) => ({ ...base, services: { ...base.services, db } })
+  refuses(withDb({ type: 'postgres', pgVersion: '17' }), /services\.db\.pgVersion must be an integer/)
+  refuses(withDb({ type: 'postgres', pgVersion: 17.5 }), /services\.db\.pgVersion must be an integer/)
+  refuses({ ...base, services: { web: { ...base.services.web, pgVersion: 17 } } }, /services\.web\.pgVersion: only a postgres service takes a version/)
+  refuses({ ...base, services: { web: { ...base.services.web, public: true } } }, /services\.web\.public: only a storage service can be public/)
+  refuses(withDb({ type: 'postgres', public: true }), /services\.db\.public: only a storage service can be public/)
+  refuses({ ...base, services: { files: { type: 'storage', public: 'yes' } } }, /services\.files\.public must be a boolean/)
+  // A bucket is bare, like a postgres service.
+  refuses({ ...base, services: { files: { type: 'storage', image: 'x' } } }, /services\.files\.image: a storage service is platform-managed and carries no image/)
+  refuses({ ...base, services: { files: { type: 'storage', env: { fixed: { A: '1' } } } } }, /services\.files\.env: a storage service is platform-managed and carries no env/)
+  // The type message now names storage.
+  refuses({ ...base, services: { a: { type: 'redis' } } }, /type must be web, worker, postgres or storage/)
+})
+
+test('a storage service is a platform-credential target and has no url or host', () => {
+  const web = { ...base.services.web, env: { platform: { S3_KEY: '${{services.files.AWS_ACCESS_KEY_ID}}' } } }
+  const doc = { ...base, services: { web, files: { type: 'storage' } } }
+  expect(parse(doc).services.web.env.platform).toEqual({ S3_KEY: '${{services.files.AWS_ACCESS_KEY_ID}}' })
+  const wrongKey = { ...base.services.web, env: { platform: { S3_KEY: '${{services.files.DATABASE_URL}}' } } }
+  refuses({ ...base, services: { web: wrongKey, files: { type: 'storage' } } }, /'DATABASE_URL' is not a credential of a storage service/)
+  const urlRef = { ...base.services.web, env: { fixed: { A: '${services.files.url}' } } }
+  refuses({ ...base, services: { web: urlRef, files: { type: 'storage' } } }, /service 'files' is a managed storage, it has no url\/host/)
+})
+
+test('an authored manifest refuses a service key the platform does not know, a stored one is read leniently', () => {
+  const authored = { rejectAuthoredSizing: true }
+  const typo = { ...base, services: { web: { ...base.services.web, colour: 'red' } } }
+  refuses(typo, /services\.web\.colour is not a template field/, authored)
+  // Stored rows are never refused for it, so a bundled template cannot vanish from the catalog.
+  expect(parse(typo).services.web.image).toBe('i')
+  refuses({ ...base, services: { db: { type: 'postgres', flavour: 'x' } } }, /services\.db\.flavour is not a template field/, authored)
+  refuses({ ...base, services: { files: { type: 'storage', visibility: 'public' } } }, /services\.files\.visibility is not a template field/, authored)
+  // Only service entries are strict: the top level, meta and upstream stay open.
+  expect(parse({ ...base, extra: 1, meta: { extra: 1 }, upstream: { extra: 1 } }, authored).code).toBe('x')
+  // spec keeps its own, more helpful refusal.
+  refuses({ ...base, services: { web: { ...base.services.web, spec: '1vcpu' } } }, /compute size is the daemon's to choose/, authored)
+})
+
 // The parser claims to apply the engine's grammar, and it did not: both regexes were local copies
 // permitting a trailing hyphen, which the engine rejects. A code or service name ending in `-`
 // therefore passed validation here and failed partway through DEPLOYMENT, after preliminary state
@@ -370,6 +427,24 @@ test('a version mismatch, a draft code and an unrunnable manifest are refused be
   expect(r4.json().error).toMatch(/services\.app\.mountPath is cloud-only today/)
   // A branch that does not exist is a 404, before any variable check.
   expect((await post(`/projects/${id}/template-deployments`, { templateCode: 'claude-code', branch: 'ghost' })).statusCode).toBe(404)
+})
+
+test('a storage service and a pgVersion other than the local major are refused as cloud-only, before anything runs', async () => {
+  const id = await project()
+  const withBucket = { code: 'b', version: '1', services: { web: { type: 'web', image: 'i', healthcheck: '/', port: 8080 }, files: { type: 'storage', public: true } } }
+  const r1 = await post(`/projects/${id}/template-deployments`, { manifest: withBucket, branch: 'main' })
+  expect(r1.statusCode).toBe(400)
+  expect(r1.json().error).toMatch(/services\.files is a storage service, which is cloud-only today/)
+  const otherMajor = { code: 'p', version: '1', services: { db: { type: 'postgres', pgVersion: PG_VERSION + 1 } } }
+  const r2 = await post(`/projects/${id}/template-deployments`, { manifest: otherMajor, branch: 'main' })
+  expect(r2.statusCode).toBe(400)
+  expect(r2.json().error).toBe(`services.db.pgVersion ${PG_VERSION + 1} is cloud-only today: the self-hosted runtime runs Postgres ${PG_VERSION} only`)
+  // Nothing was recorded or created: refused before the 202.
+  expect(Object.keys(loadState().templateDeployments ?? {})).toHaveLength(0)
+  expect((await get(`/projects/${id}/services`)).json().services).toEqual([])
+  // The local major itself is accepted.
+  const sameMajor = { code: 'p', version: '1', services: { db: { type: 'postgres', pgVersion: PG_VERSION } } }
+  expect((await deploy(id, { manifest: sameMajor, branch: 'main' })).statusCode).toBe(202)
 })
 
 test('a template whose image this box cannot run is refused before any service exists', async () => {
@@ -576,6 +651,25 @@ test('idempotency: the same id echoes, a changed manifest 409s, and a resume com
   expect(calls.filter((c) => c.startsWith('deploy:'))).toHaveLength(0)
   // A non-UUID id is refused outright.
   expect((await post(`/projects/${id}/template-deployments`, { templateCode: 'n8n', deploymentId: 'nope' })).statusCode).toBe(400)
+})
+
+test('a deployment recorded under the previous digest epoch resumes instead of answering 409', async () => {
+  const id = await project()
+  const deploymentId = '33333333-2222-4333-8444-555555555555'
+  await deploy(id, { templateCode: 'n8n', branch: 'main', deploymentId })
+  // As the build before the bump stored it: epoch 2, and a digest this build would not compute.
+  const { mutate } = await import('../src/state')
+  mutate((s) => {
+    const row = s.templateDeployments[deploymentId] as unknown as { digestEpoch: number; manifestDigest: string }
+    row.digestEpoch = 2
+    row.manifestDigest = 'digest-from-the-previous-epoch'
+  })
+  const retry = await post(`/projects/${id}/template-deployments`, { templateCode: 'n8n', branch: 'main', deploymentId })
+  expect(retry.statusCode).toBe(202)
+  expect(retry.json().deployment.status).toBe('succeeded')
+  // Control: the same stale digest under the CURRENT epoch is a conflict.
+  mutate((s) => { (s.templateDeployments[deploymentId] as unknown as { digestEpoch: number }).digestEpoch = DIGEST_EPOCH })
+  expect((await post(`/projects/${id}/template-deployments`, { templateCode: 'n8n', branch: 'main', deploymentId })).statusCode).toBe(409)
 })
 
 test('abandonStale fails a running record with the restart message', async () => {

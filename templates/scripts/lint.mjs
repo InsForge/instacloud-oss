@@ -4,10 +4,10 @@ import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
-import { FIXED_REF_RE, checkFixedRef, MANAGED_TYPES } from "./manifest-refs.mjs";
+import { FIXED_REF_RE, checkFixedRef, MANAGED_TYPES, BARE_TYPES } from "./manifest-refs.mjs";
 import { DEPLOY_BUTTON_ASSET, findDeployButtons } from "./publish-lib.mjs";
 import { ARCHITECTURES } from "./build-targets.mjs";
-import { checkServiceRuntime } from "./service-runtime.mjs";
+import { checkServiceRuntime, checkTypedFields } from "./service-runtime.mjs";
 import { checkDockerfilePin, checkUpstreamFrom } from "./dockerfile-pin.mjs";
 import { validateCompanionRef } from "./companions.mjs";
 
@@ -21,8 +21,10 @@ const codes = new Set();
 if (existsSync(join(root, "index.json"))) { failures++; console.error("✗ index.json: never commit it: CI generates it"); }
 
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-// MANAGED_TYPES comes from manifest-refs.mjs, which already needs it: one definition, not two.
-const TYPES = ["web", "worker", ...MANAGED_TYPES];
+// BARE_TYPES comes from manifest-refs.mjs, which already needs it: one definition, not two.
+const TYPES = ["web", "worker", ...BARE_TYPES];
+// Every key a service may carry. spec and volumeGib stay listed because the sizing checks below refuse them by name.
+const SERVICE_KEYS = ["type", "image", "build", "port", "healthcheck", "volume", "volumeGib", "spec", "alwaysOn", "command", "mountPath", "env", "pgVersion", "public"];
 // Images this repo builds for itself; templates-build-images derives their tag from `version:`.
 const SELF_IMAGE_PREFIX = "ghcr.io/insforge/insta-oss/templates/";
 const dirs = readdirSync(root).filter((d) => !NON_TEMPLATE.has(d) && statSync(join(root, d)).isDirectory());
@@ -162,15 +164,25 @@ for (const dir of dirs) {
     if (svc.volume !== undefined && svc.volume !== true) {
       err(dir, `${name}: the volume size is the platform's to choose — declare 'volume: true'`);
     }
+    // The platform refuses a service key it does not know. A misspelt key used to be silent on both sides.
+    for (const key of Object.keys(svc)) {
+      if (!SERVICE_KEYS.includes(key)) err(dir, `${name}: ${key} is not a template field, the platform refuses it`);
+    }
     if (!TYPES.includes(svc.type)) {
       err(dir, `${name}: type must be one of ${TYPES.join(", ")} (got '${svc.type}')`);
       continue;
     }
+    // pgVersion is postgres only and public is storage only, the per-type rule add() applies on the platform.
+    const typed = checkTypedFields(name, svc);
+    for (const e of typed.errors) err(dir, e);
+    for (const w of typed.warnings) console.warn(`~ ${dir}: ${w}`);
     // A managed service is the platform's: it owns the image, port, sizing and credentials.
-    if (MANAGED_TYPES.includes(svc.type)) {
-      // redis, mysql and mongodb are cloud-only: the self-hosted runtime here only parses postgres.
-      if (svc.type !== "postgres") {
-        console.warn(`~ ${dir}: ${name} declares a ${svc.type} service, cloud-only today: the self-hosted runtime only parses web, worker and postgres and skips this template until it gains support`);
+    if (BARE_TYPES.includes(svc.type)) {
+      // storage parses locally but is refused at deploy, redis, mysql and mongodb are skipped by the catalog.
+      if (svc.type === "storage") {
+        console.warn(`~ ${dir}: ${name} declares a storage service, cloud-only today: the self-hosted runtime parses it but refuses to deploy a template with a bucket`);
+      } else if (svc.type !== "postgres") {
+        console.warn(`~ ${dir}: ${name} declares a ${svc.type} service, cloud-only today: the self-hosted runtime only parses web, worker, postgres and storage and skips this template until it gains support`);
       }
       // spec is not in this list: the shared check above already refuses it on every service type,
       // so it can never reach this loop first, and repeating it here would just double the message
@@ -227,7 +239,7 @@ for (const dir of dirs) {
       if (svc.healthcheck !== undefined) err(dir, `${name}: a worker has no HTTP endpoint to probe, remove healthcheck (its health is the machine's state)`);
       if (svc.alwaysOn === false) err(dir, `${name}: a worker cannot scale to zero, nothing is routed to it so nothing would wake it: remove alwaysOn or set it true`);
     }
-    // Same message the platform uses. Catches the shape only: a misspelled key is silent on both sides.
+    // Same message the platform uses. Catches the shape only: a misspelled key is the unknown-key check above.
     if (svc.alwaysOn !== undefined && typeof svc.alwaysOn !== "boolean") {
       err(dir, `${name}: alwaysOn must be a boolean`);
     }
@@ -247,6 +259,7 @@ for (const dir of dirs) {
   // Each managed datastore is born with its own volume at the deployer's plan cap, so a template
   // declaring several of them costs several volumes. A warning, not a failure: legitimate but worth
   // a second look on the pull request.
+  // MANAGED_TYPES has no storage: a bucket has no volume, so it stays out of this count.
   const managedCount = Object.values(m?.services ?? {}).filter((s) => MANAGED_TYPES.includes(s?.type)).length;
   if (managedCount > 2) console.warn(`~ ${dir}: declares ${managedCount} managed datastores, each born with its own plan-cap volume`);
   // constraints may only name declared required/optional variables (platform parser rule)

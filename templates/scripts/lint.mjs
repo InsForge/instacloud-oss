@@ -231,7 +231,6 @@ for (const dir of dirs) {
       }
     }
     if (svc.build && !existsSync(join(root, dir, svc.build.replace(/^\.\//, "")))) err(dir, `${name}: build file ${svc.build} not found`);
-    if (svc.type === "web" && !svc.healthcheck) err(dir, `${name}: web service needs healthcheck`);
     // A worker is portless (insta-platform#490): the platform runs it as its own port-0 service, so
     // nothing is routed to it and nothing probes it. The server refuses these three shapes; say so here.
     if (svc.type === "worker") {

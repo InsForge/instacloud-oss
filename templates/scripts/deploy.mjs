@@ -130,11 +130,16 @@ step(6, "deployed");
 for (const [name, svc] of services) {
   const url = urls[name];
   if (!url) fail(`no URL captured for ${name}`);
+  // No path: like the platform, up is enough (step 6 returns once the machine answers).
+  if (!svc.healthcheck) {
+    log(`   ${name}: up (no healthcheck path declared)`);
+    continue;
+  }
   const deadline = Date.now() + 180_000;
   let status = 0;
   while (Date.now() < deadline) {
     try {
-      status = (await fetch(url + (svc.healthcheck ?? "/"), { method: "GET" })).status;
+      status = (await fetch(url + svc.healthcheck, { method: "GET" })).status;
       if (status > 0 && status < 500) break;
     } catch { /* cold start */ }
     await new Promise((r) => setTimeout(r, 4000));

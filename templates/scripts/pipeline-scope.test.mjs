@@ -348,6 +348,24 @@ describe('lint: pgVersion belongs to postgres and public to storage', () => {
   });
 });
 
+describe('lint: a web service\'s health check path is optional, a worker still may not have one', () => {
+  const base = lintBase;
+  const web = lintWeb;
+
+  it('accepts a web service without a path, as the platform does', () => {
+    const bare = { type: web.type, image: web.image, port: web.port };
+    const r = withTemplate({ ...base, services: { web: bare } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+  });
+
+  it('refuses a worker that declares a path', () => {
+    const job = { type: 'worker', image: web.image, healthcheck: '/' };
+    const r = withTemplate({ ...base, services: { web, job } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('job: a worker has no HTTP endpoint to probe');
+  });
+});
+
 describe('lint: a misspelt service key is refused, while the rest of the manifest stays open', () => {
   const base = lintBase;
   const web = lintWeb;

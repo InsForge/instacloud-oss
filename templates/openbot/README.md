@@ -2,10 +2,12 @@
 
 Self-hosted AI coworkers with a browser, a shell and an audit trail.
 
-> **Draft.** It stays out of the catalog while two calls are pending: whether the gallery wants a
-> template whose sign-in is a proxy in front of the app rather than the app's own, and whether a
-> deploy that needs a CopilotKit Intelligence key before it will boot belongs in a catalog where
-> every other template starts with nothing.
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/openbot)
+
+> **Have a CopilotKit Intelligence key ready.** OpenBot will not boot without one, and the
+> deploy form asks for it. A free plan covers it: sign in at
+> [intelligence.copilotkit.ai](https://intelligence.copilotkit.ai) and copy the `cpk-...`
+> runtime key. Full steps under [What you need before deploying](#what-you-need-before-deploying) below.
 
 ## Overview
 

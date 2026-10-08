@@ -95,7 +95,6 @@ meta:
   architectures: [amd64]
   logo: ./logo.png              # 256x256, real transparency; see the attribution table in ../README.md
   # Draft until a human has used it. What is unsettled is in the pull request, not here.
-  draft: true
   links:
     upstream: https://github.com/CopilotKit/openbot
     documentation: https://github.com/CopilotKit/openbot/blob/main/docs/README.md

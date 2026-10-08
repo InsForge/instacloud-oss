@@ -14,7 +14,7 @@
 // deploymentId resumes instead of duplicating services.
 import { randomUUID } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
-import type { Engine } from '../engine'
+import { PG_VERSION, type Engine } from '../engine'
 import { hostArch } from '../hostarch'
 import { BRANCH_NAME_RE, SERVICE_NAME_RE } from '../names'
 import { loadState, mutate } from '../state'
@@ -239,6 +239,8 @@ export class TemplateExecutor {
       if (svc.type === 'worker') throw new TemplateError(400, `services.${name} is a worker - template deploys support web services only in v1 (a portless worker path is a follow-up)`)
       if (svc.command !== undefined) throw new TemplateError(400, `services.${name}.command is cloud-only today: the self-hosted runtime runs the image's own command`)
       if (svc.mountPath !== undefined) throw new TemplateError(400, `services.${name}.mountPath is cloud-only today: the self-hosted runtime mounts volumes at /data`)
+      if (svc.type === 'storage') throw new TemplateError(400, `services.${name} is a storage service, which is cloud-only today: the self-hosted runtime does not create template buckets yet`)
+      if (svc.pgVersion !== undefined && svc.pgVersion !== PG_VERSION) throw new TemplateError(400, `services.${name}.pgVersion ${svc.pgVersion} is cloud-only today: the self-hosted runtime runs Postgres ${PG_VERSION} only`)
     }
     // Architecture, here rather than at the pull. A template whose image is published for one
     // architecture only fails on an arm64 box with docker's `no matching manifest for

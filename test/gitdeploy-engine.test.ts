@@ -49,11 +49,10 @@ let cfg: ReturnType<typeof testConfig>
 let projectId: string
 let branchId: string
 
-/** Seed a git binding for group `web` on the default branch and return its id. */
-function seedBinding(group = 'web'): string {
+function seedBinding(group = 'web', branchName = 'main'): string {
   const b = newBinding('owner', 'repo', 'main', 'ghp_tok', Date.now())
   mutate((s) => {
-    s.gitBindings = { ...(s.gitBindings ?? {}), [b.id]: { binding: b, projectId, branchId, branchName: 'main', group } }
+    s.gitBindings = { ...(s.gitBindings ?? {}), [b.id]: { binding: b, projectId, branchId: engine.getBranchByName(projectId, branchName)!.id, branchName, group } }
   })
   return b.id
 }
@@ -75,6 +74,45 @@ beforeEach(async () => {
   // A service on a NON-8080 port: the whole point of the port-preservation check.
   await engine.deploy(projectId, 'main', { image: 'app:1', port: 3000, group: 'web' })
   branchId = engine.getBranchByName(projectId, 'main')!.id
+})
+
+test('branch rename updates binding display names without changing their target identity', async () => {
+  const main = seedBinding()
+  const branch = await engine.createBranch(projectId, 'feat', 'main')
+  const id = seedBinding('web', 'feat')
+  const before = loadState().gitBindings![id]
+
+  engine.renameBranch(projectId, branch.id, 'preview')
+
+  expect(loadState().gitBindings![id]).toEqual({ ...before, branchName: 'preview' })
+  expect(loadState().gitBindings![main].branchName).toBe('main')
+})
+
+test('branch deletion removes its bindings and build images while retaining the main binding', async () => {
+  const main = seedBinding()
+  const branch = await engine.createBranch(projectId, 'feat', 'main')
+  const id = seedBinding('web', 'feat')
+  const image = imageTag(id, 'a'.repeat(40))
+  imagesRepo = imageTag(id).split(':')[0]
+  imagesFixture = `${image}\n`
+
+  expect((await engine.destroyBranch(projectId, branch.id)).failed).toBe(0)
+
+  expect(loadState().gitBindings?.[id]).toBeUndefined()
+  expect(loadState().gitBindings?.[main]).toBeDefined()
+  expect(rmiCalls).toEqual([image])
+})
+
+test('project deletion removes its bindings and reclaims their build images', async () => {
+  const id = seedBinding()
+  const image = imageTag(id, 'a'.repeat(40))
+  imagesRepo = imageTag(id).split(':')[0]
+  imagesFixture = `${image}\n`
+
+  expect((await engine.destroyProject(projectId)).failed).toBe(0)
+
+  expect(loadState().gitBindings?.[id]).toBeUndefined()
+  expect(rmiCalls).toEqual([image])
 })
 
 test('a git redeploy preserves the service’s configured port (never resets to 8080)', async () => {

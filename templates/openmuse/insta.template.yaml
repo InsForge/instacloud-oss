@@ -1,0 +1,130 @@
+code: openmuse
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# Upstream publishes no image and no git tag, so the image is built here from a commit (see
+# ./Dockerfile). `pinned` carries the version the repository calls itself, which is what the
+# catalog shows; `commit` is what actually gets built.
+upstream:
+  repo: CopilotKit/OpenMuse
+  pinned: "0.1.0"
+  commit: 9ec439fbaa878197d9d44c2aa982cca55676dd68
+  license: MIT
+
+# One shared secret the API and the browser worker authenticate between themselves with. Minted once
+# here and handed to both services below, so it never appears on the deploy form.
+generated:
+  worker_token: secret:32
+
+services:
+  openmuse:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/openmuse:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    # nginx, not the API. It serves the Expo web bundle and proxies /api to the API on loopback,
+    # because the template gets one routed port and upstream's own blueprint needs two: its API
+    # answers `/` with JSON, so the UI ships as a separate static site there.
+    port: 8080
+    healthcheck: /api/health
+    # The task worker runs inside the API process: tracking watches re-check pages on a schedule,
+    # and SQL leases recover tasks interrupted mid-run. Nothing inbound would wake either, so this
+    # is the n8n case rather than the browser-terminal one.
+    alwaysOn: true
+    volume: true  # mounts at /data
+    env:
+      fixed:
+        # The public face is nginx; the API binds loopback behind it. Live mode lifts the sample
+        # loopback-only restriction, but loopback is still the right bind for a proxied API.
+        HOST: 127.0.0.1
+        # This template ships the upstream Render blueprint's configuration: a live workspace driven
+        # by a real model. render.yaml sets WORKSPACE_MODE=live, AGENT_BACKEND=model and
+        # MODEL=openai/gpt-5, and so does this.
+        WORKSPACE_MODE: live
+        AGENT_BACKEND: model
+        MODEL: openai/gpt-5
+        # PORT is deliberately absent. The platform injects its own PORT, equal to the routed port,
+        # and that value wins over anything declared here: a `PORT: "8787"` in this block was
+        # overridden with 8080, the API tried to bind the port nginx already held, and the service
+        # crash-looped on EADDRINUSE. The entrypoint pins the API's port instead.
+        # Everything durable lives here: the PGlite database, imported PDFs, the session signing
+        # key, and the minted token-encryption key.
+        DATA_DIR: /data/openmuse
+        TASK_WORKER_ENABLED: "true"
+        # The optional Linux computer drives a Docker engine from inside the container, which a
+        # compute machine does not have.
+        COMPUTER_ENABLED: "false"
+        # Signed document links are absolute and built from this; it is also the origin the API
+        # accepts and the base of the Google OAuth redirect URI, so a wrong value shows up as PDFs
+        # that will not open and a callback that is rejected.
+        PUBLIC_API_URL: ${services.openmuse.url}
+        ALLOWED_ORIGINS: ${services.openmuse.url}
+        # The browser worker runs as the `browser` service below (upstream's apps/worker, the same
+        # split render.yaml uses). With this set the agent can read pages and Take control; without it
+        # the Agent computer shows the browser offline. The worker's own auth gates it.
+        BROWSER_WORKER_URL: ${services.browser.url}
+      required:
+        # In live mode this IS the app's auth. OpenMuse gates POST /api/session with it (timing-safe
+        # compare, 24+ characters) and every other /api call needs the Bearer session that mints, so
+        # nginx itself carries no auth. Neither a default: nor a generate:, because the user has to
+        # TYPE this into the app's sign-in screen and the platform cannot show back a value it
+        # generated (a template variable is stored write-only).
+        OPENMUSE_ACCESS_KEY:
+          description: "Workspace access key, at least 24 characters. You type this into OpenMuse's sign-in screen to open the workspace; it is the app's only password"
+        # Required because the server refuses to start without it, in every mode, before it binds a
+        # port. It is not optional configuration upstream and it is not optional here.
+        CPK_INTELLIGENCE_API_KEY:
+          description: "CopilotKit Intelligence project key. Run `npx copilotkit@latest login` then `npx copilotkit@latest project select`; the server refuses to start without it"
+        # AGENT_BACKEND=model with the default MODEL=openai/gpt-5 needs an OpenAI key. To use a
+        # different provider, set MODEL to an anthropic/* or google/* id and supply that key from
+        # the optional group instead of this one.
+        OPENAI_API_KEY:
+          description: "OpenAI API key, for the default MODEL=openai/gpt-5"
+      optional:
+        TOKEN_ENCRYPTION_KEY:
+          description: "32 random bytes in standard base64, encrypting stored Google tokens. Leave blank and one is minted onto the volume on first start"
+        GOOGLE_CLIENT_ID:
+          description: "Google OAuth client id for Gmail and Calendar. Its redirect URI is this service's URL plus /api/google/callback"
+        GOOGLE_CLIENT_SECRET:
+          description: "Google OAuth client secret, paired with GOOGLE_CLIENT_ID"
+        ANTHROPIC_API_KEY:
+          description: "Anthropic key, for an anthropic/* MODEL instead of the default OpenAI one"
+        GOOGLE_API_KEY:
+          description: "Google AI key, for a google/* MODEL instead of the default OpenAI one"
+      generated:
+        # The shared worker token, minted once above. The worker checks every non-health call it gets.
+        WORKER_TOKEN: ${worker_token}
+
+  # OpenMuse's browser worker: upstream's apps/worker, a Playwright Chromium service the API drives for
+  # page reads, screenshots and Take control. It is a second image (a template directory builds one),
+  # so it is built by the companion `openmuse-browser` template and referenced here. render.yaml runs
+  # the same binary as its own service too. No volume: browser profiles live on the container's own
+  # disk, so a restart starts them fresh, which avoids a non-root-user write to a root-owned volume.
+  browser:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/openmuse-browser:0.1.0   # built by the openmuse-browser template
+    port: 8790
+    healthcheck: /health
+    # Nothing inbound wakes it except the API's own calls, so it stays up.
+    alwaysOn: true
+    env:
+      fixed:
+        # 0.0.0.0 so the platform proxy can reach it; the WORKER_TOKEN bearer is the gate, not the bind.
+        WORKER_HOST: "0.0.0.0"
+        WORKER_DATA_DIR: /data
+      generated:
+        WORKER_TOKEN: ${worker_token}
+
+meta:
+  name: OpenMuse
+  tagline: Personal agent with a browser, files, goals and a live Google workspace
+  category: ai-agent
+  tags: [ai-agent, ai]
+  # amd64 only by declaration rather than by upstream limit: everything in the build is JavaScript
+  # and would cross-build, but nobody has run the pnpm install and the Expo export under QEMU or on
+  # an arm64 machine. Adding the row means doing that, not editing this line.
+  architectures: [amd64]
+  logo: ./logo.png   # upstream's capybara mark (apps/mobile/assets/capybara.png), its square avatar, downscaled to 256px
+  draft: false
+  links:
+    upstream: https://github.com/CopilotKit/OpenMuse
+    documentation: https://github.com/CopilotKit/OpenMuse/blob/main/docs/README.md

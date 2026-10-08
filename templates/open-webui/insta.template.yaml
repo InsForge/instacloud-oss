@@ -1,0 +1,80 @@
+code: open-webui
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/instacloud-oss
+
+# The official image, unmodified. Upstream's `CMD ["bash", "start.sh"]` runs as uid 0, reads its
+# data path from `DATA_DIR`, and touches no fixed path on the way up, so there is nothing here to
+# patch and no overlay Dockerfile in this directory.
+upstream:
+  repo: open-webui/open-webui
+  image: ghcr.io/open-webui/open-webui
+  pinned: "v0.11.4"
+  # Upstream's own "Open WebUI License": BSD-3-Clause plus a fourth clause forbidding the removal
+  # or alteration of Open WebUI branding above 50 end users. Not an OSI license, so the SPDX form
+  # is a LicenseRef. Nothing here alters the branding.
+  license: LicenseRef-Open-WebUI-License
+
+# WEBUI_SECRET_KEY signs the session JWTs. Left unset, start.sh mints one into
+# `/app/backend/.webui_secret_key`, which lives on the container filesystem rather than the volume:
+# every restart would land on a new machine with a new key and log everyone out. Generated here so
+# the platform owns it and it survives a restart. The operator never needs to read it back, which
+# is why it is here and not in `required`.
+generated:
+  secret_key: secret:32
+
+services:
+  open-webui:
+    type: web
+    image: ghcr.io/open-webui/open-webui:v0.11.4
+    port: 8080
+    # The app's own readiness endpoint, unauthenticated, 200 with {"status":true}. It is the same
+    # path upstream's container HEALTHCHECK probes. `/` also answers 200, but it is the SvelteKit
+    # shell rather than a statement about the server.
+    healthcheck: /health
+    # Nothing fires from inside the process: chats, document indexing and model listing are all
+    # driven by an inbound request, which is itself what wakes the machine. The cost is the cold
+    # start, which is a torch import rather than a page load.
+    alwaysOn: false
+    volume: true
+    env:
+      fixed:
+        # Moves webui.db, uploads/ and the Chroma vector store onto the volume. The model caches
+        # stay where the image put them: SENTENCE_TRANSFORMERS_HOME, WHISPER_MODEL_DIR and
+        # TIKTOKEN_CACHE_DIR are absolute paths under /app/backend/data set by the Dockerfile, and
+        # the embedding and Whisper weights are already baked in at those paths, so pointing
+        # DATA_DIR at /data does not strand them.
+        DATA_DIR: /data
+        # Used for the absolute links the app generates (OAuth redirect URIs, share links, the
+        # webhook payloads). Empty by default, which leaves those links relative.
+        WEBUI_URL: ${services.open-webui.url}
+        # No Ollama is deployed alongside this, and the image's default OLLAMA_BASE_URL of
+        # `/ollama` would have the server retrying a host that is not there on every model list.
+        # This is one of Open WebUI's PersistentConfig values, so it seeds the first boot only:
+        # Admin Settings > Connections turns it back on and points it at a reachable Ollama.
+        ENABLE_OLLAMA_API: "False"
+      generated:
+        WEBUI_SECRET_KEY: ${secret_key}
+      # No required variables. Open WebUI has no env that seeds an admin account, and it does not
+      # need one: with an empty database the sign-in page opens in onboarding mode, the first
+      # account created becomes the admin, and the server then writes `ui.enable_signup: false`
+      # itself, so the second visitor is refused. Sign up immediately after deploying.
+      optional:
+        # Both are PersistentConfig values, so they seed the first boot and are edited in Admin
+        # Settings > Connections afterwards rather than by changing the variable.
+        OPENAI_API_KEY:
+          description: "OpenAI API key (platform.openai.com/api-keys), so the instance can answer its first chat without a settings visit. Leave blank and add a key for any provider later under Admin Settings > Connections"
+        OPENAI_API_BASE_URL:
+          description: "Base URL of the OpenAI-compatible API to call, for a provider other than OpenAI (e.g. https://openrouter.ai/api/v1). Leave blank for OpenAI itself"
+
+meta:
+  name: Open WebUI
+  tagline: Self-hosted chat interface for any LLM
+  category: llm
+  tags: [llm, ai, chat]
+  # Upstream publishes a two-architecture OCI index for v0.11.4 and nothing is rebuilt here.
+  architectures: [amd64, arm64]
+  logo: ./logo.png
+  links:
+    upstream: https://github.com/open-webui/open-webui
+    documentation: https://docs.openwebui.com

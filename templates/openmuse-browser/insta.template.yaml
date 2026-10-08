@@ -1,0 +1,51 @@
+code: openmuse-browser
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# Companion image for the `openmuse` template, not a standalone product. OpenMuse's browser worker is
+# a second image (upstream's apps/worker, a private Chromium service), and a template directory builds
+# exactly one image, so it is built here and the `openmuse` manifest references it as a second
+# service. Declared draft so it never appears in the gallery on its own: deployed alone it is an
+# authenticated HTTP endpoint with no UI. render.yaml runs the same binary as its own service too.
+upstream:
+  repo: CopilotKit/OpenMuse
+  pinned: "0.1.0"
+  commit: 9ec439fbaa878197d9d44c2aa982cca55676dd68
+  license: MIT
+
+services:
+  openmuse-browser:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/openmuse-browser:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    # The worker serves HTTP on 8790: GET /health is unauthenticated, everything else needs the
+    # WORKER_TOKEN bearer. nginx is not needed, the worker is the whole service.
+    port: 8790
+    healthcheck: /health
+    # Driven only when the API opens a browsing session, but nothing would wake a stopped machine
+    # for that inbound call, so it stays up.
+    alwaysOn: true
+    env:
+      fixed:
+        # 0.0.0.0 so the platform's proxy can reach it; its own auth is the gate, not the bind.
+        WORKER_HOST: "0.0.0.0"
+        WORKER_DATA_DIR: /data
+      required:
+        # The shared secret the API signs its calls with. At least 32 characters; the worker refuses
+        # to start otherwise. No default and no generator: when this runs as part of `openmuse` the
+        # token is minted once there and handed to both services, and a standalone deploy must supply
+        # its own.
+        WORKER_TOKEN:
+          description: "Shared bearer token the OpenMuse API authenticates to the worker with, at least 32 characters"
+
+meta:
+  name: OpenMuse Browser Worker
+  tagline: Chromium worker image for the OpenMuse template
+  category: ai-agent
+  tags: [ai-agent, ai]
+  architectures: [amd64]
+  logo: none
+  draft: true
+  links:
+    upstream: https://github.com/CopilotKit/OpenMuse
+    documentation: https://github.com/CopilotKit/OpenMuse/blob/main/apps/worker/README.md

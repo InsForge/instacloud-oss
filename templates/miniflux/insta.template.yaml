@@ -64,7 +64,6 @@ meta:
   # Draft: the closed category set is ai-agent, llm and automation, and a feed reader is none of
   # them. `automation` is the nearest fit because the scheduler is what runs unattended, but the
   # category is a call for a human, so this stays out of the gallery until one makes it.
-  draft: true
   category: automation
   tags: [automation, rss]
   # Upstream publishes an index carrying linux/amd64 and linux/arm64 (plus arm/v6, arm/v7 and

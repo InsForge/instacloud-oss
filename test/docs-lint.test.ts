@@ -166,14 +166,14 @@ const CLI_VERBS = [
 // noun-first `insta agent policy` / `insta agent observe`, which ARE real subcommands (e2e/lib.sh
 // names `insta agent policy` alongside `insta agent approvals` as governance verbs the CLI ships;
 // src/server.ts's `POST /projects/:id/events` route is what the CLI's observe hook uploads to) and
-// must not be pinned here. Only the bare top-level forms are invented. `services scale` /
+// must not be pinned here. Only the bare top-level forms are invented. `insta tokens` (list /
+// create / revoke) is real since insta-cli#291 and is documented in COMPATIBILITY, so it is not
+// pinned either. `services scale` /
 // `services upgrade` were renamed to `compute scale` / `compute limits` under the 0.1 noun-first
 // regrouping, so that retired sequence is pinned here alongside the top-level ones.
 const INVENTED = [
   'compute domain add',
   'insta compute domain',
-  'tokens list',
-  'insta tokens',
   'insta policy',
   'insta observe',
   'insta services scale',
@@ -220,6 +220,17 @@ test('COMPATIBILITY names every new route by its real verb', () => {
   expect(INVENTED.filter((v) => text.includes(v))).toEqual([])
   // `insta backup` does not exist, so the only allowed mention is the one that says so.
   expect(text).toMatch(/no `insta backup` command/)
+})
+
+// The README's "Deploy from GitHub" walkthrough is otherwise unguarded: if the connect route or the
+// request-body fields are renamed in code, the snippet rots silently (as the "GitHub deploys = 501"
+// line it replaced did). Anchor it to the real route path and body keys the server accepts.
+test('the README git push-to-deploy walkthrough names the real route and request body', () => {
+  const readme = readFileSync(join(root, 'README.md'), 'utf8')
+  const section = readme.split('## Deploy from GitHub')[1]
+  expect(section, 'README lost its "Deploy from GitHub" section').toBeTruthy()
+  expect(section).toContain('/services/cp-web/git')     // the connect route (matches src/server.ts)
+  for (const field of ['"repo"', '"ref"', '"token"']) expect(section).toContain(field)
 })
 
 // The backup page is the ONLY documented recovery path (the backups API answers 501), so what it

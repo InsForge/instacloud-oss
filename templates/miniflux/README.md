@@ -2,10 +2,7 @@
 
 Minimalist feed reader with a REST API.
 
-**This template is a draft.** The registry's category set is `ai-agent`, `llm` and `automation`,
-and a feed reader is none of the three. `automation` is the nearest fit, because the part of
-Miniflux that runs unattended is its feed scheduler, but picking or adding a category is a
-maintainer's call, so this stays out of the gallery until one is made.
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/miniflux)
 
 ## Overview
 

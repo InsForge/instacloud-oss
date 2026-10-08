@@ -15,7 +15,7 @@ Build and start commands come from detection and cannot be set. When detection g
 
 ## Schedules stop on a sleeping service
 
-A service that scales to zero has no process while it sleeps and nothing wakes it on a timer, so a cron loop or queue worker inside your container just stops. Keep it always-on if it has to keep time. We may add scheduling at the platform level later.
+A service that scales to zero has no process while it sleeps and nothing wakes it on a timer, so a cron loop or queue worker inside your container just stops. New compute is born scale-to-zero, so create it with `--always-on` (or run `insta compute always-on on`) if it has to keep time. We may add scheduling at the platform level later.
 
 ## No private network
 
@@ -23,4 +23,4 @@ Services reach each other over their public HTTPS URLs. Compute listens on one H
 
 ## One region per service
 
-You pick a region when you create a service, and `insta compute scale` adds replicas in that same region. Multi-region replication is not here yet.
+You pick a region when you create a service, and `insta compute scale` sets how many replicas it may run in that same region. Multi-region replication is not here yet.

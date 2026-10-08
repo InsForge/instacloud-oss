@@ -67,7 +67,7 @@ export function MetricCharts({ projectId, component, branch, group, lineName, se
     const [primary, ...rest] = await Promise.all([settle(component, group), ...(also ?? []).map((s) => settle(s.component))])
     if (!primary && rest.every((r) => !r)) throw new Error("The daemon couldn't return metrics right now.")
     return { fetchedFor, range: rangeKey, zeroWindow: current.zeroWindow, primary, rest }
-  }, [projectId, component, branch, group, rangeKey, sourcesKey], REFRESH_MS)
+  }, [projectId, component, branch, group, lineName, rangeKey, sourcesKey], REFRESH_MS)
 
   const { cards, note, byService } = useMemo(() => {
     if (!data) return { cards: [], note: undefined, byService: false }

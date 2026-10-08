@@ -1,6 +1,6 @@
 # Apache Superset
 
-Business intelligence with SQL exploration and dashboards.
+Dashboards and SQL exploration, wired to a managed Postgres.
 
 [![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/superset)
 
@@ -12,11 +12,20 @@ and hands query results to anyone who is signed in. Pick a strong password.
 ## Overview
 
 [Apache Superset](https://github.com/apache/superset) is a data exploration and visualisation
-platform. You point it at a database you already have, write SQL in its SQL Lab editor or build
-charts in its no-code explorer, and assemble the results into dashboards. It is a front end for
-other people's data: it ships no warehouse of its own and stores no analytical data.
+platform: you write SQL in its SQL Lab editor or build charts in its no-code explorer, and
+assemble the results into dashboards.
 
-This template runs the official `docker.io/apache/superset` image. The overlay image it builds
+This template deploys it wired to a managed Postgres. The deploy brings up an InstaCloud Postgres
+service alongside Superset and connects the two, and the image carries the Postgres driver, so a
+managed database on this platform is one Superset can read as it stands: the one this deploy
+creates, or the one behind an app in another of your projects. The platform's managed database is
+Postgres, so that is the ordinary path here rather than a special case.
+
+Superset itself ships no warehouse and stores no analytical data. The Postgres this template
+creates is Superset's **metadata** database, holding the dashboards, charts, datasets, saved
+queries and users you build in it; the data you analyse stays in whichever database you connect.
+
+The image is upstream's official `docker.io/apache/superset`. The overlay built on top of it
 adds five files and one pinned Python package, rewrites one line of an upstream shell script, and
 changes nothing about Superset itself:
 
@@ -32,19 +41,21 @@ changes nothing about Superset itself:
   and turns on `ENABLE_PROXY_FIX`. Release 6.0.0 has no environment variable for either: the
   `SUPERSET__SQLALCHEMY_DATABASE_URI` override exists on Superset's master branch but is not in
   this release.
-- **`psycopg2-binary==2.9.6`**, upstream's own pin for this release. `apache/superset:6.0.0` is
-  upstream's **lean** image and ships no database driver at all, not even for the metadata
-  database this template gives it.
+- **`psycopg2-binary==2.9.6`**, upstream's own pin for this release. It is the driver both the
+  metadata database and every Postgres you later connect go through. `apache/superset:6.0.0` is
+  upstream's **lean** image and ships no database driver of its own.
 - `run-server.sh` 6.0.0 launches gunicorn without `exec`, so a `SIGTERM` to PID 1 never reached
   it. The image rewrites that one line so a stop drains instead of being killed on the grace
   timer.
 
 ## What you get by hosting it
 
+- A managed Postgres service, wired up as Superset's metadata database so every dashboard, chart,
+  dataset, saved query and user lands in it. Upstream documents its SQLite default as unsuitable
+  for anything but a local trial, and this template never uses it.
+- The Postgres driver in the image, so any Postgres you can reach, this deploy's own included, is
+  a database you can query from SQL Lab without rebuilding anything.
 - An HTTPS URL for Superset, with an Admin account created at deploy time and no setup wizard.
-- A managed Postgres service as the metadata database, holding every dashboard, chart, dataset,
-  saved query and user. Upstream documents the SQLite default as unsuitable for anything but a
-  local trial, and this template never uses it.
 - A persistent volume at `/data` for the pieces Superset keeps on disk: the SQLite file behind
   `SQLALCHEMY_EXAMPLES_URI` and anything uploaded through the CSV, Excel and columnar importers.
 - Deploys are health-gated on `/health`, the same path upstream's own `HEALTHCHECK` uses.
@@ -60,7 +71,8 @@ changes nothing about Superset itself:
   the platform minted would be one it could never show you again, because a template variable is
   stored write-only.
 - Nothing else. A database to analyse is something you connect from inside Superset after deploy,
-  and it has to be reachable from the internet for Superset to read it.
+  and it has to be reachable from the internet for Superset to read it. A managed Postgres is,
+  and needs nothing installed.
 
 ## Configuration
 
@@ -84,11 +96,13 @@ nobody ever needs to read it.
    starting`. The deploy's own log tail shows each step with a timestamp.
 2. Open the service URL and sign in with the `ADMIN_USERNAME` and `ADMIN_PASSWORD` you deployed
    with.
-3. Connect a database: **Settings** (top right), **Database Connections**, **+ Database**. It
-   must be reachable from the internet. **Postgres and SQLite are the only two that work out of
-   the box**: upstream's lean image ships no driver, and this one adds `psycopg2-binary` because
-   the metadata database needs it. Anything else (MySQL, BigQuery, Snowflake, Trino) needs its
-   driver installed into the image, which means an edit to this template's Dockerfile.
+3. Connect a database: **Settings** (top right), **Database Connections**, **+ Database**,
+   **PostgreSQL**. Fill in the host, port, database, user and password of any Postgres you can
+   reach, the one this deploy creates included, and it connects with nothing added to the image.
+   `insta postgres url <service>` prints those five for a managed one. It has to be reachable
+   from the internet. Another engine (MySQL, BigQuery, Snowflake, Trino) needs its driver added
+   to the image first, which is an edit to this template's Dockerfile: upstream's lean image
+   ships none, and this one carries Postgres.
 4. Query it in **SQL Lab**, save the result as a dataset, and chart the dataset from
    **Charts**, **+ Chart**.
 5. Assemble charts into a dashboard from **Dashboards**, **+ Dashboard**.
@@ -105,7 +119,8 @@ Not configured, and each one needs services this template does not declare:
 ## Links
 
 - Architectures: `linux/amd64` and `linux/arm64`. Upstream's `6.0.0` index carries both, and this
-  image only copies in three files and rewrites one line of a shell script.
+  image only copies in five files, installs a wheel that has a manylinux build for each, and
+  rewrites one line of a shell script.
 - Documentation: <https://superset.apache.org/docs/intro>
 - Configuring Superset: <https://superset.apache.org/docs/configuration/configuring-superset>
 - Upstream: <https://github.com/apache/superset>

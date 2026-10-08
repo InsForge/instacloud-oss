@@ -65,14 +65,14 @@ services:
 
 meta:
   name: Apache Superset
-  tagline: Business intelligence with SQL exploration and dashboards
+  tagline: Dashboards and SQL exploration, wired to a managed Postgres
   # Not one of the six the console labels today. See the README and the pull request: Superset is
   # not a datastore, so `database` would be wrong, and `other` is what AGENTS.md tells you not to
   # reach for.
   category: analytics
   tags: [analytics, dashboards, sql]
-  # Upstream's 6.0.0 index carries both, and this image only copies in three files and rewrites one
-  # line of a shell script, none of it architecture-specific.
+  # Upstream's 6.0.0 index carries both, and this image only copies in five files, installs a
+  # wheel with a manylinux build for each, and rewrites one line of a shell script.
   architectures: [amd64, arm64]
   logo: ./logo.svg
   links:

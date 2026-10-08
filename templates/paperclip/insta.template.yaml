@@ -1,0 +1,80 @@
+code: paperclip
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# The official upstream image, deployed as published. Nothing is rebuilt here, so there is no
+# Dockerfile in this directory.
+upstream:
+  repo: paperclipai/paperclip
+  image: ghcr.io/paperclipai/paperclip
+  pinned: "2026.1005.0"
+  license: MIT
+
+generated:
+  auth_secret: secret:32
+  tool_action_secret: secret:32
+
+services:
+  paperclip:
+    type: web
+    image: ghcr.io/paperclipai/paperclip:2026.1005.0
+    port: 3100
+    # Unauthenticated by design upstream (its OpenAPI document declares `security: []` on this
+    # path), so the gate reads it before anyone has signed up. `/` is the React shell and also
+    # answers 200, but it is served behind the auth redirect and is not the readiness signal.
+    healthcheck: /api/health
+    # Routines, schedules and agent heartbeats fire from inside the process, so an idle machine
+    # would never wake for them. Same case as n8n.
+    alwaysOn: true
+    volume: true
+    env:
+      fixed:
+        # Everything durable: the embedded Postgres cluster, uploaded assets, the local secrets
+        # key, and the agent workspaces. The image defaults this to /paperclip, which is on the
+        # root filesystem and is cleared on restart.
+        PAPERCLIP_HOME: /data
+        # The image bakes an absolute PAPERCLIP_CONFIG under /paperclip, and that value is an
+        # override rather than something derived from PAPERCLIP_HOME, so moving the home alone
+        # leaves config.json (and the sibling .env holding the instance secret key) off the
+        # volume. Both have to move together.
+        PAPERCLIP_CONFIG: /data/instances/default/config.json
+        # The image bakes HOME=/paperclip, and the bundled agent CLIs (claude, codex, opencode,
+        # gemini) keep their credentials and caches under $HOME.
+        HOME: /data
+        HOST: 0.0.0.0
+        # PORT is deliberately absent: the platform injects its own, equal to the routed port.
+        PAPERCLIP_DEPLOYMENT_MODE: authenticated
+        # `private` is the image default and refuses every request whose Host header is not
+        # loopback or explicitly allow-listed, which is every request that arrives through the
+        # platform's edge. `public` turns that guard off and requires an explicit public base
+        # URL, supplied below.
+        PAPERCLIP_DEPLOYMENT_EXPOSURE: public
+        PAPERCLIP_PUBLIC_URL: ${services.paperclip.url}
+        # One proxy hop, the platform's edge. Express needs this to read X-Forwarded-Proto, or
+        # the session cookie is issued without Secure on an HTTPS origin.
+        TRUST_PROXY: "1"
+      generated:
+        # Session signing. The server refuses to start without it.
+        BETTER_AUTH_SECRET: ${auth_secret}
+        # Signs tool-action approvals. Absent, the server starts and approvals fail later.
+        PAPERCLIP_TOOL_ACTION_SIGNING_SECRET: ${tool_action_secret}
+      optional:
+        ANTHROPIC_API_KEY: Anthropic key, enables the bundled claude CLI as a local adapter
+        OPENAI_API_KEY: OpenAI key, enables the bundled codex CLI as a local adapter
+        GEMINI_API_KEY: Google key restricted to the Gemini API, enables the bundled gemini CLI
+        PAPERCLIP_AUTH_DISABLE_SIGN_UP: Set to true to close sign-up once your own account exists
+
+meta:
+  name: Paperclip
+  tagline: Dashboard for running a team of AI agents
+  category: ai-agent
+  tags: [ai-agent, ai, automation]
+  # Architectures the published image carries. Upstream publishes a two-architecture index for
+  # this tag and nothing is rebuilt here.
+  architectures: [amd64, arm64]
+  logo: ./logo.png
+  draft: true
+  links:
+    upstream: https://github.com/paperclipai/paperclip
+    documentation: https://docs.paperclip.ing

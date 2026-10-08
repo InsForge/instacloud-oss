@@ -358,6 +358,14 @@ describe('lint: a web service\'s health check path is optional, a worker still m
     expect(r.code, r.out).toBe(0);
   });
 
+  it('refuses a web service that declares the key without a path, as null (bare YAML key) or empty', () => {
+    for (const healthcheck of [null, '', 'healthz']) {
+      const r = withTemplate({ ...base, services: { web: { ...web, healthcheck } } }, () => run('lint.mjs'));
+      expect(r.code, JSON.stringify(healthcheck)).toBe(1);
+      expect(r.out).toContain('web: healthcheck must be a path starting with /');
+    }
+  });
+
   it('refuses a worker that declares a path', () => {
     const job = { type: 'worker', image: web.image, healthcheck: '/' };
     const r = withTemplate({ ...base, services: { web, job } }, () => run('lint.mjs'));

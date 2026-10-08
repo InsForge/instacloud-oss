@@ -348,6 +348,47 @@ describe('lint: pgVersion belongs to postgres and public to storage', () => {
   });
 });
 
+describe('lint: a web service\'s health check path is optional, a worker still may not have one', () => {
+  const base = lintBase;
+  const web = lintWeb;
+
+  it('accepts a web service without a path, as the platform does', () => {
+    const bare = { type: web.type, image: web.image, port: web.port };
+    const r = withTemplate({ ...base, services: { web: bare } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+  });
+
+  it('refuses a web service that declares the key without a path, as null (bare YAML key) or empty', () => {
+    for (const healthcheck of [null, '', 'healthz']) {
+      const r = withTemplate({ ...base, services: { web: { ...web, healthcheck } } }, () => run('lint.mjs'));
+      expect(r.code, JSON.stringify(healthcheck)).toBe(1);
+      expect(r.out).toContain('web: healthcheck must be a path starting with /');
+    }
+  });
+
+  it('refuses a path that would leave the service, as the platform does', () => {
+    for (const healthcheck of ['//evil.example', '//evil.example/x', 'https://evil.example/x', '/a\\b']) {
+      const r = withTemplate({ ...base, services: { web: { ...web, healthcheck } } }, () => run('lint.mjs'));
+      expect(r.code, healthcheck).toBe(1);
+      expect(r.out).toContain('web: healthcheck must be a path starting with /');
+    }
+  });
+
+  it('accepts a single-slash path, with or without a query', () => {
+    for (const healthcheck of ['/healthz', '/', '/api/health?ready=1']) {
+      const r = withTemplate({ ...base, services: { web: { ...web, healthcheck } } }, () => run('lint.mjs'));
+      expect(r.code, `${healthcheck}: ${r.out}`).toBe(0);
+    }
+  });
+
+  it('refuses a worker that declares a path', () => {
+    const job = { type: 'worker', image: web.image, healthcheck: '/' };
+    const r = withTemplate({ ...base, services: { web, job } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('job: a worker has no HTTP endpoint to probe');
+  });
+});
+
 describe('lint: a misspelt service key is refused, while the rest of the manifest stays open', () => {
   const base = lintBase;
   const web = lintWeb;

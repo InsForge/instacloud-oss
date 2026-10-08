@@ -180,8 +180,8 @@ test('manifest parity: the refusals the platform makes, one case each', () => {
   refuses({ ...base, services: { web: { ...base.services.web, env: { fixed: { A: '${services.db.url}' } } }, db: { type: 'postgres' } } },
     /is a managed postgres/)
   refuses({ ...base, services: { db: { type: 'postgres', image: 'postgres:16' } } }, /carries no image/)
-  // A web service must declare a healthcheck, and it must be a path on the service itself.
-  refuses({ ...base, services: { web: { type: 'web', image: 'i' } } }, /must declare a healthcheck path/)
+  // A healthcheck is optional on a web service, and a given one must be a path on the service itself.
+  expect(parse({ ...base, services: { web: { type: 'web', image: 'i' } } }).services.web.healthcheck).toBeUndefined()
   refuses({ ...base, services: { web: { ...base.services.web, healthcheck: '//evil.example/x' } } }, /single-slash absolute path/)
   refuses({ ...base, services: { web: { ...base.services.web, healthcheck: 'https://evil.example/x' } } }, /absolute path/)
   // A constraint over an undeclared variable could never be satisfied.

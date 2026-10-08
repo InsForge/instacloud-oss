@@ -312,7 +312,6 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
       if (typeof rawSvc.alwaysOn !== 'boolean') return bad(`${at}.alwaysOn must be a boolean`)
       alwaysOn = rawSvc.alwaysOn
     }
-    if (type === 'web' && !healthcheck) return bad(`${at}: web services must declare a healthcheck path`)
     if (healthcheck !== undefined) {
       if (!healthcheck.startsWith('/')) return bad(`${at}.healthcheck must be an absolute path (start with /)`)
       // The daemon FETCHES this path: it must be a path on the deployed service and nothing else.

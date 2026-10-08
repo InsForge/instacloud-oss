@@ -104,7 +104,7 @@ export interface TemplateDeploymentRecord {
     env: Record<string, { source: 'fixed' | 'generated' | 'platform' | 'required' | 'optional'; generator?: string; value?: string; ref?: string }>
     url?: string; state: 'pending' | 'created' | 'deployed' | 'healthy' | 'failed'
   }>
-  manifestDigest: string; digestEpoch: 2; claimToken: string
+  manifestDigest: string; digestEpoch: 3; claimToken: string
   error?: string; logsTail?: string
   createdAt: string; updatedAt: string
 }

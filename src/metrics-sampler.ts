@@ -91,12 +91,12 @@ export class MetricsSampler {
       if (!name?.startsWith(MANAGED_PREFIX)) continue
       generation.set(name, generationOf(id))
       if (state === 'running') running.push(name)
-      else rows.push({ name, cpuCores: 0, memBytes: 0, rxBytes: 0, txBytes: 0, generation: generationOf(id) })
+      else rows.push({ name, cpuCores: 0, memBytes: 0, rxBytes: 0, txBytes: 0, generation: generationOf(id), running: false })
     }
     if (running.length) {
       try {
         const stats = statsToSamples((await this.docker(['stats', '--no-stream', '--format', '{{json .}}', ...running])).toString())
-        rows.push(...stats.map((s) => ({ ...s, generation: generation.get(s.name) ?? 0 })))
+        rows.push(...stats.map((s) => ({ ...s, generation: generation.get(s.name) ?? 0, running: true })))
       } catch (e) {
         // A container stopping between `ps` and `stats` fails the whole call; the next tick sees it stopped.
         this.log(`metrics history: docker stats failed: ${String(e)}`)

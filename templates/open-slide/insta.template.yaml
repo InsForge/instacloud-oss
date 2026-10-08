@@ -39,7 +39,7 @@ meta:
   # Not in the console's current set. open-slide is neither an agent, an LLM, a datastore, an
   # automation runner nor a CRM, and filing it under one of those would mis-describe it in the
   # gallery; AGENTS.md asks for a proposal instead of `other`. See the PR.
-  category: productivity
+  category: automation
   tags: [productivity, ai]
   # amd64 only by declaration rather than by upstream limit: everything the image installs is
   # JavaScript on a multi-arch node base, but the npm install pulls the native bindings Vite 8

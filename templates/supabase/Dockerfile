@@ -6,6 +6,7 @@ ARG IMGPROXY_IMAGE=docker.io/darthsim/imgproxy:v3.31.4@sha256:73c5dda13199745b0d
 ARG ENVOY_IMAGE=docker.io/envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4
 ARG REALTIME_IMAGE=docker.io/supabase/realtime:v2.134.10@sha256:cbcc6a7986fc28b6dcffa798b077d5fb9c69cd25500371ab49147a86d7edbb03
 ARG POSTGREST_IMAGE=docker.io/postgrest/postgrest:v14.17@sha256:c9dc201e555f5d8e37e7f39cdd4df0229774996e213bfd7de8d10ac609030f2c
+ARG AUTH_IMAGE=docker.io/supabase/gotrue:v2.196.0@sha256:c0c25187a6b835e65a6f6e6c6b39d090e832d40e6de5186f2c038e0411944232
 # The schema the compose's db image (supabase/postgres:17.6.1.136) starts from.
 ARG POSTGRES_TAG=17.6.1.136
 ARG POSTGRES_COMMIT=d156ba65c14694c12cc5e782bc15b9b8ed2d1376
@@ -17,6 +18,7 @@ FROM ${IMGPROXY_IMAGE} AS imgproxy
 FROM ${ENVOY_IMAGE} AS envoy
 FROM ${REALTIME_IMAGE} AS realtime
 FROM ${POSTGREST_IMAGE} AS postgrest
+FROM ${AUTH_IMAGE} AS auth
 
 # storage-api ships Alpine (musl) builds of its native addons, so rebuild them against glibc.
 FROM docker.io/library/node:24.20.0-trixie@sha256:f7d34e58713740f9eef9092c0bd6ff10369d132f7238399a4b270f16d47fa608 AS storage-glibc
@@ -43,11 +45,16 @@ RUN apt-get update \
     && sed -i '/en_US.UTF-8/s/^# //' /etc/locale.gen && locale-gen \
     && rm -rf /var/lib/apt/lists/*
 ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
+# Set by upstream's GoTrue image, which this one replaces for auth.
+ENV GOTRUE_DB_MIGRATIONS_PATH=/usr/local/etc/auth/migrations
 
 # Studio and postgres-meta keep the Node 22 their addons were built for. Storage uses this base's 24.
 COPY --from=meta /usr/local/bin/node /usr/local/bin/node22
 COPY --from=envoy /usr/local/bin/envoy /usr/local/bin/envoy
 COPY --from=postgrest /bin/postgrest /usr/local/bin/postgrest
+# GoTrue is a static binary. It runs here so auth can bootstrap the schema it logs in to.
+COPY --from=auth /usr/local/bin/auth /usr/local/bin/auth
+COPY --from=auth /usr/local/etc/auth/migrations /usr/local/etc/auth/migrations
 COPY --from=imgproxy /opt/imgproxy /opt/imgproxy
 COPY --from=realtime /app /opt/realtime
 COPY --from=studio /app /opt/studio
@@ -61,6 +68,6 @@ COPY bootstrap.sql /insta/bootstrap.sql
 COPY entrypoint.sh /insta/entrypoint.sh
 RUN chmod 0755 /insta/entrypoint.sh \
     && ln -s /opt/imgproxy/bin/imgproxy /usr/local/bin/imgproxy \
-    && envoy --version && imgproxy version && postgrest --version && /opt/realtime/bin/realtime version
+    && envoy --version && imgproxy version && postgrest --version && auth version && /opt/realtime/bin/realtime version
 
 ENTRYPOINT ["/usr/bin/tini", "-s", "-g", "--", "/insta/entrypoint.sh"]

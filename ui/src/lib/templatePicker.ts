@@ -8,15 +8,11 @@
 import { ALL_CATEGORIES, filterTemplates, type CatalogItem } from './catalog'
 
 /** The console's category order. A category it does not know follows, alphabetically. */
-// `productivity` is proposed by the open-slide template and is last because it is the newest, not
-// because it ranks lowest. The console's own TEMPLATE_CATEGORIES and the marketing gallery's
-// CATEGORIES live in other repositories and have to gain it too; until they do, the gallery lists
-// that template under All only.
-export const TEMPLATE_CATEGORY_ORDER = ['ai-agent', 'llm', 'automation', 'backend', 'database', 'crm', 'productivity'] as const
+export const TEMPLATE_CATEGORY_ORDER = ['ai-agent', 'llm', 'automation', 'backend', 'database', 'crm', 'analytics', 'dev-tools'] as const
 
 const LABELS: Record<string, string> = {
   'ai-agent': 'AI Agent', llm: 'LLM', automation: 'Automation', backend: 'Backend', database: 'Database', crm: 'CRM',
-  productivity: 'Productivity',
+  analytics: 'Analytics', 'dev-tools': 'Dev Tools',
 }
 
 /** The console's label for each of its categories; any other category reads as its words, first letter capitalised. */

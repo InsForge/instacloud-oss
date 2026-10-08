@@ -1,5 +1,5 @@
 #!/bin/bash
-# One image for five of the machines: INSTA_SUPABASE_ROLE picks the Supabase component to run.
+# One image for six of the machines: INSTA_SUPABASE_ROLE picks the Supabase component to run.
 set -euo pipefail
 
 role="${INSTA_SUPABASE_ROLE:?INSTA_SUPABASE_ROLE is not set}"
@@ -228,6 +228,18 @@ run_storage() {
     wait_any
 }
 
+run_auth() {
+    parse_database_url
+    bootstrap
+    GOTRUE_DB_DATABASE_URL="$(role_url supabase_auth_admin)"
+    export GOTRUE_DB_DATABASE_URL
+    until auth migrate; do
+        log "auth migrate failed, retrying in 3s"
+        sleep 3
+    done
+    exec auth
+}
+
 run_rest() {
     parse_database_url
     bootstrap
@@ -261,9 +273,10 @@ run_realtime() {
 
 case "$role" in
     gateway) run_gateway ;;
+    auth) run_auth ;;
     rest) run_rest ;;
     studio) run_studio ;;
     storage) run_storage ;;
     realtime) run_realtime ;;
-    *) log "unknown role (expected gateway, rest, studio, storage or realtime)"; exit 64 ;;
+    *) log "unknown role (expected gateway, auth, rest, studio, storage or realtime)"; exit 64 ;;
 esac

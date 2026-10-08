@@ -104,7 +104,7 @@ const TEMPLATES = new URL('../templates/', import.meta.url)
 const manifestOf = (code: string) =>
   parseYaml(readFileSync(new URL(`${code}/insta.template.yaml`, TEMPLATES), 'utf8')) as {
     version: string
-    meta?: { draft?: boolean }
+    meta?: { draft?: boolean; category?: string }
   }
 const bundled = readdirSync(TEMPLATES).filter((d) =>
   existsSync(new URL(`${d}/insta.template.yaml`, TEMPLATES)),
@@ -149,8 +149,13 @@ test('GET /templates lists the bundled non-draft codes with every list field typ
 })
 
 test('GET /templates filters by exact category and free-text query', async () => {
-  expect((await get('/templates?category=automation')).json().templates.map((t: { code: string }) => t.code)).toEqual(['n8n'])
-  expect((await get('/templates?category=AUTOMATION')).json().templates.map((t: { code: string }) => t.code)).toEqual(['n8n'])
+  // Derived for the same reason the listing above is: filing one more template under a category
+  // must not edit this file. What is pinned is that the filter is exact and case-insensitive, and
+  // `automation` is the category used because something is always in it.
+  const inCategory = (c: string) => listed.filter((code) => manifestOf(code).meta?.category === c).sort()
+  expect(inCategory('automation').length).toBeGreaterThan(0)
+  expect((await get('/templates?category=automation')).json().templates.map((t: { code: string }) => t.code)).toEqual(inCategory('automation'))
+  expect((await get('/templates?category=AUTOMATION')).json().templates.map((t: { code: string }) => t.code)).toEqual(inCategory('automation'))
   expect((await get('/templates?query=hermes')).json().templates.map((t: { code: string }) => t.code)).toEqual(['hermes'])
   expect((await get('/templates?query=nothing-matches')).json().templates).toEqual([])
 })

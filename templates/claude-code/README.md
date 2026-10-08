@@ -27,8 +27,8 @@ those lines from the log history: if you ran one, set a new `ADMIN_PASSWORD` bef
 - A persistent volume mounted at `/data`. `HOME` is set to `/data/home`, so your CLI login, shell
   history, and any repositories you clone survive restarts, redeploys, and version upgrades.
   Everything outside the volume is reset from the image on restart. Keep the volume at `/data`: moved
-  with `insta compute volume --mount-path`, it no longer holds `HOME`, and your home directory goes
-  with the next restart.
+  with `insta compute volume --mount-path`, it no longer holds `HOME`, so the next restart resets
+  your home directory.
 - The terminal credentials kept as service variables rather than baked into the image, so you can
   change them later without rebuilding anything. They are yours, not ours: the template ships no
   credential of its own, and both values are visible in the deploy form and in the service's

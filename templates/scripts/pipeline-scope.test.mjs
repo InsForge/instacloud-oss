@@ -366,6 +366,21 @@ describe('lint: a web service\'s health check path is optional, a worker still m
     }
   });
 
+  it('refuses a path that would leave the service, as the platform does', () => {
+    for (const healthcheck of ['//evil.example', '//evil.example/x', 'https://evil.example/x', '/a\\b']) {
+      const r = withTemplate({ ...base, services: { web: { ...web, healthcheck } } }, () => run('lint.mjs'));
+      expect(r.code, healthcheck).toBe(1);
+      expect(r.out).toContain('web: healthcheck must be a path starting with /');
+    }
+  });
+
+  it('accepts a single-slash path, with or without a query', () => {
+    for (const healthcheck of ['/healthz', '/', '/api/health?ready=1']) {
+      const r = withTemplate({ ...base, services: { web: { ...web, healthcheck } } }, () => run('lint.mjs'));
+      expect(r.code, `${healthcheck}: ${r.out}`).toBe(0);
+    }
+  });
+
   it('refuses a worker that declares a path', () => {
     const job = { type: 'worker', image: web.image, healthcheck: '/' };
     const r = withTemplate({ ...base, services: { web, job } }, () => run('lint.mjs'));

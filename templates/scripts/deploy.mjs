@@ -10,6 +10,7 @@ import { resolve, join } from "node:path";
 import yaml from "js-yaml";
 import { valueSource } from "./variables-lib.mjs";
 import { FIXED_REF_RE, checkFixedRef } from "./manifest-refs.mjs";
+import { waitUntilUp } from "./health-lib.mjs";
 
 const args = process.argv.slice(2);
 const dir = resolve(args[0] ?? ".");
@@ -130,21 +131,9 @@ step(6, "deployed");
 for (const [name, svc] of services) {
   const url = urls[name];
   if (!url) fail(`no URL captured for ${name}`);
-  // No path: like the platform, up is enough (step 6 returns once the machine answers).
-  if (!svc.healthcheck) {
-    log(`   ${name}: up (no healthcheck path declared)`);
-    continue;
-  }
-  const deadline = Date.now() + 180_000;
-  let status = 0;
-  while (Date.now() < deadline) {
-    try {
-      status = (await fetch(url + svc.healthcheck, { method: "GET" })).status;
-      if (status > 0 && status < 500) break;
-    } catch { /* cold start */ }
-    await new Promise((r) => setTimeout(r, 4000));
-  }
-  if (!(status > 0 && status < 500)) fail(`${name} not healthy within 180s (last status ${status})`);
+  // The daemon's deploy returns before the port binds, so a path-less service waits for any answer.
+  const { up, status } = await waitUntilUp(url, svc.healthcheck);
+  if (!up) fail(`${name} not healthy within 180s (last status ${status})`);
   log(`   ${name}: healthy (HTTP ${status})`);
 }
 step(7, "health checks passed");

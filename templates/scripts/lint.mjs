@@ -25,6 +25,8 @@ const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const TYPES = ["web", "worker", ...BARE_TYPES];
 // Every key a service may carry. spec and volumeGib stay listed because the sizing checks below refuse them by name.
 const SERVICE_KEYS = ["type", "image", "build", "port", "healthcheck", "volume", "volumeGib", "spec", "alwaysOn", "command", "mountPath", "env", "pgVersion", "public"];
+// The platform's HEALTHCHECK_RE, as in src/templates/manifest.ts: one slash, no scheme or host.
+const HEALTHCHECK_RE = /^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]*$/;
 // Images this repo builds for itself; templates-build-images derives their tag from `version:`.
 const SELF_IMAGE_PREFIX = "ghcr.io/insforge/insta-oss/templates/";
 const dirs = readdirSync(root).filter((d) => !NON_TEMPLATE.has(d) && statSync(join(root, d)).isDirectory());
@@ -231,9 +233,9 @@ for (const dir of dirs) {
       }
     }
     if (svc.build && !existsSync(join(root, dir, svc.build.replace(/^\.\//, "")))) err(dir, `${name}: build file ${svc.build} not found`);
-    // Optional on a web service, but a declared key must be a path (a null or empty one is refused).
-    if (svc.type === "web" && svc.healthcheck !== undefined && !(typeof svc.healthcheck === "string" && svc.healthcheck.startsWith("/"))) {
-      err(dir, `${name}: healthcheck must be a path starting with /, or leave it out`);
+    // Optional on a web service, but a declared key must be a path (null and empty are refused).
+    if (svc.type === "web" && svc.healthcheck !== undefined && !(typeof svc.healthcheck === "string" && HEALTHCHECK_RE.test(svc.healthcheck))) {
+      err(dir, `${name}: healthcheck must be a path starting with / (one slash, no '//host' or scheme), or leave it out`);
     }
     // A worker is portless (insta-platform#490): the platform runs it as its own port-0 service, so
     // nothing is routed to it and nothing probes it. The server refuses these three shapes; say so here.

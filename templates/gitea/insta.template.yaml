@@ -81,13 +81,12 @@ meta:
   tagline: Self-hosted Git service with issues, pull requests and CI
   # Not one of ai-agent, llm or automation. See the Open questions on the pull request: Gitea is
   # developer tooling, and picking the least-wrong of the three would mis-file it in the gallery.
-  category: automation
+  category: dev-tools
   tags: [git, developer-tools]
   # Upstream's 1.27.3 index carries amd64, arm64 and riscv64; this image only copies a script in,
   # so it cross-builds for the two the platform names.
   architectures: [amd64, arm64]
   logo: ./logo.svg
-  draft: true
   links:
     upstream: https://github.com/go-gitea/gitea
     documentation: https://docs.gitea.com

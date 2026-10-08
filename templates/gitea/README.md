@@ -2,10 +2,10 @@
 
 Self-hosted Git service with issues, pull requests and CI
 
-> **Draft.** The template deploys and has been verified end to end; it stays out of the catalog
-> while two decisions are pending. `meta.category` is `automation` because the closed set is
-> `ai-agent`, `llm` and `automation` and none of them is developer tooling, and cloning over SSH
-> is not offered at all, because a compute service has one routed port and it carries HTTP.
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/gitea)
+
+> **Cloning is over HTTPS.** A compute service routes one port and it carries HTTP, so
+> Gitea's SSH remote is not offered.
 
 ## Overview
 

@@ -8,11 +8,14 @@
 import { ALL_CATEGORIES, filterTemplates, type CatalogItem } from './catalog'
 
 /** The console's category order. A category it does not know follows, alphabetically. */
-export const TEMPLATE_CATEGORY_ORDER = ['ai-agent', 'llm', 'automation'] as const
+export const TEMPLATE_CATEGORY_ORDER = ['ai-agent', 'llm', 'automation', 'backend', 'database', 'crm', 'analytics', 'dev-tools'] as const
 
-const LABELS: Record<string, string> = { 'ai-agent': 'AI Agent', llm: 'LLM', automation: 'Automation' }
+const LABELS: Record<string, string> = {
+  'ai-agent': 'AI Agent', llm: 'LLM', automation: 'Automation', backend: 'Backend', database: 'Database', crm: 'CRM',
+  analytics: 'Analytics', 'dev-tools': 'Dev Tools',
+}
 
-/** "AI Agent", "LLM", "Automation"; any other category reads as its words, first letter capitalised. */
+/** The console's label for each of its categories; any other category reads as its words, first letter capitalised. */
 export function templateCategoryLabel(category: string): string {
   if (LABELS[category]) return LABELS[category]
   const words = category.replace(/-/g, ' ').trim()

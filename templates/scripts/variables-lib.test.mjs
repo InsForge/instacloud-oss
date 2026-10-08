@@ -95,6 +95,20 @@ describe('the credentialed templates ship no credential of their own', () => {
     expect(valueSource(svc.env.required.API_KEY, 'typed'), 'API_KEY must accept a value').toBe('provided');
   });
 
+  it('anythingllm makes the operator supply exactly one password', () => {
+    // No ADMIN_USERNAME, and that is upstream's shape rather than an omission: AnythingLLM's
+    // single-user mode is an AUTH_TOKEN and nothing else, and its sign-in screen has no username
+    // field, so asking for one would be a field that goes nowhere. The security property is the
+    // same as the pairs above, and here it is sharper than usual: a missing AUTH_TOKEN is not an
+    // error upstream, it is how an install says it wants no password at all, so a blank that fell
+    // through to a generator or a default would be the difference between a locked instance and an
+    // open one.
+    const svc = Object.values(templates.find((t) => t.dir === 'anythingllm').manifest.services)[0];
+    expect(demands(templates.find((t) => t.dir === 'anythingllm').manifest)).toEqual(['ADMIN_PASSWORD']);
+    expect(valueSource(svc.env.required.ADMIN_PASSWORD, undefined), 'ADMIN_PASSWORD must have no fallback').toBeNull();
+    expect(valueSource(svc.env.required.ADMIN_PASSWORD, 'typed'), 'ADMIN_PASSWORD must accept a value').toBe('provided');
+  });
+
   it('no template lets a required variable fall back to anything', () => {
     // Stated once over the whole registry, because the rule is not really about those five: a
     // required variable is one the platform cannot supply, and hermes shipped that way until
@@ -119,7 +133,7 @@ describe('every variable an entrypoint reads is declared by its manifest', () =>
     // Guards the guard: if entrypoints move or get renamed, the cases below would silently
     // become an empty suite that passes forever. 9router and openclaw ship one while requiring no
     // credential at all, which is the case the per-template check below has to stay honest about.
-    expect(withEntrypoint.map((t) => t.dir).sort()).toEqual(['9router', 'claude-code', 'clickhouse', 'codex', 'dsh', 'hermes', 'insforge', 'laya', 'lev', 'openclaw', 'openmuse', 'pi', 'supabase', 'twenty', 'whisper-turbo']);
+    expect(withEntrypoint.map((t) => t.dir).sort()).toEqual(['9router', 'anythingllm', 'claude-code', 'clickhouse', 'codex', 'dsh', 'hermes', 'insforge', 'laya', 'lev', 'openclaw', 'openmuse', 'pi', 'supabase', 'twenty', 'whisper-turbo']);
   });
 
   it.each(withEntrypoint)('$dir', ({ dir, manifest }) => {

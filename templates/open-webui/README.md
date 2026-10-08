@@ -21,8 +21,9 @@ no code in this repository between you and the app.
 - One interface over several providers at once: add OpenAI, OpenRouter, Anthropic-compatible
   gateways and a remote Ollama side by side and switch models mid-conversation.
 - Document retrieval that runs locally. The image bakes in the
-  `sentence-transformers/all-MiniLM-L6-v2` embedding model, so uploading a file and asking about it
-  needs no embedding provider and no extra key.
+  `sentence-transformers/all-MiniLM-L6-v2` weights, so uploading a file and asking about it needs
+  no embedding provider and no second key. (The boot still reaches huggingface.co to resolve that
+  model's snapshot and fetch a few small auxiliary files beside the cached weights.)
 - Accounts, groups and per-model permissions, so the instance can be shared without sharing the
   provider key.
 - Speech-to-text locally as well: `faster-whisper` and the `base` model are baked into the image.
@@ -65,9 +66,12 @@ after the first boot has no effect; change it in Admin Settings instead.
 The service listens on port 8080 and is health-checked on `/health`, the app's own unauthenticated
 readiness endpoint, which is also what upstream's container `HEALTHCHECK` probes.
 
-It is declared `alwaysOn: false`. Nothing in Open WebUI fires from inside the process, so an
-inbound request is always what wakes it. The cost is the cold start: the server imports torch
-before it serves anything, so the first request after an idle period waits for that.
+It is declared `alwaysOn: false`. Chat, indexing and model listing are all driven by an inbound
+request, which is itself what wakes the machine. The cost is the cold start: the server imports
+torch and loads the embedding model before it serves anything, which took about 35 seconds from
+container start to a healthy `/health` on a fresh deploy. The one thing an idle machine would miss
+is **Automations**: Open WebUI runs a scheduler inside the process, and a scheduled automation
+cannot fire on a machine that has scaled to zero. Set `alwaysOn: true` if you create any.
 
 ## After deploy
 

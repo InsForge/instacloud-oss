@@ -32,9 +32,11 @@ services:
     # path upstream's container HEALTHCHECK probes. `/` also answers 200, but it is the SvelteKit
     # shell rather than a statement about the server.
     healthcheck: /health
-    # Nothing fires from inside the process: chats, document indexing and model listing are all
-    # driven by an inbound request, which is itself what wakes the machine. The cost is the cold
-    # start, which is a torch import rather than a page load.
+    # Chat, document indexing and model listing are all driven by an inbound request, which is
+    # itself what wakes the machine. There IS one in-process timer, the Automations scheduler
+    # ("Scheduler worker started (timer poll interval: 1s, scheduler poll interval: 10s)" on every
+    # boot), but it has nothing to run until a user creates an automation, which is the same call
+    # anythingllm makes about its agent jobs: the README says to switch this on if you create any.
     alwaysOn: false
     volume: true
     env:

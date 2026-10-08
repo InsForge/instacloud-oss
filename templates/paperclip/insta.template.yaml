@@ -16,6 +16,9 @@ generated:
   tool_action_secret: secret:32
 
 services:
+  db:
+    type: postgres
+
   paperclip:
     type: web
     image: ghcr.io/paperclipai/paperclip:2026.1005.0
@@ -54,6 +57,12 @@ services:
         # One proxy hop, the platform's edge. Express needs this to read X-Forwarded-Proto, or
         # the session cookie is issued without Secure on an HTTPS origin.
         TRUST_PROXY: "1"
+      platform:
+        # Upstream refuses to start an authenticated public deployment on its embedded PostgreSQL
+        # (`StartupRefusalError: database-contract-unmet`), so the managed database above is not
+        # an optimisation, it is what makes this deploy legal. The volume is still needed: uploads,
+        # the instance secret key and the agent workspaces are files, not rows.
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
       generated:
         # Session signing. The server refuses to start without it.
         BETTER_AUTH_SECRET: ${auth_secret}

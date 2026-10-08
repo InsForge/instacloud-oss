@@ -17,8 +17,8 @@ charts in its no-code explorer, and assemble the results into dashboards. It is 
 other people's data: it ships no warehouse of its own and stores no analytical data.
 
 This template runs the official `docker.io/apache/superset` image. The overlay image it builds
-adds three files and rewrites one line of an upstream shell script, and changes nothing about
-Superset itself:
+adds four files and one pinned Python package, rewrites one line of an upstream shell script, and
+changes nothing about Superset itself:
 
 - an **entrypoint** that does what upstream's separate `superset-init` container does in
   docker-compose and the plain image does nowhere: apply the Alembic migrations, sync the role
@@ -32,6 +32,9 @@ Superset itself:
   and turns on `ENABLE_PROXY_FIX`. Release 6.0.0 has no environment variable for either: the
   `SUPERSET__SQLALCHEMY_DATABASE_URI` override exists on Superset's master branch but is not in
   this release.
+- **`psycopg2-binary==2.9.6`**, upstream's own pin for this release. `apache/superset:6.0.0` is
+  upstream's **lean** image and ships no database driver at all, not even for the metadata
+  database this template gives it.
 - `run-server.sh` 6.0.0 launches gunicorn without `exec`, so a `SIGTERM` to PID 1 never reached
   it. The image rewrites that one line so a stop drains instead of being killed on the grace
   timer.
@@ -82,9 +85,10 @@ nobody ever needs to read it.
 2. Open the service URL and sign in with the `ADMIN_USERNAME` and `ADMIN_PASSWORD` you deployed
    with.
 3. Connect a database: **Settings** (top right), **Database Connections**, **+ Database**. It
-   must be reachable from the internet. The image ships upstream's batteries-included driver set,
-   which covers Postgres, MySQL, SQLite, BigQuery, Snowflake, Trino and the rest of the list in
-   `requirements/base.txt`.
+   must be reachable from the internet. **Postgres and SQLite are the only two that work out of
+   the box**: upstream's lean image ships no driver, and this one adds `psycopg2-binary` because
+   the metadata database needs it. Anything else (MySQL, BigQuery, Snowflake, Trino) needs its
+   driver installed into the image, which means an edit to this template's Dockerfile.
 4. Query it in **SQL Lab**, save the result as a dataset, and chart the dataset from
    **Charts**, **+ Chart**.
 5. Assemble charts into a dashboard from **Dashboards**, **+ Dashboard**.

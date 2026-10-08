@@ -5,8 +5,17 @@ FROM docker.io/apache/superset:6.0.0@sha256:6f6c9982bd64d81797bd4f33834f2ce4a465
 
 USER root
 
-# Three files, and that is the whole overlay. Superset, gunicorn and the compiled assets are
-# upstream's; see ./entrypoint.sh, ./boot-listener.py and ./superset_config.py for why each is here.
+# The Postgres driver. `apache/superset:6.0.0` is upstream's LEAN image and its requirements carry
+# no database driver at all: without this the first `superset db upgrade` ends in
+# `ModuleNotFoundError: No module named 'psycopg2'` and nothing ever starts. 2.9.6 is upstream's
+# own pin for this release (requirements/development.txt), which is the version Superset 6.0.0 is
+# tested against, and it has cp310 manylinux wheels for x86_64 and aarch64 so neither leg compiles.
+# uv, not pip: `uv venv` built /app/.venv without one.
+RUN uv pip install --python /app/.venv/bin/python --no-cache psycopg2-binary==2.9.6
+
+# Four files, and with the driver above that is the whole overlay. Superset, gunicorn and the
+# compiled assets are upstream's; see ./entrypoint.sh, ./boot-listener.py, ./db-revision.py and
+# ./superset_config.py for why each is here.
 COPY entrypoint.sh /insta-entrypoint.sh
 COPY boot-listener.py /insta-boot-listener.py
 COPY db-revision.py /insta-db-revision.py

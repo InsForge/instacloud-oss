@@ -1,0 +1,80 @@
+code: superset
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# The official release image, with an entrypoint, a boot-time port holder and a config drop-in on
+# top (see ./Dockerfile). Nothing about Superset itself is rebuilt: the Python app, its gunicorn
+# launcher and the compiled frontend assets are upstream's.
+upstream:
+  repo: apache/superset
+  image: docker.io/apache/superset
+  pinned: "6.0.0"
+  license: Apache-2.0
+
+# Generated, not required: Superset encrypts stored database passwords with SECRET_KEY, so it has
+# to be stable and nobody ever needs to read it back. A required variable is stored write-only.
+generated:
+  secret_key: secret:64
+
+services:
+  # First on purpose: the credential-contract test in templates/scripts reads services[0].
+  superset:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/superset:1.0.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 8088
+    # Upstream's own HEALTHCHECK path. It is a blueprint route with no login and no database
+    # access, and `/` is not usable here: it answers 302 to the login page, which the gate refuses.
+    healthcheck: /health
+    # Nothing runs in the background: Celery is not configured, so there are no scheduled reports,
+    # no alerts and no async queries. Every unit of work starts with an inbound request, which is
+    # what wakes a stopped machine.
+    alwaysOn: false
+    # Not the metadata database, which is the managed postgres below. This holds the SQLite file
+    # behind SQLALCHEMY_EXAMPLES_URI and anything uploaded through Superset's CSV/Excel import.
+    volume: true
+    env:
+      fixed:
+        # DATA_DIR in superset/config.py, which is where the examples SQLite file and the log file
+        # go. The platform mounts the volume at /data.
+        SUPERSET_HOME: /data
+        SUPERSET_PORT: "8088"
+        # Turns on Flask-Limiter's rate limits and tags the UI as a production environment.
+        SUPERSET_ENV: production
+      platform:
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
+      generated:
+        SUPERSET_SECRET_KEY: ${secret_key}
+      required:
+        # Neither a `default:` nor a `generate:`, matching the other templates that put a
+        # credential in front of a public URL: a template variable is stored write-only
+        # (`minted = false`), so a generated password would be one nobody could read back, and a
+        # blank field silently mints another instead of erroring.
+        ADMIN_USERNAME:
+          description: "Username for the Superset Admin account this creates on first boot. You choose it"
+        ADMIN_PASSWORD:
+          description: "Password for that account. It is the only thing standing between the public URL and every database you later connect, so pick a strong one"
+      optional:
+        ADMIN_EMAIL: Email recorded on the Admin account, cosmetic until you configure SMTP. Defaults to admin@example.com
+
+  # Superset's metadata database: dashboards, charts, datasets, users and the encrypted
+  # credentials of every database you connect. SQLite is the upstream default and upstream
+  # documents it as unsupported for anything but a local trial.
+  db:
+    type: postgres
+
+meta:
+  name: Apache Superset
+  tagline: Dashboards and SQL exploration, wired to a managed Postgres
+  # Not one of the six the console labels today. See the README and the pull request: Superset is
+  # not a datastore, so `database` would be wrong, and `other` is what AGENTS.md tells you not to
+  # reach for.
+  category: analytics
+  tags: [analytics, dashboards, sql]
+  # Upstream's 6.0.0 index carries both, and this image only copies in five files, installs a
+  # wheel with a manylinux build for each, and rewrites one line of a shell script.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/apache/superset
+    documentation: https://superset.apache.org/docs/intro

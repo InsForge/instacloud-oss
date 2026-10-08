@@ -19,8 +19,6 @@ services:
     image: ghcr.io/insforge/insta-oss/templates/dsh:0.4.2   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
     healthcheck: /             # nginx answers 401 unauthenticated, which counts as healthy
-    # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works (hermes and n8n
-    # cannot). Costs a ~25s cold boot, and an agent left running with no browser is stopped.
     volume: true  # mounts at /data
     env:
       fixed:

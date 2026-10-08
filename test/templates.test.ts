@@ -3,6 +3,9 @@
 // GET /templates/:code, POST /projects/:id/template-deployments, GET /template-deployments/:id).
 // Docker is mocked; the health probe is injected, and one case pins what the DEFAULT probe dials.
 import { test, expect, afterEach, beforeEach, vi } from 'vitest'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+// Aliased: `parse` in this file is the manifest parser under test.
+import { parse as parseYaml } from 'yaml'
 
 // `dockerCall` is the same seam with a handle on the child: the scheduler's runtime verbs go
 // through it so a timed-out call can be killed and waited for. A factory that returns only
@@ -94,19 +97,41 @@ async function deploy(id: string, body: Record<string, unknown>): Promise<Return
 
 // ---- catalog -----------------------------------------------------------------------------------
 
+/** The real `templates/` directory, read straight off disk rather than through the catalog: an
+ *  expectation the code under test computed would agree with it however wrong both were.
+ *  Publishing a template, or bumping one, must not need an edit here. */
+const TEMPLATES = new URL('../templates/', import.meta.url)
+const manifestOf = (code: string) =>
+  parseYaml(readFileSync(new URL(`${code}/insta.template.yaml`, TEMPLATES), 'utf8')) as {
+    version: string
+    meta?: { draft?: boolean }
+  }
+const bundled = readdirSync(TEMPLATES).filter((d) =>
+  existsSync(new URL(`${d}/insta.template.yaml`, TEMPLATES)),
+)
+/** Not a draft, and not the same thing: a template whose services this runtime's parser does not
+ *  know is warned about and SKIPPED. That is a gap in `src/`, so it is named here rather than
+ *  derived, and it disappears from this map the day the parser learns the type. */
+const UNPARSEABLE: Record<string, string> = {
+  twenty: 'declares a managed redis service this runtime cannot parse yet, so the catalog skips it',
+}
+const listed = bundled.filter((c) => !manifestOf(c).meta?.draft && !(c in UNPARSEABLE)).sort()
+
 test('GET /templates lists the bundled non-draft codes with every list field typed', async () => {
   const r = await get('/templates')
   expect(r.statusCode).toBe(200)
   expect(r.headers['cache-control']).toBe('public, max-age=300')
   const { templates, hostArchitecture } = r.json()
-  // openclaw and openmuse-browser declare meta.draft, so they are not in the listing (openmuse-browser
-  // is openmuse's companion worker image, never deployed on its own). twenty is absent for a different
-  // reason: it declares a managed `redis` service, which this runtime's manifest parser does not
-  // know yet, so the catalog warns and skips it. Cloud-only until src/ learns the type.
-  expect(templates.map((t: { code: string }) => t.code)).toEqual(['9router', 'claude-code', 'clickhouse', 'codex', 'dsh', 'hermes', 'insforge', 'laya', 'lev', 'n8n', 'openmuse', 'paperclip', 'pi', 'supabase', 'whisper-turbo'])
+  // Every bundled template that is not a draft and that this runtime can parse, and nothing else.
+  // Drafts (openclaw, and openmuse-browser, which is openmuse's companion worker image and is never
+  // deployed on its own) fall out of `listed` by their own manifests.
+  const codes = templates.map((t: { code: string }) => t.code)
+  expect(codes).toEqual(listed)
+  // Said again by name, because `toEqual` would report a skipped template as an unexplained diff.
+  for (const [code, why] of Object.entries(UNPARSEABLE)) expect(codes, why).not.toContain(code)
   const n8n = templates.find((t: { code: string }) => t.code === 'n8n')
   expect(n8n).toMatchObject({
-    version: '1.3.2', name: 'n8n', category: 'automation', tags: ['automation', 'ai'],
+    version: manifestOf('n8n').version, name: 'n8n', category: 'automation', tags: ['automation', 'ai'],
     requiredVarCount: 0, totalProjects: 0, activeProjects: 0, deploymentCount: 0, activeDeploymentCount: 0,
     license: 'LicenseRef-n8n-Sustainable-Use-License', architectures: ['amd64', 'arm64'],
   })
@@ -134,7 +159,7 @@ test('GET /templates/:code carries the detail fields; a draft and an unknown cod
   const r = await get('/templates/n8n')
   expect(r.statusCode).toBe(200)
   const t = r.json().template
-  expect(t).toMatchObject({ code: 'n8n', version: '1.3.2', maintainer: 'official', source: 'official', documentationUrl: 'https://docs.n8n.io' })
+  expect(t).toMatchObject({ code: 'n8n', version: manifestOf('n8n').version, maintainer: 'official', source: 'official', documentationUrl: 'https://docs.n8n.io' })
   expect(t.architectures).toEqual(['amd64', 'arm64'])
   expect(r.json().hostArchitecture).toBe('amd64')
   expect(t.variables).toEqual({ required: [], optional: [] })
@@ -343,7 +368,7 @@ test('deploying n8n reaches succeeded: services, secrets, volume, attribution an
   const r = await post(`/projects/${id}/template-deployments`, { templateCode: 'n8n', branch: 'main' })
   expect(r.statusCode).toBe(202)
   const { deploymentId, deployment } = r.json()
-  expect(deployment).toMatchObject({ status: 'running', step: 'create_services', templateCode: 'n8n', templateVersion: '1.3.2' })
+  expect(deployment).toMatchObject({ status: 'running', step: 'create_services', templateCode: 'n8n', templateVersion: manifestOf('n8n').version })
   expect(deployment.services).toEqual([{ name: 'n8n', state: 'pending' }])
   await executor.idle()
 
@@ -404,7 +429,7 @@ test('a version mismatch, a draft code and an unrunnable manifest are refused be
   const id = await project()
   const mismatch = await post(`/projects/${id}/template-deployments`, { templateCode: 'n8n', templateVersion: '0.0.1', branch: 'main' })
   expect(mismatch.statusCode).toBe(404)
-  expect(mismatch.json().error).toBe('template version not found: n8n@0.0.1 (the registry serves 1.3.2)')
+  expect(mismatch.json().error).toBe(`template version not found: n8n@0.0.1 (the registry serves ${manifestOf('n8n').version})`)
   expect((await post(`/projects/${id}/template-deployments`, { templateCode: 'openclaw', branch: 'main' })).statusCode).toBe(404)
   expect((await post(`/projects/${id}/template-deployments`, { branch: 'main' })).statusCode).toBe(400)
 

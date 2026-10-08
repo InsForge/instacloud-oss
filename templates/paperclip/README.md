@@ -2,11 +2,7 @@
 
 Dashboard for running a team of AI agents.
 
-> **Draft.** The template deploys and has been verified end to end; it stays out of the catalog
-> while the publish decision is pending. Two calls are open: the first admin arrives through a
-> one-time invite minted with `insta compute exec` rather than a sign-up form, because upstream
-> disables browser-based claim on an internet-facing instance; and the service is always-on,
-> because Paperclip's schedulers tick inside the process.
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/paperclip)
 
 ## Overview
 

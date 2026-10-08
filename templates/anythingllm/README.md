@@ -57,12 +57,15 @@ the provider and model, the embedder, the vector database, chat defaults, agent 
 ## After deploy
 
 1. Open the service URL. You get a password prompt; the password is the one you typed on the
-   deploy form.
-2. Work through onboarding: pick an LLM provider and paste its API key, keep the default
-   **AnythingLLM Embedder** and **LanceDB** unless you have a reason not to, and name a workspace.
-3. Upload a document into that workspace and click **Move to Workspace**, then **Save and Embed**.
-   The first embed downloads the embedding model (roughly 50 MB) and is slower than the ones after
-   it.
+   deploy form. There is no onboarding wizard: AnythingLLM treats an instance that already has a
+   password and a JWT secret as onboarded, so you land straight in the app.
+2. Go to **Settings > AI Providers > LLM**, pick a provider and paste its API key. Until you do,
+   sending a chat answers `Unknown provider: undefined`. The embedder and vector database below it
+   default to **AnythingLLM Embedder** and **LanceDB**, both of which run on this machine and need
+   no key.
+3. Create a workspace, then open its document manager, upload a file, select it and click
+   **Move to Workspace**, then **Save and Embed**. The first embed downloads the embedding model
+   (roughly 50 MB) onto the volume and is slower than the ones after it.
 4. Ask a question about the document. The answer carries citations back to the chunks it used.
 5. Optionally switch the instance to multi-user mode under **Settings > Security**, which replaces
    the single password with real accounts. From that point AnythingLLM ignores `ADMIN_PASSWORD`.

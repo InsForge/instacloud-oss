@@ -1,0 +1,80 @@
+code: umami
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# The official image with an entrypoint on top (see ./Dockerfile). Nothing about the application is
+# rebuilt: the Next.js build, the Prisma migrations and the server are all upstream's.
+upstream:
+  repo: umami-software/umami
+  image: ghcr.io/umami-software/umami
+  pinned: "3.4.0"
+  license: MIT
+
+generated:
+  # Signs the session cookie and seeds the rotating salt that hashes a visitor into a session id.
+  # Generated rather than required: nobody ever needs to read it back, and a required variable is
+  # stored write-only, so a value minted into one would be lost the moment the form is submitted.
+  app_secret: secret:64
+
+services:
+  db:
+    type: postgres
+
+  web:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/umami:1.0.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 3000
+    # Upstream's own compose file probes this path. It answers 200 {"ok":true} with no session, and
+    # the server only starts listening after the migrations have run, so a pass means the schema is
+    # there too. Not `/`, which is a redirect to /login.
+    healthcheck: /api/heartbeat
+    # A page view and a tracker hit are both inbound requests, so an idle machine wakes on the next
+    # one. Umami ships no scheduler and no queue worker: nothing happens while nobody is looking.
+    alwaysOn: false
+    # No volume: every row Umami keeps lives in the managed postgres above, and the only file the
+    # container writes is the tracker script, which is rewritten from the image on each boot.
+    env:
+      fixed:
+        # The image already sets both; pinned here so the service's routed port and the port the
+        # Next.js server binds cannot drift apart.
+        HOSTNAME: 0.0.0.0
+        PORT: "3000"
+      platform:
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
+      generated:
+        APP_SECRET: ${app_secret}
+      required:
+        # Neither a `default:` nor a `generate:`, matching every other template that puts a
+        # credential in front of a public URL: a template variable is stored write-only
+        # (`minted = false`), so a generated password would be one nobody could read back, and a
+        # blank field silently mints another instead of erroring.
+        #
+        # Umami has no sign-up page. Its first migration seeds the account `admin` with the bcrypt
+        # hash of the password `umami`, published in the repository, so these two are what the
+        # entrypoint replaces it with before the server accepts a request.
+        ADMIN_USERNAME:
+          description: "Username for the Umami admin account. Replaces the `admin` account upstream seeds, so pick anything; you can add more users in Settings after deploy"
+        ADMIN_PASSWORD:
+          description: "Password for that account. It is the only thing between the public URL and your analytics, so pick a strong one"
+      optional:
+        TWO_FACTOR_ENCRYPTION_KEY: "Key that encrypts stored TOTP secrets, exactly 64 hex characters (`openssl rand -hex 32`). Leave empty and the entrypoint derives a stable one from APP_SECRET, so two-factor auth works without this"
+        DISABLE_TELEMETRY: "Set to 1 to stop Umami reporting anonymous usage to umami.is. Off by default, which is upstream's default"
+        TRACKER_SCRIPT_NAME: "Comma-separated alternative names to serve the tracker script under, e.g. `stats,analytics`, for sites where an ad blocker drops /script.js"
+        CLIENT_IP_HEADER: "Request header to read the visitor's IP from. Only needed if something in front of this service writes the real IP somewhere other than x-forwarded-for"
+
+meta:
+  name: Umami
+  tagline: Privacy-first web analytics without cookies
+  # A new category: this is neither a datastore (`database`) nor a workflow tool (`automation`).
+  # See the PR for the console and gallery lists that need the same label.
+  category: analytics
+  tags: [analytics, privacy]
+  # Architectures the published image carries. Upstream's 3.4.0 index carries both, and the overlay
+  # adds two pure-JavaScript packages and two scripts, so there is nothing to cross-compile.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  draft: false
+  links:
+    upstream: https://github.com/umami-software/umami
+    documentation: https://umami.is/docs

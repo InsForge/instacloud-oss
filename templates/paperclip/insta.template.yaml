@@ -83,7 +83,6 @@ meta:
   # this tag and nothing is rebuilt here.
   architectures: [amd64, arm64]
   logo: ./logo.png
-  draft: true
   links:
     upstream: https://github.com/paperclipai/paperclip
     documentation: https://docs.paperclip.ing

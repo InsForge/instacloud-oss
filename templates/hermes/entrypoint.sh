@@ -23,11 +23,46 @@ mkdir -p "$HERMES_HOME"
 # (`--insecure` is a documented no-op), so the credential has to exist first.
 # `config set` rather than writing config.yaml: the volume survives reboots, and an
 # appended YAML block would pile up a copy per boot.
-hash="$(cd /opt/hermes && python3 -c 'import sys; from plugins.dashboard_auth.basic import hash_password; print(hash_password(sys.argv[1]))' "$ADMIN_PASSWORD")"
-# Output suppressed: `config set` echoes the value, and the hash would land in the
-# log tail the console shows.
-hermes config set --force dashboard.basic_auth.username "$ADMIN_USERNAME" >/dev/null
-hermes config set --force dashboard.basic_auth.password_hash "$hash" >/dev/null
+#
+# Only when the credential CHANGED. Hashing the password and the two `config set`
+# calls are three full boots of the hermes CLI, ~6-8 s of every wake on a 4 vCPU VM,
+# and the result is already in config.yaml on the volume from the last boot. So first
+# check the supplied credential against what config.yaml holds: the username must
+# match and the password must verify against the stored scrypt hash, re-derived with
+# the stored parameters and compared in constant time. That check is stdlib Python
+# (hashlib, base64, hmac) and takes a fraction of a second; it stores NOTHING new --
+# no marker, no second verifier -- the only secret material on the volume stays the
+# salted scrypt hash the dashboard keeps anyway. A rotated secret fails the check
+# and takes the full path once. Any doubt (no config.yaml, no hash, an unparseable
+# hash, a Python error) also takes the full path: the fast path is only ever taken
+# on a positive verification.
+credential_current() {
+  [ -f "$HERMES_HOME/config.yaml" ] || return 1
+  ADMIN_USERNAME="$ADMIN_USERNAME" ADMIN_PASSWORD="$ADMIN_PASSWORD" HERMES_CONFIG="$HERMES_HOME/config.yaml" python3 - <<'PY'
+import base64, hashlib, hmac, os, sys
+import yaml
+cfg = yaml.safe_load(open(os.environ["HERMES_CONFIG"])) or {}
+auth = ((cfg.get("dashboard") or {}).get("basic_auth") or {})
+if auth.get("username") != os.environ["ADMIN_USERNAME"]:
+    sys.exit(1)
+stored = auth.get("password_hash") or ""
+kind, n, r, p, salt, digest = stored.split("$", 5)
+if kind != "scrypt":
+    sys.exit(1)
+salt, digest = base64.b64decode(salt), base64.b64decode(digest)
+got = hashlib.scrypt(os.environ["ADMIN_PASSWORD"].encode(), salt=salt, n=int(n), r=int(r), p=int(p), dklen=len(digest), maxmem=0)
+sys.exit(0 if hmac.compare_digest(got, digest) else 1)
+PY
+}
+if credential_current 2>/dev/null; then
+  echo "entrypoint: dashboard credential unchanged since the last boot; skipping auth bootstrap"
+else
+  hash="$(cd /opt/hermes && python3 -c 'import sys; from plugins.dashboard_auth.basic import hash_password; print(hash_password(sys.argv[1]))' "$ADMIN_PASSWORD")"
+  # Output suppressed: `config set` echoes the value, and the hash would land in the
+  # log tail the console shows.
+  hermes config set --force dashboard.basic_auth.username "$ADMIN_USERNAME" >/dev/null
+  hermes config set --force dashboard.basic_auth.password_hash "$hash" >/dev/null
+fi
 
 # The gateway runs as the s6-supervised gateway-default service, NOT as this script's
 # child. The platform hands the image PID 1, so s6-overlay is live (a 2.1.x comment

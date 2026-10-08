@@ -54,21 +54,27 @@ else
   say "schema unchanged, skipping the role sync"
 fi
 
-# Create-if-missing, not create-or-update: flask-appbuilder refuses a username that already
-# exists, which is the outcome on every boot after the first. Changing ADMIN_PASSWORD on a
-# deployed instance therefore does not move the account's password; the UI does that.
-say "ensuring the admin account exists"
-if superset fab create-admin \
+# Create-if-missing, not create-or-update. Changing ADMIN_PASSWORD on a deployed instance
+# therefore does not move the account's password; the UI does that.
+#
+# The existence test is a database query rather than create-admin's exit status, because handed
+# a username that exists flask-appbuilder prints `Error! User already exists` and still exits 0.
+# It also saves the four seconds create-admin spends building the Flask app on every restart.
+if [ "$(/app/.venv/bin/python /insta-user-exists.py "${ADMIN_USERNAME}")" = yes ]; then
+  say "the admin account already exists, leaving it alone"
+else
+  say "creating the admin account"
+  superset fab create-admin \
     --username "${ADMIN_USERNAME}" \
     --password "${ADMIN_PASSWORD}" \
     --email "${ADMIN_EMAIL:-admin@example.com}" \
     --firstname Superset \
-    --lastname Admin; then
+    --lastname Admin
+  # Asserted, not assumed, for the same reason: a zero exit proves nothing here.
+  if [ "$(/app/.venv/bin/python /insta-user-exists.py "${ADMIN_USERNAME}")" != yes ]; then
+    die "create-admin did not create ${ADMIN_USERNAME}, see its output above"
+  fi
   say "created the admin account"
-else
-  # Not swallowed: flask-appbuilder's own reason is on stderr above this line. On every boot
-  # after the first it reads "username already exists", which is not a failure.
-  say "create-admin made no account, see its message above"
 fi
 
 release_port

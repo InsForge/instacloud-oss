@@ -17,7 +17,7 @@ charts in its no-code explorer, and assemble the results into dashboards. It is 
 other people's data: it ships no warehouse of its own and stores no analytical data.
 
 This template runs the official `docker.io/apache/superset` image. The overlay image it builds
-adds four files and one pinned Python package, rewrites one line of an upstream shell script, and
+adds five files and one pinned Python package, rewrites one line of an upstream shell script, and
 changes nothing about Superset itself:
 
 - an **entrypoint** that does what upstream's separate `superset-init` container does in

@@ -13,12 +13,13 @@ USER root
 # uv, not pip: `uv venv` built /app/.venv without one.
 RUN uv pip install --python /app/.venv/bin/python --no-cache psycopg2-binary==2.9.6
 
-# Four files, and with the driver above that is the whole overlay. Superset, gunicorn and the
-# compiled assets are upstream's; see ./entrypoint.sh, ./boot-listener.py, ./db-revision.py and
-# ./superset_config.py for why each is here.
+# Five files, and with the driver above that is the whole overlay. Superset, gunicorn and the
+# compiled assets are upstream's; see ./entrypoint.sh, ./boot-listener.py, ./db-revision.py,
+# ./user-exists.py and ./superset_config.py for why each is here.
 COPY entrypoint.sh /insta-entrypoint.sh
 COPY boot-listener.py /insta-boot-listener.py
 COPY db-revision.py /insta-db-revision.py
+COPY user-exists.py /insta-user-exists.py
 COPY superset_config.py /app/pythonpath/superset_config.py
 
 # 6.0.0's run-server.sh launches gunicorn without exec, so the script stays PID 1 and a SIGTERM
@@ -27,7 +28,7 @@ COPY superset_config.py /app/pythonpath/superset_config.py
 # upstream adds the exec itself (master already has).
 RUN grep -q '^gunicorn ' /app/docker/entrypoints/run-server.sh \
     && sed -i 's/^gunicorn /exec gunicorn /' /app/docker/entrypoints/run-server.sh \
-    && chmod 0755 /insta-entrypoint.sh /insta-boot-listener.py /insta-db-revision.py \
+    && chmod 0755 /insta-entrypoint.sh /insta-boot-listener.py /insta-db-revision.py /insta-user-exists.py \
     && chmod 0644 /app/pythonpath/superset_config.py
 
 # Upstream's own user; the platform's volume ownership follows the image USER, so /data is writable.

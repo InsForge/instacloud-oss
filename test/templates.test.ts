@@ -103,7 +103,7 @@ test('GET /templates lists the bundled non-draft codes with every list field typ
   // is openmuse's companion worker image, never deployed on its own). twenty is absent for a different
   // reason: it declares a managed `redis` service, which this runtime's manifest parser does not
   // know yet, so the catalog warns and skips it. Cloud-only until src/ learns the type.
-  expect(templates.map((t: { code: string }) => t.code)).toEqual(['9router', 'claude-code', 'clickhouse', 'codex', 'dsh', 'hermes', 'insforge', 'laya', 'lev', 'n8n', 'openmuse', 'pi', 'supabase', 'whisper-turbo'])
+  expect(templates.map((t: { code: string }) => t.code)).toEqual(['9router', 'claude-code', 'clickhouse', 'codex', 'dsh', 'hermes', 'insforge', 'laya', 'lev', 'n8n', 'openmuse', 'paperclip', 'pi', 'supabase', 'whisper-turbo'])
   const n8n = templates.find((t: { code: string }) => t.code === 'n8n')
   expect(n8n).toMatchObject({
     version: '1.3.2', name: 'n8n', category: 'automation', tags: ['automation', 'ai'],

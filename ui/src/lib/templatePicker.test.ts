@@ -8,7 +8,7 @@ const catalog = [
   { code: 'ollama', name: 'Ollama', tagline: 'Local models', category: 'llm', tags: [] },
   { code: 'supabase', name: 'Supabase', tagline: 'One backend', category: 'backend', tags: [] },
   { code: 'clickhouse', name: 'ClickHouse', tagline: 'Analytics database', category: 'database', tags: [] },
-  { code: 'misc', name: 'Misc', tagline: 'Something else', category: 'data-tools', tags: [] },
+  { code: 'misc', name: 'Misc', tagline: 'Something else', category: 'game-servers', tags: [] },
 ]
 
 describe('templateCategoryLabel', () => {
@@ -18,16 +18,19 @@ describe('templateCategoryLabel', () => {
     expect(templateCategoryLabel('automation')).toBe('Automation')
     expect(templateCategoryLabel('backend')).toBe('Backend')
     expect(templateCategoryLabel('database')).toBe('Database')
-    expect(templateCategoryLabel('data-tools')).toBe('Data tools')
+    expect(templateCategoryLabel('crm')).toBe('CRM')
+    expect(templateCategoryLabel('analytics')).toBe('Analytics')
+    expect(templateCategoryLabel('dev-tools')).toBe('Dev Tools')
+    expect(templateCategoryLabel('game-servers')).toBe('Game servers')
   })
 })
 
 describe('pickerView', () => {
   it("lists the categories in the console's order, others after, with counts", () => {
     const v = pickerView(catalog, '', 'all')
-    // backend and database are in TEMPLATE_CATEGORY_ORDER, so they come before data-tools, which is
-    // not. Without them on that list both would sort in with data-tools and database would follow it.
-    expect(v.categories.map((c) => c.key)).toEqual(['ai-agent', 'llm', 'automation', 'backend', 'database', 'data-tools'])
+    // backend and database are in TEMPLATE_CATEGORY_ORDER, so they come before game-servers, which
+    // is not. Without them on that list both would sort in with it and database would follow it.
+    expect(v.categories.map((c) => c.key)).toEqual(['ai-agent', 'llm', 'automation', 'backend', 'database', 'game-servers'])
     expect(v.categories.find((c) => c.key === 'ai-agent')?.count).toBe(2)
     expect(v.total).toBe(7)
     expect(v.results).toHaveLength(7)

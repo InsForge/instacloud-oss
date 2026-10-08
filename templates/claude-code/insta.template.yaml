@@ -40,7 +40,7 @@ services:
           description: "Anthropic API key. Leave blank and run `claude login` in the terminal instead"
         # setup-token's token can only make model requests, so it rules out Remote Control.
         CLAUDE_CODE_OAUTH_TOKEN:
-          description: "Claude subscription token from running `claude setup-token` on your own computer, so every box is signed in without `claude login`. Leave blank if you want Remote Control, which this token cannot start"
+          description: "Claude subscription token from running `claude setup-token` on your own computer, so every box is signed in without `claude login`. `ANTHROPIC_API_KEY` takes precedence if both are set. Leave blank if you want Remote Control, which this token cannot start"
         GH_TOKEN:
           description: "GitHub token for gh, for example the output of `gh auth token` on your own computer. Leave blank and run `gh auth login` in the terminal instead"
 

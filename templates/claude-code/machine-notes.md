@@ -2,9 +2,9 @@
 
 You are running on an InstaCloud compute machine deployed from the Claude Code template.
 
-- Only `/data` survives a restart, a redeploy or an upgrade. `HOME` is `/data/home`, so keep
-  repositories and anything you create under it.
-- Everything outside `/data` is reset from the image on restart, including whatever `apt-get`
+- Only the service's volume survives a restart, a redeploy or an upgrade. This template mounts it at
+  `/data` and sets `HOME` to `/data/home`, so keep repositories and anything you create under `HOME`.
+- Everything outside the volume is reset from the image on restart, including whatever `apt-get`
   installs. Install tools under `~/.local` instead, which is on the volume and whose `bin` is on
   `PATH`: `npm install -g --prefix ~/.local <package>`, or a Python venv under `~`
   (`python3 -m venv ~/.venvs/<name>`).

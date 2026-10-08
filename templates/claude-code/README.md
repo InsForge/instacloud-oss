@@ -26,6 +26,9 @@ those lines from the log history: if you ran one, set a new `ADMIN_PASSWORD` bef
 - An HTTPS URL for the terminal, with no port forwarding or tunnel to manage.
 - A persistent volume mounted at `/data`. `HOME` is set to `/data/home`, so your CLI login, shell
   history, and any repositories you clone survive restarts, redeploys, and version upgrades.
+  Everything outside the volume is reset from the image on restart. Keep the volume at `/data`: moved
+  with `insta compute volume --mount-path`, it no longer holds `HOME`, and your home directory goes
+  with the next restart.
 - The terminal credentials kept as service variables rather than baked into the image, so you can
   change them later without rebuilding anything. They are yours, not ours: the template ships no
   credential of its own, and both values are visible in the deploy form and in the service's
@@ -89,7 +92,7 @@ has all of that. Both fields can be changed later from the service's variables.
 4. That login persists. Because `HOME` is on the volume, `~/.claude` survives restarts: you do not
    re-authenticate after every deploy.
 5. Clone your repository into `/data/home` (or anywhere under `/data`) so your work persists too.
-   Files written outside `/data` are lost when the container is replaced, and that includes
+   Files written outside the volume are lost when the container is replaced, and that includes
    packages from `apt-get`. Install extra tools under `~/.local`, for example
    `npm install -g --prefix ~/.local <package>`.
 6. To open a server the agent started here, forward its port from your own computer:

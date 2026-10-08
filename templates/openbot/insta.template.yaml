@@ -94,7 +94,8 @@ meta:
   # an arm64 box they could deploy something that does not exist.
   architectures: [amd64]
   logo: ./logo.png              # 256x256, real transparency; see the attribution table in ../README.md
-  # Draft until a human has used it. What is unsettled is in the pull request, not here.
+  # Published. The two calls the draft note raised are settled: the proxy sign-in stays, and the
+  # CopilotKit Intelligence key is a required variable the README names before anything else.
   links:
     upstream: https://github.com/CopilotKit/openbot
     documentation: https://github.com/CopilotKit/openbot/blob/main/docs/README.md

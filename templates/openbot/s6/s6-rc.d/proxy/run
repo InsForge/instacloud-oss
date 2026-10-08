@@ -41,6 +41,16 @@ if [ "$PASS_BYTES" -gt 72 ]; then
   exit 1
 fi
 
+# A line break inside the password is refused rather than hashed, for the same reason the trailing
+# one below is load-bearing: `hash-password` reads ONE line. `pw\nrest` would authenticate on `pw`
+# alone, so the operator would believe in a password that is not the one guarding the box, and a
+# leading break would hash the empty string. Counted rather than matched, because `$(printf '\n')`
+# strips the newline it is meant to find.
+if [ "$(printf '%s' "$ADMIN_PASSWORD" | tr -d '\n\r' | wc -c)" -ne "$PASS_BYTES" ]; then
+  echo "proxy: ADMIN_PASSWORD may not contain a line break: only the first line would be used" >&2
+  exit 1
+fi
+
 # Piped, never `--plaintext`: an argument is visible in /proc/<pid>/cmdline to every process in
 # this container, and one of them is the shell a Bot is allowed to run. /proc/<pid>/environ is not,
 # which is why the hash travels to Caddy as an exported variable below rather than as an argument.

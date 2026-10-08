@@ -27,7 +27,8 @@ services:
     port: 3000
     # Upstream's own compose file probes this path. It answers 200 {"ok":true} with no session, and
     # the server only starts listening after the migrations have run, so a pass means the schema is
-    # there too. Not `/`, which is a redirect to /login.
+    # there too. `/` also answers 200 (it is a client-side redirect to /login, not an HTTP one), but
+    # it is the login shell rather than a statement about readiness.
     healthcheck: /api/heartbeat
     # A page view and a tracker hit are both inbound requests, so an idle machine wakes on the next
     # one. Umami ships no scheduler and no queue worker: nothing happens while nobody is looking.

@@ -1,0 +1,120 @@
+code: directus
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# The official image, unmodified. Upstream's entrypoint is a Node script that runs
+# `directus bootstrap` (install + migrate + seed the first admin) and then hands off to
+# pm2-runtime, so the long-lived process and the first-boot setup are both upstream's. There is no
+# overlay Dockerfile here: every path this template moves is an env var the image already reads.
+upstream:
+  repo: directus/directus
+  image: docker.io/directus/directus
+  pinned: "12.5.0"
+  # Upstream relicensed to the Monospace Sustainable Core License 1.0 (`license` in the repository
+  # root, self-abbreviated MSCL-1.0-GPL). Not an SPDX identifier, hence the LicenseRef form. Like
+  # n8n, it is a source-available licence rather than OSS, which is the other reason nothing here
+  # rebuilds or rebrands the image.
+  license: LicenseRef-MSCL-1.0-GPL
+
+generated:
+  # Signs access tokens, session cookies and the password reset / email verification tokens.
+  # Directus warns and falls back to a random value per boot when it is unset, which logs every
+  # user out on every restart. `secret:64` clears the 32-byte floor the app checks for.
+  secret: secret:64
+
+services:
+  directus:
+    type: web
+    image: docker.io/directus/directus:12.5.0
+    port: 8055
+    # Not `/`: that is a redirect to /admin, and the gate wants a 2xx. `/server/health` is the
+    # app's own readiness probe, it is unauthenticated (an anonymous caller gets `{"status":"ok"}`
+    # rather than the per-check detail an admin sees), and it pings the database, so a pass means
+    # the schema is reachable and not just that express is listening. It answers 503 when a check
+    # reports `error`.
+    healthcheck: /server/health
+    # Directus Flows fire schedule (cron) triggers from inside this process, and the app runs its
+    # own timed jobs besides, so a machine that had scaled to zero would never wake to run one.
+    # Same case as n8n's schedule triggers. This bills continuously; see the README.
+    alwaysOn: true
+    # Everything durable: the SQLite file, uploaded files, and extensions installed from the
+    # Marketplace.
+    volume: true
+    env:
+      fixed:
+        # The image defaults to both already; pinned here so the routed port and the port the
+        # server binds cannot drift apart.
+        HOST: 0.0.0.0
+        PORT: "8055"
+        # Used for every absolute URL the app generates: the links in password-reset and
+        # email-verification mail, the OAuth/SSO redirect targets, and the MCP resource URLs.
+        PUBLIC_URL: ${services.directus.url}
+        # The image's own default client, with the file moved onto the volume. It sits at the
+        # volume root on purpose: knex does not create a missing parent directory, and upstream's
+        # Dockerfile pre-creates `/directus/database` for exactly that reason, which a template
+        # pointing somewhere else does not get.
+        DB_CLIENT: sqlite3
+        DB_FILENAME: /data/database.sqlite
+        # Uploaded files. The local storage driver mkdir -p's as it writes, so this does not need
+        # to exist beforehand.
+        STORAGE_LOCATIONS: local
+        STORAGE_LOCAL_DRIVER: local
+        STORAGE_LOCAL_ROOT: /data/uploads
+        # Marketplace installs land here. A missing directory is handled (the resolver returns an
+        # empty set rather than throwing), so an install is what creates it.
+        EXTENSIONS_PATH: /data/extensions
+      generated:
+        SECRET: ${secret}
+      required:
+        # Read by `directus bootstrap` on the FIRST boot only, through createAdmin(): later boots
+        # find the schema installed and skip straight to migrations, so changing either value
+        # afterwards does nothing. Change the password in the app instead.
+        #
+        # ADMIN_EMAIL rather than the house ADMIN_USERNAME: Directus identifies a user by email
+        # and the users service validates the field, so a bare word is refused.
+        ADMIN_EMAIL:
+          description: "Email address for the first administrator, created on first boot. It is the login, so it must be a real address shape; it does not have to receive mail unless you configure SMTP"
+        ADMIN_PASSWORD:
+          # Deliberately neither `default:` nor `generate:`: a template variable is stored
+          # write-only, so a generated password would be one nobody could ever read back.
+          description: "Password for that administrator. Directus enforces no policy by default, so this is the only thing between the public URL and your data: pick a strong one"
+      optional:
+        PROJECT_NAME:
+          description: "Name shown on the login page and in the admin app's header. Applied on first boot only; afterwards it is Settings > Project Settings in the app"
+        AUTH_PASSWORD_POLICY:
+          description: "Regex every password must match, e.g. /^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$/. Unset means no policy, which is upstream's default"
+        CORS_ENABLED:
+          description: "Set to true to let browsers on other origins call the API. Off by default; the admin app is same-origin and does not need it"
+        CORS_ORIGIN:
+          description: "Which origins CORS allows when CORS_ENABLED is true. An origin, a comma-separated list, or true to echo the request's own origin"
+        WEBSOCKETS_ENABLED:
+          description: "Set to true to serve the realtime API at /websocket, for subscribing to item changes. Off by default"
+        EMAIL_FROM:
+          description: "Address outbound mail is sent from. Needed for password resets, user invites and the Send Email flow operation"
+        EMAIL_TRANSPORT:
+          description: "How mail is sent: sendmail (the default, which has no MTA in this image), smtp, mailgun, sendgrid or ses. Set smtp and fill the four EMAIL_SMTP_ variables below"
+        EMAIL_SMTP_HOST:
+          description: "SMTP server hostname, when EMAIL_TRANSPORT is smtp"
+        EMAIL_SMTP_PORT:
+          description: "SMTP server port, when EMAIL_TRANSPORT is smtp. Commonly 587"
+        EMAIL_SMTP_USER:
+          description: "SMTP username, when EMAIL_TRANSPORT is smtp"
+        EMAIL_SMTP_PASSWORD:
+          description: "SMTP password, when EMAIL_TRANSPORT is smtp"
+
+meta:
+  name: Directus
+  # Directus is the data platform: a database it introspects, a REST and GraphQL API over it, and
+  # an admin app, which is the `backend` category rather than `database`.
+  tagline: Instant REST and GraphQL API over your own database
+  category: backend
+  tags: [backend, cms]
+  # Architectures the published image carries. Upstream's 12.5.0 index carries both, read off the
+  # registry; nothing is rebuilt here.
+  architectures: [amd64, arm64]
+  logo: ./logo.png
+  draft: false
+  links:
+    upstream: https://github.com/directus/directus
+    documentation: https://directus.com/docs/

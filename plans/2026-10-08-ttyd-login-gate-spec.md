@@ -39,8 +39,10 @@ Out of scope: every other template, and a platform-level password gate in front 
 | `POST /_insta/sign-in` past the sign-in rate limit | `429` with `Retry-After`, the sign-in page with "Too many sign-in attempts", credentials not compared |
 | `POST /_insta/sign-in` with the wrong username or password | `401`, the sign-in page with the error and the username still filled in, after a one second delay |
 | `POST /_insta/sign-in` with the right ones | `303` to the page the visitor asked for, and a session cookie |
-| Anything with a valid session | proxied to ttyd unchanged, WebSocket included |
-| `GET /_insta/sign-out` | clears the cookie, `303` to `/` |
+| A WebSocket upgrade, or a `POST`, `PUT`, `PATCH` or `DELETE`, whose `Origin` (or `Sec-Fetch-Site`) says another page sent it | `403`, even with a valid session (added in gate 0.1.1) |
+| Anything else with a valid session | proxied to ttyd unchanged, WebSocket included |
+| `/_insta/sign-out`, typed in the address bar or from this page | clears the cookie, `303` to `/` |
+| `/_insta/sign-out` sent by another page (an `<img>`, a form) | `403`, the cookie stays (gate 0.1.1) |
 
 - The health check (`/`) keeps answering below 500 with or without a session, so deploys report
   healthy as they do today.
@@ -57,7 +59,7 @@ Out of scope: every other template, and a platform-level password gate in front 
 1. **The gate** (this spec's first PR): `gate/` at the repository root, its tests, and a release
    workflow that publishes `insta-gate.mjs` and its SHA-256 to this repository's GitHub releases on a
    `gate-v<version>` tag.
-2. **The three templates** (second PR, after `gate-v0.1.0` exists): each Dockerfile downloads that
+2. **The three templates** (second PR, after the gate release exists, `gate-v0.1.1` or later: 0.1.0 lacks the cross-page check below): each Dockerfile downloads that
    release file by version and checksum, the same way it downloads ttyd, and the entrypoint puts the
    gate in front of ttyd.
 
@@ -92,14 +94,26 @@ and needs no `npm install` in the image.
 
 - **Credentials:** read from `ADMIN_USERNAME` and `ADMIN_PASSWORD`. Compared by HMAC-SHA256 digest
   with `crypto.timingSafeEqual`, so neither length nor content leaks through timing.
-- **Session cookie:** `insta_gate=<expiry>.<signature>`, signature = HMAC-SHA256 over the expiry
-  with a key derived from both credentials. `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` when the
-  request arrived over HTTPS (the platform router sets `X-Forwarded-Proto`; the self-hosted runtime
-  can serve plain HTTP on localhost).
+- **Session cookie:** `<expiry>.<signature>`, signature = HMAC-SHA256 over the expiry with a key
+  derived from both credentials. `HttpOnly`, `SameSite=Lax`, `Path=/`. Over HTTPS (the platform
+  router sets `X-Forwarded-Proto`) it is `__Host-insta_gate` and `Secure`, and only that name is
+  read, because a browser refuses a `__Host-` cookie from any other host, so a sibling tenant cannot
+  toss one in through the shared parent domain (gate 0.1.1). Over plain HTTP, which the self-hosted
+  runtime can serve on localhost, it is `insta_gate`.
 - **Sign-in POST:** form-encoded, at most 4 KB. Refused unless `Origin` (or `Sec-Fetch-Site`) is
   same-origin.
 - **Proxy:** plain HTTP requests are piped to `127.0.0.1:7682` with the original method, path and
   headers, minus the session cookie. Upgrade requests are checked, then the raw sockets are joined.
+  Every proxied response gets `X-Frame-Options: SAMEORIGIN` (unless the app set its own) and a
+  `Content-Security-Policy: frame-ancestors 'self'` beside any CSP the app sends: a same-site page
+  would get the cookie inside an iframe too, and a framed terminal opens its WebSocket from its own
+  origin, past the Origin check (gate 0.1.1). A response to another page also loses any
+  `Access-Control-Allow-Origin` and `Access-Control-Allow-Credentials` the app sent, since letting
+  such reads through relies on the browser hiding them (gate 0.1.1).
+- **The terminal's environment:** ttyd is started without `ADMIN_USERNAME` and `ADMIN_PASSWORD`, so
+  an agent running in the shell does not find the sign-in credentials in its environment to send
+  elsewhere. A root process in the container can still read the gate's own environment from `/proc`:
+  this removes the easy path, not every path (gate 0.1.1).
 - **Sign-in page headers:** `Cache-Control: no-store`, `X-Frame-Options: DENY`, and a CSP that
   allows only inline styles, `data:` fonts and images, and the one inline script by hash.
 - **Logging:** one line at start (port, upstream, template name). Never a credential, never a
@@ -147,8 +161,8 @@ template name and the error line.
 
 ```dockerfile
 # InstaCloud sign-in page in front of ttyd (gate/ in this repository, released as gate-v*)
-ARG INSTA_GATE_VERSION=0.1.0
-ARG INSTA_GATE_SHA256=<from the release>
+ARG INSTA_GATE_VERSION=0.1.1
+ARG INSTA_GATE_SHA256=<from the gate-v0.1.1 release>
 RUN curl -fsSL -o /usr/local/lib/insta-gate.mjs \
         "https://github.com/InsForge/instacloud-oss/releases/download/gate-v${INSTA_GATE_VERSION}/insta-gate.mjs" \
     && echo "${INSTA_GATE_SHA256}  /usr/local/lib/insta-gate.mjs" | sha256sum -c -
@@ -200,6 +214,17 @@ would make an upgrade change how people sign in.
 **What happens when a session expires with the terminal open?** ttyd's page shows its reconnect
 prompt and the reconnect is refused with a 401. Reloading the page shows the sign-in page. Changing
 ttyd's own front end to do that automatically is out of scope.
+
+**Why does a signed-in WebSocket still check where it came from?** (Added in gate 0.1.1.) A browser
+sends a `SameSite=Lax` cookie on requests from any page on the same site, and every
+`*.compute.instacloud-edge.com` service is one site, because that domain is not on the Public Suffix
+List. Without the check, another tenant's page could open this terminal's WebSocket as a visitor who
+had signed in here, which is a root shell. ttyd's own `-c` resisted this, since its page first reads
+`/token`, which another origin cannot read, and the gate replaced `-c`. So the upgrade, and every
+state-changing method, is refused when its `Origin` is not this service's (or, with no `Origin`,
+when `Sec-Fetch-Site` is not `same-origin` or `none`). Reads are left open: the browser does not
+show their response to the other page. Getting the domain onto the Public Suffix List would help
+every app on the platform, but it is a separate effort and no substitute for the check.
 
 **Is there brute-force protection?** Yes: one rate limit for every sign-in, taken before the
 credentials are compared. A burst of 10 attempts, then 1 per second, and past it a `429`. A delay on

@@ -11,8 +11,8 @@ on loopback, WebSocket included. The spec is
 The release file is plain JavaScript on Node built-ins, so one checksum covers every architecture.
 
 ```dockerfile
-ARG INSTA_GATE_VERSION=0.1.0
-ARG INSTA_GATE_SHA256=<the release's insta-gate.mjs.sha256>
+ARG INSTA_GATE_VERSION=0.1.1
+ARG INSTA_GATE_SHA256=<the gate-v0.1.1 release's insta-gate.mjs.sha256>
 RUN curl -fsSL -o /usr/local/lib/insta-gate.mjs \
         "https://github.com/InsForge/instacloud-oss/releases/download/gate-v${INSTA_GATE_VERSION}/insta-gate.mjs" \
     && echo "${INSTA_GATE_SHA256}  /usr/local/lib/insta-gate.mjs" | sha256sum -c -

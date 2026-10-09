@@ -1,6 +1,6 @@
 {
   "name": "@insforge/insta-gate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "The InstaCloud sign-in page in front of the browser terminal templates. Released as gate-v<version>; see gate/README.md.",
   "type": "module",

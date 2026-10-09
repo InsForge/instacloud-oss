@@ -16,6 +16,9 @@ const BUILT = null
 const SIGN_IN = '/_insta/sign-in'
 const SIGN_OUT = '/_insta/sign-out'
 const COOKIE = 'insta_gate'
+// Over https the cookie is `__Host-`: a browser refuses that name from any other host, so a sibling
+// tenant cannot toss one in for this service through a cookie set on the shared parent domain.
+const SECURE_COOKIE = `__Host-${COOKIE}`
 const NAME_MARK = '__INSTA_NAME__'
 const NEXT_MARK = '__INSTA_NEXT__'
 const USER_MARK = '__INSTA_USER__'
@@ -58,7 +61,10 @@ function parseCookies(header) {
 /** The Cookie header with the gate's own cookie removed, or undefined when nothing is left. */
 function withoutGateCookie(header) {
   if (header === undefined) return undefined
-  const kept = String(header).split(';').map((p) => p.trim()).filter((p) => p && !p.startsWith(`${COOKIE}=`))
+  const kept = String(header)
+    .split(';')
+    .map((p) => p.trim())
+    .filter((p) => p && !p.startsWith(`${COOKIE}=`) && !p.startsWith(`${SECURE_COOKIE}=`))
   return kept.length ? kept.join('; ') : undefined
 }
 
@@ -101,7 +107,7 @@ export function createGate({
     const got = Buffer.from(sig)
     return got.length === want.length && timingSafeEqual(got, want)
   }
-  const signedIn = (req) => valid(parseCookies(req.headers.cookie)[COOKIE])
+  const signedIn = (req) => valid(parseCookies(req.headers.cookie)[https(req) ? SECURE_COOKIE : COOKIE])
   // One bucket for every sign-in, taken BEFORE the credentials are compared: a delay on failures
   // alone does not cap guessing, since parallel attempts each wait on their own and a right guess
   // answers at once. Global rather than per client: behind the router, the address the gate sees is
@@ -138,7 +144,9 @@ export function createGate({
     }
   }
   const cookieHeader = (req, value, maxAge) =>
-    `${COOKIE}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${https(req) ? '; Secure' : ''}`
+    https(req)
+      ? `${SECURE_COOKIE}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax; Secure`
+      : `${COOKIE}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax`
 
   const csp = [
     "default-src 'none'",
@@ -189,6 +197,18 @@ export function createGate({
     return req.headers['sec-fetch-site'] === 'same-origin'
   }
 
+  // A browser attaches the session cookie to requests from any page on the same SITE, and every
+  // *.compute.instacloud-edge.com service is one site: the domain is not on the Public Suffix List.
+  // So another tenant's page could open this terminal's WebSocket, or post to this app, as the
+  // signed-in visitor. Those are refused when the browser says they came from another page. A
+  // request with no Origin and no Sec-Fetch-Site is not a browser's, and still needs the cookie.
+  const fromAnotherPage = (req) => {
+    if (req.headers.origin !== undefined) return !sameOrigin(req)
+    const site = req.headers['sec-fetch-site']
+    return site !== undefined && site !== 'same-origin' && site !== 'none'
+  }
+  const CHANGES_STATE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
   const signIn = (req, res) => {
     if (!sameOrigin(req)) {
       res.writeHead(403, { 'cache-control': 'no-store' }).end()
@@ -232,7 +252,20 @@ export function createGate({
     if (cookie === undefined) delete headers.cookie
     else headers.cookie = cookie
     const up = httpRequest({ host: upstreamHost, port: upstreamPort, method: req.method, path: req.url, headers }, (upRes) => {
-      res.writeHead(upRes.statusCode ?? 502, upRes.headers)
+      // A same-site page would get the cookie in an iframe too, and a framed terminal opens its
+      // WebSocket from its own origin, past the Origin check: so nothing behind the gate is framed
+      // by another page. An upstream's own X-Frame-Options stands, and its CSP is kept beside ours.
+      const headers = { ...upRes.headers }
+      if (headers['x-frame-options'] === undefined) headers['x-frame-options'] = 'SAMEORIGIN'
+      const csp = headers['content-security-policy']
+      headers['content-security-policy'] = [...(csp === undefined ? [] : [].concat(csp)), "frame-ancestors 'self'"]
+      // Reads from another page are let through because the browser hides the response from it.
+      // An app that answered with CORS would undo that, so another page never gets those headers.
+      if (fromAnotherPage(req)) {
+        delete headers['access-control-allow-origin']
+        delete headers['access-control-allow-credentials']
+      }
+      res.writeHead(upRes.statusCode ?? 502, headers)
       upRes.pipe(res)
     })
     up.on('error', () => {
@@ -246,10 +279,22 @@ export function createGate({
     const path = (req.url ?? '/').split('?')[0]
     if (path === SIGN_IN && req.method === 'POST') return signIn(req, res)
     if (path === SIGN_OUT) {
+      // Typed into the address bar (Sec-Fetch-Site: none) or from this page; not an <img> elsewhere.
+      if (fromAnotherPage(req)) {
+        res.writeHead(403, { 'cache-control': 'no-store', 'content-length': 0 }).end()
+        return
+      }
       res.writeHead(303, { location: '/', 'set-cookie': cookieHeader(req, '', 0), 'cache-control': 'no-store' }).end()
       return
     }
-    if (signedIn(req)) return proxy(req, res)
+    if (signedIn(req)) {
+      // Reads stay open: the browser does not let another page see the response.
+      if (CHANGES_STATE.has(req.method) && fromAnotherPage(req)) {
+        res.writeHead(403, { 'cache-control': 'no-store', 'content-length': 0 }).end()
+        return
+      }
+      return proxy(req, res)
+    }
     const wantsPage = (req.method === 'GET' || req.method === 'HEAD') && /text\/html/.test(req.headers.accept ?? '')
     if (wantsPage) return sendPage(res, 200, safeNext(req.url), false)
     res.writeHead(401, { 'cache-control': 'no-store', 'content-length': 0 }).end()
@@ -258,6 +303,11 @@ export function createGate({
   const upgrade = (req, socket, head) => {
     if (!signedIn(req)) {
       socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+      return
+    }
+    // The terminal is a WebSocket, and the browser sends the cookie on it from any same-site page.
+    if (fromAnotherPage(req)) {
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
       return
     }
     const up = connect(upstreamPort, upstreamHost, () => {
@@ -338,7 +388,13 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     console.error('insta-gate: missing the terminal command after --')
     process.exit(1)
   }
-  const child = spawn(opts.command[0], opts.command.slice(1), { stdio: 'inherit' })
+  // The terminal does not need the credentials, and an agent running in it should not find them in
+  // its environment to send anywhere. A root process can still read the gate's own environment from
+  // /proc, so this removes the easy path, not every path.
+  const childEnv = { ...env }
+  delete childEnv.ADMIN_USERNAME
+  delete childEnv.ADMIN_PASSWORD
+  const child = spawn(opts.command[0], opts.command.slice(1), { stdio: 'inherit', env: childEnv })
   child.on('error', (err) => {
     console.error(`insta-gate: could not start ${opts.command[0]}: ${err.message}`)
     process.exit(1)

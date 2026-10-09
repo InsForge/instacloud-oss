@@ -42,7 +42,8 @@ describe('ttyd templates sign in through the gate', () => {
     const ttydArgs = line.slice(line.indexOf(' -- ttyd ') + ' -- ttyd '.length)
     expect(ttydArgs).toMatch(/(^|\s)-i lo(\s|$)/)
     expect(ttydArgs).toMatch(/(^|\s)-p 7682(\s|$)/)
-    expect(ttydArgs).not.toMatch(/(^|\s)(-c|--credential)(\s|$)/)
+    // Every form getopt_long takes: -c v, -cv, bundled -Wc v, --credential v, --credential=v.
+    expect(ttydArgs).not.toMatch(/(^|\s)(-[A-Za-z]*c|--credential(=|\s|$))/)
   })
 
   it.each(ttyd)('$code still refuses to start without both credentials', ({ entrypoint }) => {

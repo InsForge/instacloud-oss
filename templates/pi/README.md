@@ -17,7 +17,7 @@ plus [ttyd](https://github.com/tsl0922/ttyd) 1.7.7 (verified against a pinned SH
 `@earendil-works/pi-coding-agent` pinned to an exact version. Nothing floats on `latest`, so a
 restart gives you the same environment. In front of ttyd sits the InstaCloud sign-in page,
 `insta-gate` from this repository's `gate/`, also verified against a pinned SHA-256. ttyd listens
-only inside the container and never receives your credentials. Versions before 0.8.3 logged the
+only inside the container and never receives your credentials. Template versions before 0.8.3 logged the
 credential on every start, and upgrading does not remove those lines from the log history: if you
 ran one, set a new `ADMIN_PASSWORD` before you upgrade.
 

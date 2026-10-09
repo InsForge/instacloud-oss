@@ -3,6 +3,9 @@
 // GET /templates/:code, POST /projects/:id/template-deployments, GET /template-deployments/:id).
 // Docker is mocked; the health probe is injected, and one case pins what the DEFAULT probe dials.
 import { test, expect, afterEach, beforeEach, vi } from 'vitest'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+// Aliased: `parse` in this file is the manifest parser under test.
+import { parse as parseYaml } from 'yaml'
 
 // `dockerCall` is the same seam with a handle on the child: the scheduler's runtime verbs go
 // through it so a timed-out call can be killed and waited for. A factory that returns only
@@ -32,10 +35,10 @@ function fakeDocker(args: string[] = []): Promise<Buffer> {
 }
 
 import { buildServer } from '../src/server'
-import { Engine } from '../src/engine'
+import { Engine, PG_VERSION } from '../src/engine'
 import { TemplateExecutor } from '../src/templates/executor'
 import {
-  collectVariables, generateValue, manifestDigest, parseTemplateManifest, resolveTemplateString,
+  collectVariables, DIGEST_EPOCH, generateValue, manifestDigest, parseTemplateManifest, resolveTemplateString,
 } from '../src/templates/manifest'
 import { loadState } from '../src/state'
 import { hostArch, initHostArch } from '../src/hostarch'
@@ -94,16 +97,41 @@ async function deploy(id: string, body: Record<string, unknown>): Promise<Return
 
 // ---- catalog -----------------------------------------------------------------------------------
 
+/** The real `templates/` directory, read straight off disk rather than through the catalog: an
+ *  expectation the code under test computed would agree with it however wrong both were.
+ *  Publishing a template, or bumping one, must not need an edit here. */
+const TEMPLATES = new URL('../templates/', import.meta.url)
+const manifestOf = (code: string) =>
+  parseYaml(readFileSync(new URL(`${code}/insta.template.yaml`, TEMPLATES), 'utf8')) as {
+    version: string
+    meta?: { draft?: boolean; category?: string }
+  }
+const bundled = readdirSync(TEMPLATES).filter((d) =>
+  existsSync(new URL(`${d}/insta.template.yaml`, TEMPLATES)),
+)
+/** Not a draft, and not the same thing: a template whose services this runtime's parser does not
+ *  know is warned about and SKIPPED. That is a gap in `src/`, so it is named here rather than
+ *  derived, and it disappears from this map the day the parser learns the type. */
+const UNPARSEABLE: Record<string, string> = {
+  twenty: 'declares a managed redis service this runtime cannot parse yet, so the catalog skips it',
+}
+const listed = bundled.filter((c) => !manifestOf(c).meta?.draft && !(c in UNPARSEABLE)).sort()
+
 test('GET /templates lists the bundled non-draft codes with every list field typed', async () => {
   const r = await get('/templates')
   expect(r.statusCode).toBe(200)
   expect(r.headers['cache-control']).toBe('public, max-age=300')
   const { templates, hostArchitecture } = r.json()
-  // openclaw declares meta.draft, so it is not in the listing.
-  expect(templates.map((t: { code: string }) => t.code)).toEqual(['9router', 'claude-code', 'codex', 'dsh', 'herdr', 'hermes', 'laya', 'n8n', 'pi'])
+  // Every bundled template that is not a draft and that this runtime can parse, and nothing else.
+  // Drafts (openclaw, and openmuse-browser, which is openmuse's companion worker image and is never
+  // deployed on its own) fall out of `listed` by their own manifests.
+  const codes = templates.map((t: { code: string }) => t.code)
+  expect(codes).toEqual(listed)
+  // Said again by name, because `toEqual` would report a skipped template as an unexplained diff.
+  for (const [code, why] of Object.entries(UNPARSEABLE)) expect(codes, why).not.toContain(code)
   const n8n = templates.find((t: { code: string }) => t.code === 'n8n')
   expect(n8n).toMatchObject({
-    version: '1.3.2', name: 'n8n', category: 'automation', tags: ['automation', 'ai'],
+    version: manifestOf('n8n').version, name: 'n8n', category: 'automation', tags: ['automation', 'ai'],
     requiredVarCount: 0, totalProjects: 0, activeProjects: 0, deploymentCount: 0, activeDeploymentCount: 0,
     license: 'LicenseRef-n8n-Sustainable-Use-License', architectures: ['amd64', 'arm64'],
   })
@@ -121,8 +149,13 @@ test('GET /templates lists the bundled non-draft codes with every list field typ
 })
 
 test('GET /templates filters by exact category and free-text query', async () => {
-  expect((await get('/templates?category=automation')).json().templates.map((t: { code: string }) => t.code)).toEqual(['n8n'])
-  expect((await get('/templates?category=AUTOMATION')).json().templates.map((t: { code: string }) => t.code)).toEqual(['n8n'])
+  // Derived for the same reason the listing above is: filing one more template under a category
+  // must not edit this file. What is pinned is that the filter is exact and case-insensitive, and
+  // `automation` is the category used because something is always in it.
+  const inCategory = (c: string) => listed.filter((code) => manifestOf(code).meta?.category === c).sort()
+  expect(inCategory('automation').length).toBeGreaterThan(0)
+  expect((await get('/templates?category=automation')).json().templates.map((t: { code: string }) => t.code)).toEqual(inCategory('automation'))
+  expect((await get('/templates?category=AUTOMATION')).json().templates.map((t: { code: string }) => t.code)).toEqual(inCategory('automation'))
   expect((await get('/templates?query=hermes')).json().templates.map((t: { code: string }) => t.code)).toEqual(['hermes'])
   expect((await get('/templates?query=nothing-matches')).json().templates).toEqual([])
 })
@@ -131,7 +164,7 @@ test('GET /templates/:code carries the detail fields; a draft and an unknown cod
   const r = await get('/templates/n8n')
   expect(r.statusCode).toBe(200)
   const t = r.json().template
-  expect(t).toMatchObject({ code: 'n8n', version: '1.3.2', maintainer: 'official', source: 'official', documentationUrl: 'https://docs.n8n.io' })
+  expect(t).toMatchObject({ code: 'n8n', version: manifestOf('n8n').version, maintainer: 'official', source: 'official', documentationUrl: 'https://docs.n8n.io' })
   expect(t.architectures).toEqual(['amd64', 'arm64'])
   expect(r.json().hostArchitecture).toBe('amd64')
   expect(t.variables).toEqual({ required: [], optional: [] })
@@ -152,7 +185,7 @@ test('a required variable reaches the listing so a form can be rendered from it'
   expect(cc.requiredVars.map((v: { name: string }) => v.name)).toEqual(['ADMIN_USERNAME', 'ADMIN_PASSWORD'])
   const detail = (await get('/templates/claude-code')).json().template
   expect(detail.variables.required.map((v: { name: string }) => v.name)).toEqual(['ADMIN_USERNAME', 'ADMIN_PASSWORD'])
-  expect(detail.variables.optional.map((v: { name: string }) => v.name)).toEqual(['ANTHROPIC_API_KEY'])
+  expect(detail.variables.optional.map((v: { name: string }) => v.name)).toEqual(['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'GH_TOKEN'])
 })
 
 // ---- manifest module ---------------------------------------------------------------------------
@@ -177,8 +210,8 @@ test('manifest parity: the refusals the platform makes, one case each', () => {
   refuses({ ...base, services: { web: { ...base.services.web, env: { fixed: { A: '${services.db.url}' } } }, db: { type: 'postgres' } } },
     /is a managed postgres/)
   refuses({ ...base, services: { db: { type: 'postgres', image: 'postgres:16' } } }, /carries no image/)
-  // A web service must declare a healthcheck, and it must be a path on the service itself.
-  refuses({ ...base, services: { web: { type: 'web', image: 'i' } } }, /must declare a healthcheck path/)
+  // A healthcheck is optional on a web service, and a given one must be a path on the service itself.
+  expect(parse({ ...base, services: { web: { type: 'web', image: 'i' } } }).services.web.healthcheck).toBeUndefined()
   refuses({ ...base, services: { web: { ...base.services.web, healthcheck: '//evil.example/x' } } }, /single-slash absolute path/)
   refuses({ ...base, services: { web: { ...base.services.web, healthcheck: 'https://evil.example/x' } } }, /absolute path/)
   // A constraint over an undeclared variable could never be satisfied.
@@ -196,6 +229,84 @@ test('manifest parity: the refusals the platform makes, one case each', () => {
   // An authored size is refused; a STORED one is read leniently and dropped.
   refuses({ ...base, services: { web: { ...base.services.web, volume: { sizeGib: 20 } } } }, /the size is the daemon's to choose/, { rejectAuthoredSizing: true })
   expect(parse({ ...base, services: { web: { ...base.services.web, volume: { sizeGib: 20 } } } }).services.web.volume).toBe(true)
+})
+
+test('manifest parity: command and mountPath are kept on the parsed service so the digest matches the cloud', () => {
+  const m = parse({ ...base, services: { web: { ...base.services.web, volume: true, mountPath: '/app/storage', command: 'run' } } })
+  expect(m.services.web.command).toBe('run')
+  expect(m.services.web.mountPath).toBe('/app/storage')
+  // Declared only when authored, so an old manifest hashes byte-identically.
+  expect(Object.keys(parse(base).services.web)).not.toContain('command')
+  expect(Object.keys(parse(base).services.web)).not.toContain('mountPath')
+  const svc = (extra: Record<string, unknown>) => ({ ...base, services: { web: { ...base.services.web, ...extra } } })
+  refuses(svc({ command: '  ' }), /services\.web\.command must be a non-empty string/)
+  for (const command of [42, false, [], {}]) refuses(svc({ command }), /services\.web\.command must be a non-empty string/)
+  refuses(svc({ mountPath: '/a' }), /mountPath requires volume: true/)
+  refuses(svc({ volume: true, mountPath: ' ' }), /services\.web\.mountPath must be an absolute path/)
+  refuses(svc({ volume: true, mountPath: 'a' }), /services\.web\.mountPath must be an absolute path/)
+  refuses(svc({ volume: true, mountPath: '/a'.repeat(200) }), /services\.web\.mountPath must be at most 255 characters/)
+  refuses(svc({ volume: true, mountPath: '/a b' }), /services\.web\.mountPath may contain only letters, digits, '\.', '-', '_' and '\/'/)
+  refuses(svc({ volume: true, mountPath: '/a/../b' }), /services\.web\.mountPath must not contain \.\./)
+  refuses(svc({ volume: true, mountPath: '/etc' }), /services\.web\.mountPath is reserved by the container runtime/)
+  refuses({ ...base, services: { db: { type: 'postgres', command: 'x' } } }, /carries no command/)
+  refuses({ ...base, services: { db: { type: 'postgres', mountPath: '/x' } } }, /carries no mountPath/)
+})
+
+test('manifest parity: pgVersion, public and storage are kept on the parsed service so the digest matches the cloud', () => {
+  const m = parse({ ...base, services: { ...base.services, db: { type: 'postgres', pgVersion: 17 }, files: { type: 'storage', public: true } } })
+  expect(m.services.db).toMatchObject({ type: 'postgres', pgVersion: 17 })
+  expect(m.services.files).toMatchObject({ type: 'storage', public: true })
+  // Declared only when authored, so an old manifest hashes byte-identically.
+  const old = parse({ ...base, services: { ...base.services, db: { type: 'postgres' }, files: { type: 'storage' } } })
+  expect(Object.keys(old.services.db)).not.toContain('pgVersion')
+  expect(Object.keys(old.services.files)).not.toContain('public')
+  expect(Object.keys(parse(base).services.web)).not.toContain('pgVersion')
+  expect(Object.keys(parse(base).services.web)).not.toContain('public')
+  expect(manifestDigest(m)).not.toBe(manifestDigest(old))
+  // false is the default, normalized away as the platform does, so it digests like no public at all.
+  const privateBucket = parse({ ...base, services: { files: { type: 'storage', public: false } } })
+  expect(Object.keys(privateBucket.services.files)).not.toContain('public')
+  expect(manifestDigest(privateBucket)).toBe(manifestDigest(parse({ ...base, services: { files: { type: 'storage' } } })))
+  // The empty env shell a stored manifest carries is tolerated, as for postgres.
+  const shell = { fixed: {}, generated: {}, platform: {}, required: {}, optional: {} }
+  expect(parse({ ...base, services: { files: { type: 'storage', env: shell } } }).services.files.type).toBe('storage')
+
+  const withDb = (db: Record<string, unknown>) => ({ ...base, services: { ...base.services, db } })
+  refuses(withDb({ type: 'postgres', pgVersion: '17' }), /services\.db\.pgVersion must be an integer/)
+  refuses(withDb({ type: 'postgres', pgVersion: 17.5 }), /services\.db\.pgVersion must be an integer/)
+  refuses({ ...base, services: { web: { ...base.services.web, pgVersion: 17 } } }, /services\.web\.pgVersion: only a postgres service takes a version/)
+  refuses({ ...base, services: { web: { ...base.services.web, public: true } } }, /services\.web\.public: only a storage service can be public/)
+  refuses(withDb({ type: 'postgres', public: true }), /services\.db\.public: only a storage service can be public/)
+  refuses({ ...base, services: { files: { type: 'storage', public: 'yes' } } }, /services\.files\.public must be a boolean/)
+  // A bucket is bare, like a postgres service.
+  refuses({ ...base, services: { files: { type: 'storage', image: 'x' } } }, /services\.files\.image: a storage service is platform-managed and carries no image/)
+  refuses({ ...base, services: { files: { type: 'storage', env: { fixed: { A: '1' } } } } }, /services\.files\.env: a storage service is platform-managed and carries no env/)
+  // The type message now names storage.
+  refuses({ ...base, services: { a: { type: 'redis' } } }, /type must be web, worker, postgres or storage/)
+})
+
+test('a storage service is a platform-credential target and has no url or host', () => {
+  const web = { ...base.services.web, env: { platform: { S3_KEY: '${{services.files.AWS_ACCESS_KEY_ID}}' } } }
+  const doc = { ...base, services: { web, files: { type: 'storage' } } }
+  expect(parse(doc).services.web.env.platform).toEqual({ S3_KEY: '${{services.files.AWS_ACCESS_KEY_ID}}' })
+  const wrongKey = { ...base.services.web, env: { platform: { S3_KEY: '${{services.files.DATABASE_URL}}' } } }
+  refuses({ ...base, services: { web: wrongKey, files: { type: 'storage' } } }, /'DATABASE_URL' is not a credential of a storage service/)
+  const urlRef = { ...base.services.web, env: { fixed: { A: '${services.files.url}' } } }
+  refuses({ ...base, services: { web: urlRef, files: { type: 'storage' } } }, /service 'files' is a managed storage, it has no url\/host/)
+})
+
+test('an authored manifest refuses a service key the platform does not know, a stored one is read leniently', () => {
+  const authored = { rejectAuthoredSizing: true }
+  const typo = { ...base, services: { web: { ...base.services.web, colour: 'red' } } }
+  refuses(typo, /services\.web\.colour is not a template field/, authored)
+  // Stored rows are never refused for it, so a bundled template cannot vanish from the catalog.
+  expect(parse(typo).services.web.image).toBe('i')
+  refuses({ ...base, services: { db: { type: 'postgres', flavour: 'x' } } }, /services\.db\.flavour is not a template field/, authored)
+  refuses({ ...base, services: { files: { type: 'storage', visibility: 'public' } } }, /services\.files\.visibility is not a template field/, authored)
+  // Only service entries are strict: the top level, meta and upstream stay open.
+  expect(parse({ ...base, extra: 1, meta: { extra: 1 }, upstream: { extra: 1 } }, authored).code).toBe('x')
+  // spec keeps its own, more helpful refusal.
+  refuses({ ...base, services: { web: { ...base.services.web, spec: '1vcpu' } } }, /compute size is the daemon's to choose/, authored)
 })
 
 // The parser claims to apply the engine's grammar, and it did not: both regexes were local copies
@@ -262,7 +373,7 @@ test('deploying n8n reaches succeeded: services, secrets, volume, attribution an
   const r = await post(`/projects/${id}/template-deployments`, { templateCode: 'n8n', branch: 'main' })
   expect(r.statusCode).toBe(202)
   const { deploymentId, deployment } = r.json()
-  expect(deployment).toMatchObject({ status: 'running', step: 'create_services', templateCode: 'n8n', templateVersion: '1.3.2' })
+  expect(deployment).toMatchObject({ status: 'running', step: 'create_services', templateCode: 'n8n', templateVersion: manifestOf('n8n').version })
   expect(deployment.services).toEqual([{ name: 'n8n', state: 'pending' }])
   await executor.idle()
 
@@ -323,7 +434,7 @@ test('a version mismatch, a draft code and an unrunnable manifest are refused be
   const id = await project()
   const mismatch = await post(`/projects/${id}/template-deployments`, { templateCode: 'n8n', templateVersion: '0.0.1', branch: 'main' })
   expect(mismatch.statusCode).toBe(404)
-  expect(mismatch.json().error).toBe('template version not found: n8n@0.0.1 (the registry serves 1.3.2)')
+  expect(mismatch.json().error).toBe(`template version not found: n8n@0.0.1 (the registry serves ${manifestOf('n8n').version})`)
   expect((await post(`/projects/${id}/template-deployments`, { templateCode: 'openclaw', branch: 'main' })).statusCode).toBe(404)
   expect((await post(`/projects/${id}/template-deployments`, { branch: 'main' })).statusCode).toBe(400)
 
@@ -335,8 +446,35 @@ test('a version mismatch, a draft code and an unrunnable manifest are refused be
   const r2 = await post(`/projects/${id}/template-deployments`, { manifest: worker, branch: 'main' })
   expect(r2.statusCode).toBe(400)
   expect(r2.json().error).toMatch(/support web services only/)
+  // command and mountPath parse (the digest matches the cloud) but this runtime does not run them.
+  const withCommand = { code: 'c', version: '1', services: { app: { type: 'web', image: 'i', healthcheck: '/', command: 'run' } } }
+  const r3 = await post(`/projects/${id}/template-deployments`, { manifest: withCommand, branch: 'main' })
+  expect(r3.statusCode).toBe(400)
+  expect(r3.json().error).toMatch(/services\.app\.command is cloud-only today/)
+  const withMount = { code: 'm', version: '1', services: { app: { type: 'web', image: 'i', healthcheck: '/', volume: true, mountPath: '/app/storage' } } }
+  const r4 = await post(`/projects/${id}/template-deployments`, { manifest: withMount, branch: 'main' })
+  expect(r4.statusCode).toBe(400)
+  expect(r4.json().error).toMatch(/services\.app\.mountPath is cloud-only today/)
   // A branch that does not exist is a 404, before any variable check.
   expect((await post(`/projects/${id}/template-deployments`, { templateCode: 'claude-code', branch: 'ghost' })).statusCode).toBe(404)
+})
+
+test('a storage service and a pgVersion other than the local major are refused as cloud-only, before anything runs', async () => {
+  const id = await project()
+  const withBucket = { code: 'b', version: '1', services: { web: { type: 'web', image: 'i', healthcheck: '/', port: 8080 }, files: { type: 'storage', public: true } } }
+  const r1 = await post(`/projects/${id}/template-deployments`, { manifest: withBucket, branch: 'main' })
+  expect(r1.statusCode).toBe(400)
+  expect(r1.json().error).toMatch(/services\.files is a storage service, which is cloud-only today/)
+  const otherMajor = { code: 'p', version: '1', services: { db: { type: 'postgres', pgVersion: PG_VERSION + 1 } } }
+  const r2 = await post(`/projects/${id}/template-deployments`, { manifest: otherMajor, branch: 'main' })
+  expect(r2.statusCode).toBe(400)
+  expect(r2.json().error).toBe(`services.db.pgVersion ${PG_VERSION + 1} is cloud-only today: the self-hosted runtime runs Postgres ${PG_VERSION} only`)
+  // Nothing was recorded or created: refused before the 202.
+  expect(Object.keys(loadState().templateDeployments ?? {})).toHaveLength(0)
+  expect((await get(`/projects/${id}/services`)).json().services).toEqual([])
+  // The local major itself is accepted.
+  const sameMajor = { code: 'p', version: '1', services: { db: { type: 'postgres', pgVersion: PG_VERSION } } }
+  expect((await deploy(id, { manifest: sameMajor, branch: 'main' })).statusCode).toBe(202)
 })
 
 test('a template whose image this box cannot run is refused before any service exists', async () => {
@@ -543,6 +681,25 @@ test('idempotency: the same id echoes, a changed manifest 409s, and a resume com
   expect(calls.filter((c) => c.startsWith('deploy:'))).toHaveLength(0)
   // A non-UUID id is refused outright.
   expect((await post(`/projects/${id}/template-deployments`, { templateCode: 'n8n', deploymentId: 'nope' })).statusCode).toBe(400)
+})
+
+test('a deployment recorded under the previous digest epoch resumes instead of answering 409', async () => {
+  const id = await project()
+  const deploymentId = '33333333-2222-4333-8444-555555555555'
+  await deploy(id, { templateCode: 'n8n', branch: 'main', deploymentId })
+  // As the build before the bump stored it: epoch 2, and a digest this build would not compute.
+  const { mutate } = await import('../src/state')
+  mutate((s) => {
+    const row = s.templateDeployments[deploymentId] as unknown as { digestEpoch: number; manifestDigest: string }
+    row.digestEpoch = 2
+    row.manifestDigest = 'digest-from-the-previous-epoch'
+  })
+  const retry = await post(`/projects/${id}/template-deployments`, { templateCode: 'n8n', branch: 'main', deploymentId })
+  expect(retry.statusCode).toBe(202)
+  expect(retry.json().deployment.status).toBe('succeeded')
+  // Control: the same stale digest under the CURRENT epoch is a conflict.
+  mutate((s) => { (s.templateDeployments[deploymentId] as unknown as { digestEpoch: number }).digestEpoch = DIGEST_EPOCH })
+  expect((await post(`/projects/${id}/template-deployments`, { templateCode: 'n8n', branch: 'main', deploymentId })).statusCode).toBe(409)
 })
 
 test('abandonStale fails a running record with the restart message', async () => {

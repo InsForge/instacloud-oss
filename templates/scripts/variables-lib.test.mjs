@@ -19,8 +19,8 @@ const templates = readdirSync(root)
   .filter((d) => !NON_TEMPLATE.has(d) && statSync(join(root, d)).isDirectory())
   .map((dir) => ({ dir, manifest: yaml.load(readFileSync(join(root, dir, 'insta.template.yaml'), 'utf8')) }));
 
-// Set by the Dockerfile, not by the manifest, so an entrypoint may read them freely.
-const IMAGE_PROVIDED = new Set(['HOME', 'PATH', 'PWD', 'SHELL', 'TERM', 'USER', 'LANG']);
+// Set by the image or by bash itself (BASH_SOURCE), not by the manifest, so an entrypoint may read them freely.
+const IMAGE_PROVIDED = new Set(['HOME', 'PATH', 'PWD', 'SHELL', 'TERM', 'USER', 'LANG', 'BASH_SOURCE']);
 
 describe('valueSource: the platform resolution order', () => {
   it('prefers a supplied value over both generator and default', () => {
@@ -59,13 +59,13 @@ function demands(manifest) {
 
 describe('the credentialed templates ship no credential of their own', () => {
   // What this locks down is a security property, not a convenience one. Each of these publishes a
-  // root shell, an agent that runs one, an agent's control panel, or an inference endpoint whose
-  // cheapest request is a few hundred milliseconds of CPU, all over HTTP basic auth. So a
-  // `default:` here would be one password shared by every deployment in the world, and a
-  // `generate:` would be a password the operator never sees. The manifests declare both variables
-  // required with neither, which is what makes the console render two empty fields it will not let
-  // you submit blank.
-  it.each(['claude-code', 'codex', 'dsh', 'herdr', 'hermes', 'pi'])('%s makes the operator supply both', (dir) => {
+  // root shell, an agent that runs one, an agent's control panel, an editor that writes files to a
+  // volume, or an inference endpoint whose cheapest request is a few hundred milliseconds of CPU,
+  // all over HTTP basic auth. So a `default:` here would be one password shared by every
+  // deployment in the world, and a `generate:` would be a password the operator never sees. The
+  // manifests declare both variables required with neither, which is what makes the console render
+  // two empty fields it will not let you submit blank.
+  it.each(['claude-code', 'clickhouse', 'codex', 'dsh', 'herdr', 'hermes', 'open-slide', 'pi', 'supabase'])('%s makes the operator supply both', (dir) => {
     const svc = Object.values(templates.find((t) => t.dir === dir).manifest.services)[0];
     for (const k of ['ADMIN_USERNAME', 'ADMIN_PASSWORD']) {
       // null = nothing to fall back on. The platform answers MissingTemplateVariables; the console
@@ -78,7 +78,7 @@ describe('the credentialed templates ship no credential of their own', () => {
   // hermes joined this list in 2.2.0, when its OpenRouter key and Telegram values moved to
   // `optional`: the admin pair is now the whole of what it demands, and this is the regression
   // guard that keeps the keyless, channel-less deploy contract from drifting.
-  it.each(['claude-code', 'codex', 'dsh', 'herdr', 'hermes', 'pi'])('%s demands those two and nothing else', (dir) => {
+  it.each(['claude-code', 'clickhouse', 'codex', 'dsh', 'herdr', 'hermes', 'open-slide', 'pi', 'supabase'])('%s demands those two and nothing else', (dir) => {
     // Scoped both ways on purpose: a fourth required variable would be a new thing to type on the
     // deploy form, and dropping one would mean a credential came back from somewhere.
     expect(demands(templates.find((t) => t.dir === dir).manifest))
@@ -93,6 +93,20 @@ describe('the credentialed templates ship no credential of their own', () => {
     expect(demands(templates.find((t) => t.dir === 'laya').manifest)).toEqual(['API_KEY']);
     expect(valueSource(svc.env.required.API_KEY, undefined), 'API_KEY must have no fallback').toBeNull();
     expect(valueSource(svc.env.required.API_KEY, 'typed'), 'API_KEY must accept a value').toBe('provided');
+  });
+
+  it('anythingllm makes the operator supply exactly one password', () => {
+    // No ADMIN_USERNAME, and that is upstream's shape rather than an omission: AnythingLLM's
+    // single-user mode is an AUTH_TOKEN and nothing else, and its sign-in screen has no username
+    // field, so asking for one would be a field that goes nowhere. The security property is the
+    // same as the pairs above, and here it is sharper than usual: a missing AUTH_TOKEN is not an
+    // error upstream, it is how an install says it wants no password at all, so a blank that fell
+    // through to a generator or a default would be the difference between a locked instance and an
+    // open one.
+    const svc = Object.values(templates.find((t) => t.dir === 'anythingllm').manifest.services)[0];
+    expect(demands(templates.find((t) => t.dir === 'anythingllm').manifest)).toEqual(['ADMIN_PASSWORD']);
+    expect(valueSource(svc.env.required.ADMIN_PASSWORD, undefined), 'ADMIN_PASSWORD must have no fallback').toBeNull();
+    expect(valueSource(svc.env.required.ADMIN_PASSWORD, 'typed'), 'ADMIN_PASSWORD must accept a value').toBe('provided');
   });
 
   it('no template lets a required variable fall back to anything', () => {
@@ -119,7 +133,7 @@ describe('every variable an entrypoint reads is declared by its manifest', () =>
     // Guards the guard: if entrypoints move or get renamed, the cases below would silently
     // become an empty suite that passes forever. 9router and openclaw ship one while requiring no
     // credential at all, which is the case the per-template check below has to stay honest about.
-    expect(withEntrypoint.map((t) => t.dir).sort()).toEqual(['9router', 'claude-code', 'codex', 'dsh', 'herdr', 'hermes', 'laya', 'openclaw', 'pi']);
+    expect(withEntrypoint.map((t) => t.dir).sort()).toEqual(['9router', 'anythingllm', 'claude-code', 'clickhouse', 'codex', 'dsh', 'gitea', 'herdr', 'hermes', 'insforge', 'laya', 'lev', 'open-slide', 'openclaw', 'openmuse', 'pi', 'supabase', 'twenty', 'umami', 'whisper-turbo']);
   });
 
   it.each(withEntrypoint)('$dir', ({ dir, manifest }) => {

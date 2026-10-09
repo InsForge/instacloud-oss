@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "build:ui": "npm --prefix ui install && npm --prefix ui run build",
-    "build:image": "docker build --build-arg VERSION=$(node -p \"require('./package.json').version\") -t instacloud:dev ."
+    "build:image": "docker build --build-arg VERSION=$(node -p \"require('./package.json').version\") -t instacloud:dev .",
+    "docs:openapi": "node scripts/sync-openapi-docs.mjs",
+    "docs:openapi:check": "node scripts/sync-openapi-docs.mjs --check"
   },
   "license": "Apache-2.0",
   "dependencies": {

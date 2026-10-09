@@ -80,7 +80,7 @@ describe('discover: which templates a push rebuilds', () => {
   it('builds every buildable template on workflow_dispatch', () => {
     const out = discover({ event: 'workflow_dispatch' });
     expect(out.ok).toBe(true);
-    expect(JSON.parse(out.json)).toEqual(['9router', 'anythingllm', 'claude-code', 'clickhouse', 'codex', 'dsh', 'gitea', 'hermes', 'insforge', 'laya', 'lev', 'open-slide', 'openbot', 'openclaw', 'opendots', 'openmuse', 'openmuse-browser', 'pi', 'supabase', 'twenty', 'umami', 'whisper-turbo']);
+    expect(JSON.parse(out.json)).toEqual(['9router', 'anythingllm', 'claude-code', 'clickhouse', 'codex', 'documenso', 'dsh', 'gitea', 'hermes', 'insforge', 'laya', 'lev', 'open-slide', 'openbot', 'openclaw', 'opendots', 'openmuse', 'openmuse-browser', 'pi', 'supabase', 'twenty', 'umami', 'whisper-turbo']);
   });
 
   it('builds everything when the workflow itself changed', () => {

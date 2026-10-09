@@ -321,8 +321,25 @@ describe('with a session', () => {
 })
 
 describe('as the container process', () => {
-  const run = (args, env) =>
-    spawnSync(process.execPath, [target, ...args], { env: { PATH: process.env.PATH, ...env }, encoding: 'utf8', timeout: 20_000 })
+  const env = { PATH: process.env.PATH, ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'pw' }
+  const run = (args, extra) =>
+    spawnSync(process.execPath, [target, ...args], { env: { PATH: process.env.PATH, ...extra }, encoding: 'utf8', timeout: 20_000 })
+  const free = () =>
+    new Promise((ok) => {
+      const s = createServer().listen(0, '127.0.0.1', () => {
+        const { port } = s.address()
+        s.close(() => ok(port))
+      })
+    })
+  // Polls until the gate serves its page, or returns the last status (0: nothing answered).
+  const pageWhenUp = async (port) => {
+    let status = 0
+    for (let i = 0; i < 100 && status === 0; i++) {
+      status = await page(port).then((r) => r.status, () => 0)
+      if (status === 0) await new Promise((r) => setTimeout(r, 100))
+    }
+    return status
+  }
 
   it('refuses to start without both credentials', () => {
     const res = run(['--name', 't', '--', process.execPath, '-e', ''], { ADMIN_USERNAME: 'admin' })
@@ -333,45 +350,46 @@ describe('as the container process', () => {
   it('a terminal that stays up but never listens is a failed start, and is stopped with the gate', () => {
     const started = Date.now()
     // spawnSync waits for every holder of the inherited stdio, so a surviving child would hang this.
-    const res = run(['--name', 't', '--port', '0', '--upstream-port', '1', '--ready-timeout', '1', '--', process.execPath, '-e', 'setInterval(() => {}, 1000)'], {
-      ADMIN_USERNAME: 'admin',
-      ADMIN_PASSWORD: 'pw',
-    })
+    const res = run(['--name', 't', '--port', '0', '--upstream-port', '1', '--ready-timeout', '1', '--', process.execPath, '-e', 'setInterval(() => {}, 1000)'], env)
     expect(res.status).toBe(1)
     expect(res.stderr).toContain('the terminal did not open 127.0.0.1:1 within 1s')
     expect(Date.now() - started).toBeLessThan(10_000)
   })
 
   it('starts listening once a slow terminal opens its port', async () => {
-    const free = () => new Promise((ok) => {
-      const s = createServer().listen(0, '127.0.0.1', () => {
-        const { port } = s.address()
-        s.close(() => ok(port))
-      })
-    })
     const [gatePort, termPort] = [await free(), await free()]
     const terminal = `setTimeout(() => require('node:http').createServer((q, s) => s.end('ok')).listen(${termPort}, '127.0.0.1'), 500)`
-    const child = spawn(process.execPath, [target, '--name', 't', '--port', String(gatePort), '--upstream-port', String(termPort), '--', process.execPath, '-e', terminal], {
-      env: { PATH: process.env.PATH, ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'pw' },
-      stdio: 'ignore',
-    })
+    const child = spawn(process.execPath, [target, '--name', 't', '--port', String(gatePort), '--upstream-port', String(termPort), '--', process.execPath, '-e', terminal], { env, stdio: 'ignore' })
     try {
-      let status = 0
-      for (let i = 0; i < 100 && status === 0; i++) {
-        status = await page(gatePort).then((r) => r.status, () => 0)
-        if (status === 0) await new Promise((r) => setTimeout(r, 100))
-      }
-      expect(status).toBe(200)
+      expect(await pageWhenUp(gatePort)).toBe(200)
     } finally {
       child.kill('SIGTERM')
     }
   })
 
+  // The platform stops a container by signalling its main process, which is the gate: the terminal
+  // must hear it too, and the gate must leave with the terminal's status.
+  it.each(['SIGTERM', 'SIGINT', 'SIGHUP'])('forwards %s to the terminal and exits with its status', async (sig) => {
+    const [gatePort, termPort] = [await free(), await free()]
+    const terminal = `for (const s of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(s, () => { process.stdout.write('terminal got ' + s); process.exit(7) });`
+      + ` require('node:http').createServer((q, r) => r.end('ok')).listen(${termPort}, '127.0.0.1')`
+    const child = spawn(process.execPath, [target, '--name', 't', '--port', String(gatePort), '--upstream-port', String(termPort), '--', process.execPath, '-e', terminal], { env, stdio: ['ignore', 'pipe', 'inherit'] })
+    let out = ''
+    child.stdout.on('data', (d) => (out += d))
+    const exited = new Promise((ok) => child.on('exit', (code, signal) => ok({ code, signal })))
+    try {
+      expect(await pageWhenUp(gatePort)).toBe(200)
+      child.kill(sig)
+      const { code, signal } = await exited
+      expect(out).toContain(`terminal got ${sig}`)
+      expect({ code, signal }).toEqual({ code: 7, signal: null })
+    } finally {
+      child.kill('SIGKILL')
+    }
+  })
+
   it('exits with the terminal process status', () => {
-    const res = run(['--name', 't', '--port', '0', '--upstream-port', '1', '--', process.execPath, '-e', 'process.exit(3)'], {
-      ADMIN_USERNAME: 'admin',
-      ADMIN_PASSWORD: 'pw',
-    })
+    const res = run(['--name', 't', '--port', '0', '--upstream-port', '1', '--', process.execPath, '-e', 'process.exit(3)'], env)
     expect(res.status).toBe(3)
   })
 })

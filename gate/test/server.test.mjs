@@ -2,7 +2,7 @@
 // root `npm test` runs it. INSTA_GATE_FILE=gate/dist/insta-gate.mjs runs the same cases against the
 // built release file instead of the source.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createServer, request } from 'node:http'
 import { connect } from 'node:net'
 import { dirname, join, resolve } from 'node:path'
@@ -58,10 +58,14 @@ function call(port, path, { method = 'GET', headers = {}, body } = {}) {
 
 const page = (port, path = '/') => call(port, path, { headers: { accept: 'text/html,application/xhtml+xml' } })
 const form = (fields) => new URLSearchParams(fields).toString()
+// A header given as undefined is left out, so a case can drop the default Origin.
 const signIn = (port, fields, headers = {}) =>
   call(port, '/_insta/sign-in', {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded', origin: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}`, ...headers },
+    headers: Object.fromEntries(
+      Object.entries({ 'content-type': 'application/x-www-form-urlencoded', origin: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}`, ...headers })
+        .filter(([, v]) => v !== undefined),
+    ),
     body: form(fields),
   })
 const sessionCookie = (res) => String(res.headers['set-cookie']?.[0] ?? '').split(';')[0]
@@ -180,7 +184,11 @@ describe('signing in', () => {
 
   it('the cookie is Secure when the router says the request came over HTTPS', async () => {
     const port = await startGate()
-    const res = await signIn(port, { username: 'admin', password: 'correct horse' }, { 'x-forwarded-proto': 'https' })
+    const res = await signIn(port, { username: 'admin', password: 'correct horse' }, {
+      'x-forwarded-proto': 'https',
+      origin: `https://127.0.0.1:${port}`,
+    })
+    expect(res.status).toBe(303)
     expect(String(res.headers['set-cookie'][0])).toContain('Secure')
   })
 
@@ -196,8 +204,39 @@ describe('signing in', () => {
     const res = await signIn(port, { username: 'admin', password: 'correct horse' }, {
       origin: 'https://prod-main-claude-code-abc.compute.instacloud-edge.com',
       'x-forwarded-host': 'prod-main-claude-code-abc.compute.instacloud-edge.com',
+      'x-forwarded-proto': 'https',
     })
     expect(res.status).toBe(303)
+  })
+
+  it('an https deployment refuses an http Origin for the same host', async () => {
+    const port = await startGate()
+    const res = await signIn(port, { username: 'admin', password: 'correct horse' }, {
+      origin: 'http://prod-main-claude-code-abc.compute.instacloud-edge.com',
+      'x-forwarded-host': 'prod-main-claude-code-abc.compute.instacloud-edge.com',
+      'x-forwarded-proto': 'https',
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('a POST with neither Origin nor Sec-Fetch-Site is refused', async () => {
+    const port = await startGate()
+    const res = await signIn(port, { username: 'admin', password: 'correct horse' }, { origin: undefined })
+    expect(res.status).toBe(403)
+  })
+
+  it('without Origin, only Sec-Fetch-Site: same-origin is let through', async () => {
+    const port = await startGate()
+    const fields = { username: 'admin', password: 'correct horse' }
+    expect((await signIn(port, fields, { origin: undefined, 'sec-fetch-site': 'same-origin' })).status).toBe(303)
+    expect((await signIn(port, fields, { origin: undefined, 'sec-fetch-site': 'cross-site' })).status).toBe(403)
+    expect((await signIn(port, fields, { origin: undefined, 'sec-fetch-site': 'same-site' })).status).toBe(403)
+  })
+
+  it('an opaque Origin (null) is refused', async () => {
+    const port = await startGate()
+    const res = await signIn(port, { username: 'admin', password: 'correct horse' }, { origin: 'null' })
+    expect(res.status).toBe(403)
   })
 
   it('an oversized form is refused', async () => {
@@ -289,6 +328,43 @@ describe('as the container process', () => {
     const res = run(['--name', 't', '--', process.execPath, '-e', ''], { ADMIN_USERNAME: 'admin' })
     expect(res.status).toBe(1)
     expect(res.stderr).toContain('ADMIN_USERNAME and ADMIN_PASSWORD are required')
+  })
+
+  it('a terminal that stays up but never listens is a failed start, and is stopped with the gate', () => {
+    const started = Date.now()
+    // spawnSync waits for every holder of the inherited stdio, so a surviving child would hang this.
+    const res = run(['--name', 't', '--port', '0', '--upstream-port', '1', '--ready-timeout', '1', '--', process.execPath, '-e', 'setInterval(() => {}, 1000)'], {
+      ADMIN_USERNAME: 'admin',
+      ADMIN_PASSWORD: 'pw',
+    })
+    expect(res.status).toBe(1)
+    expect(res.stderr).toContain('the terminal did not open 127.0.0.1:1 within 1s')
+    expect(Date.now() - started).toBeLessThan(10_000)
+  })
+
+  it('starts listening once a slow terminal opens its port', async () => {
+    const free = () => new Promise((ok) => {
+      const s = createServer().listen(0, '127.0.0.1', () => {
+        const { port } = s.address()
+        s.close(() => ok(port))
+      })
+    })
+    const [gatePort, termPort] = [await free(), await free()]
+    const terminal = `setTimeout(() => require('node:http').createServer((q, s) => s.end('ok')).listen(${termPort}, '127.0.0.1'), 500)`
+    const child = spawn(process.execPath, [target, '--name', 't', '--port', String(gatePort), '--upstream-port', String(termPort), '--', process.execPath, '-e', terminal], {
+      env: { PATH: process.env.PATH, ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'pw' },
+      stdio: 'ignore',
+    })
+    try {
+      let status = 0
+      for (let i = 0; i < 100 && status === 0; i++) {
+        status = await page(gatePort).then((r) => r.status, () => 0)
+        if (status === 0) await new Promise((r) => setTimeout(r, 100))
+      }
+      expect(status).toBe(200)
+    } finally {
+      child.kill('SIGTERM')
+    }
   })
 
   it('exits with the terminal process status', () => {

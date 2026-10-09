@@ -25,7 +25,9 @@ exec node /usr/local/lib/insta-gate.mjs --name claude-code -- \
 
 `--port` (default 7681) is the routed port and `--upstream-port` (default 7682) is ttyd's. The gate
 starts the command after `--` as its child, forwards `SIGTERM`, `SIGINT` and `SIGHUP`, and exits
-with the child's status.
+with the child's status. It opens the routed port only once the child answers on the upstream port.
+If that takes longer than `--ready-timeout` seconds (default 30), it stops the child and exits 1, so
+the deploy fails instead of reporting healthy.
 
 ## Build
 

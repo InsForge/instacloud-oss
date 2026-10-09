@@ -103,7 +103,19 @@ export function createGate({
     return userOk && passOk
   }
 
-  const https = (req) => req.headers['x-forwarded-proto'] === 'https' || Boolean(req.socket.encrypted)
+  // The origin the browser addressed. The platform router and the self-hosted one both set the
+  // X-Forwarded pair; a comma list keeps its first, outermost value.
+  const first = (v) => (v === undefined ? undefined : String(v).split(',')[0].trim())
+  const scheme = (req) => first(req.headers['x-forwarded-proto']) ?? (req.socket.encrypted ? 'https' : 'http')
+  const https = (req) => scheme(req) === 'https'
+  const servedOrigin = (req) => {
+    const host = first(req.headers['x-forwarded-host']) ?? req.headers.host
+    try {
+      return host ? new URL(`${scheme(req)}://${host}`).origin : undefined
+    } catch {
+      return undefined
+    }
+  }
   const cookieHeader = (req, value, maxAge) =>
     `${COOKIE}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${https(req) ? '; Secure' : ''}`
 
@@ -140,18 +152,19 @@ export function createGate({
     res.end(body)
   }
 
+  // A sign-in must prove it came from this page: the whole Origin (scheme, host, port) matches the
+  // one served, or with no Origin, the browser says same-origin. A request with neither is refused.
   const sameOrigin = (req) => {
     const origin = req.headers.origin
-    if (origin) {
-      const host = req.headers['x-forwarded-host'] ?? req.headers.host
+    if (origin !== undefined) {
+      const want = servedOrigin(req)
       try {
-        return new URL(origin).host === host
+        return want !== undefined && new URL(origin).origin === want
       } catch {
         return false
       }
     }
-    const site = req.headers['sec-fetch-site']
-    return site === undefined || site === 'same-origin'
+    return req.headers['sec-fetch-site'] === 'same-origin'
   }
 
   const signIn = (req, res) => {
@@ -255,7 +268,7 @@ export function createGate({
 }
 
 function parseArgs(argv) {
-  const opts = { name: 'terminal', port: 7681, upstreamPort: 7682, command: [] }
+  const opts = { name: 'terminal', port: 7681, upstreamPort: 7682, readyTimeout: 30, command: [] }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--') {
@@ -265,6 +278,7 @@ function parseArgs(argv) {
     if (arg === '--name') opts.name = argv[++i]
     else if (arg === '--port') opts.port = Number(argv[++i])
     else if (arg === '--upstream-port') opts.upstreamPort = Number(argv[++i])
+    else if (arg === '--ready-timeout') opts.readyTimeout = Number(argv[++i])
     else throw new Error(`unknown argument: ${arg}`)
   }
   return opts
@@ -287,7 +301,7 @@ const waitForPort = (port, host, deadline) =>
     attempt()
   })
 
-/** `insta-gate --name claude-code [--port 7681] [--upstream-port 7682] -- <terminal command>` */
+/** `insta-gate --name claude-code [--port 7681] [--upstream-port 7682] [--ready-timeout 30] -- <terminal command>` */
 export async function main(argv = process.argv.slice(2), env = process.env) {
   const opts = parseArgs(argv)
   if (!env.ADMIN_USERNAME || !env.ADMIN_PASSWORD) {
@@ -317,8 +331,13 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     server.close()
     process.exit(code ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1))
   })
-  // Listen once the terminal answers, so the first sign-in never lands on a 502.
-  await waitForPort(opts.upstreamPort, '127.0.0.1', Date.now() + 10_000)
+  // Listen only once the terminal answers. A terminal that never does is a failed start: answering
+  // the health check anyway would report a deploy healthy whose every signed-in request is a 502.
+  if (!(await waitForPort(opts.upstreamPort, '127.0.0.1', Date.now() + opts.readyTimeout * 1000))) {
+    console.error(`insta-gate: the terminal did not open 127.0.0.1:${opts.upstreamPort} within ${opts.readyTimeout}s`)
+    child.kill('SIGTERM')
+    process.exit(1)
+  }
   server.listen(opts.port, '0.0.0.0', () => {
     console.log(`insta-gate: ${opts.name} on :${opts.port}, terminal on 127.0.0.1:${opts.upstreamPort}`)
   })

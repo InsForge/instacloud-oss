@@ -74,6 +74,9 @@ this way.
 
 - The gate is the container's main process. It starts ttyd as its child, forwards `SIGTERM` and
   `SIGINT`, and exits with ttyd's status if ttyd exits, so the platform sees a crash as a crash.
+- The gate opens the routed port only once ttyd answers on loopback. If ttyd stays up without
+  listening for 30 seconds, the gate stops it and exits 1: a failed start, not a deploy that reports
+  healthy while every signed-in request gets a 502.
 - ttyd binds to loopback only and runs without `-c`. The gate is the only way in.
 - The entrypoint keeps its "both variables are required" check. The 186-byte credential check goes:
   it existed because ttyd's `-c` silently stops matching past 186 bytes, and ttyd no longer sees the

@@ -12,7 +12,7 @@ const catalog = [
 ]
 
 describe('templateCategoryLabel', () => {
-  it("uses the console's labels, and capitalises anything else", () => {
+  it("uses the platform's labels, and capitalises anything else", () => {
     expect(templateCategoryLabel('ai-agent')).toBe('AI Agent')
     expect(templateCategoryLabel('llm')).toBe('LLM')
     expect(templateCategoryLabel('automation')).toBe('Automation')
@@ -33,7 +33,7 @@ describe('templateCategoryLabel', () => {
 })
 
 describe('pickerView', () => {
-  it("lists the categories in the console's order, others after, with counts", () => {
+  it("lists the categories in the platform's order, others after, with counts", () => {
     const v = pickerView(catalog, '', 'all')
     // backend and database are in TEMPLATE_CATEGORY_ORDER, so they come before game-servers, which
     // is not. Without them on that list both would sort in with it and database would follow it.

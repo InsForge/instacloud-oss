@@ -2,12 +2,20 @@
 # @open-slide/core needs node ^20.19 || >=22.12.
 FROM node:24-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03
 
-# nginx: the auth gate and the only thing that faces the network, because the open-slide dev
-# server ships no authentication of its own and its API writes files on request. openssl hashes
-# the password for nginx at boot.
+# curl fetches the sign-in gate below.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        bash ca-certificates nginx-light openssl \
+        bash ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
+
+# The InstaCloud sign-in page, and the only thing that faces the network, because the open-slide
+# dev server ships no authentication of its own and its API writes files on request (gate/ in this
+# repository, released as gate-v*). Plain JavaScript on Node built-ins, so one checksum covers both
+# architectures.
+ARG INSTA_GATE_VERSION=0.1.1
+ARG INSTA_GATE_SHA256=75a11d24a0b60c277593de699505505e4d641d75077b1a32048318ba38a73966
+RUN curl -fsSL "https://github.com/InsForge/instacloud-oss/releases/download/gate-v${INSTA_GATE_VERSION}/insta-gate.mjs" \
+        -o /usr/local/lib/insta-gate.mjs \
+    && echo "${INSTA_GATE_SHA256}  /usr/local/lib/insta-gate.mjs" | sha256sum -c -
 
 WORKDIR /opt/open-slide
 
@@ -29,25 +37,13 @@ RUN npm install --save-exact @open-slide/core@${OPEN_SLIDE_VERSION} \
     && ./node_modules/.bin/open-slide --version
 
 # The scaffold's config is empty. This one points the three content directories at the volume and
-# keeps the server on loopback behind nginx.
+# keeps the server on loopback behind the gate.
 COPY open-slide.config.ts ./open-slide.config.ts
 
 # What a first boot copies onto an empty volume: the scaffolded deck, its folder manifest, and the
 # two empty trees. They move out of the workspace because the config now reads them from /data,
 # and a directory left here would be shadowed by the mount anyway.
 RUN mkdir -p seed && mv slides themes assets seed/
-
-# A template, not the running config: entrypoint.sh substitutes the gate-cookie token at boot.
-# Checked here with a stand-in of the REAL length, because what breaks depends on that length: a
-# 64-character map key overflows the default map hash bucket and nginx then refuses to start.
-# Debian's stock config is removed so a render that did not happen cannot fall back to no gate.
-COPY nginx.conf /etc/nginx/nginx.conf.template
-RUN mkdir -p /run/open-slide /var/log/nginx \
-    && stand_in=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-    && sed "s|__OPEN_SLIDE_GATE_TOKEN__|$stand_in|g" /etc/nginx/nginx.conf.template \
-        > /tmp/nginx.check.conf \
-    && nginx -t -c /tmp/nginx.check.conf \
-    && rm /tmp/nginx.check.conf /etc/nginx/nginx.conf
 
 # The dev server compares the workspace's copy of the built-in agent skills against core's on
 # every start and, with no TTY to ask, writes a notice to stderr. The image pins both halves, so

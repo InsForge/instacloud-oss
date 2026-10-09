@@ -1,8 +1,7 @@
 # Base pinned by digest (multi-arch OCI index: linux/amd64 + linux/arm64): tags float.
 FROM node:24-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03
 
-# nginx: the auth gate and the only thing that faces the network, because the harness web UI
-# ships no authentication of its own. openssl hashes the password for nginx at boot.
+# nginx: behind the sign-in gate below, on loopback, normalizing Host and Origin for the harness.
 # bubblewrap is load-bearing, not optional: the harness runs every shell command through a
 # sandbox and falls back to failing closed when it has no runner. Its Landlock runner probes
 # "unusable" on Fly's kernel (verified in a deployed container on 6.12.91-fly), which leaves
@@ -10,8 +9,17 @@ FROM node:24-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba32756
 # git, curl and procps are for the agent's own shell work. ripgrep is NOT installed: the
 # harness bundles its own through @vscode/ripgrep.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        bash git ca-certificates curl procps nginx-light openssl bubblewrap \
+        bash git ca-certificates curl procps nginx-light bubblewrap \
     && rm -rf /var/lib/apt/lists/*
+
+# The InstaCloud sign-in page, and the only thing that faces the network, because the harness web
+# UI ships no authentication of its own (gate/ in this repository, released as gate-v*). Plain
+# JavaScript on Node built-ins, so one checksum covers both architectures.
+ARG INSTA_GATE_VERSION=0.1.1
+ARG INSTA_GATE_SHA256=75a11d24a0b60c277593de699505505e4d641d75077b1a32048318ba38a73966
+RUN curl -fsSL "https://github.com/InsForge/instacloud-oss/releases/download/gate-v${INSTA_GATE_VERSION}/insta-gate.mjs" \
+        -o /usr/local/lib/insta-gate.mjs \
+    && echo "${INSTA_GATE_SHA256}  /usr/local/lib/insta-gate.mjs" | sha256sum -c -
 
 # pnpm is how `dsh plugin add` installs plugins into a profile, which is the whole point of a
 # harness whose tagline is "Everything is a Plugin". 10 or newer: the profile pnpm-workspace.yaml
@@ -21,7 +29,13 @@ RUN npm install -g pnpm@${PNPM_VERSION}
 
 # upstream pin: keep in sync with insta.template.yaml (upstream.pinned)
 ARG DSH_VERSION=0.1.1-rc.2
-RUN npm install -g @deepseek-ai/dsh@${DSH_VERSION}
+# The release candidate's transitive ranges float, and they moved under it: the @deepseek-ai/cordis
+# releases of 2026-09-22 (4.0.4 and cordis-plugin-hmr 1.0.19 measured) make `dsh web` exit at boot
+# with "user patch-layer watching requires the Cordis HMR service". --before resolves the tree as
+# npm saw it when the 0.4.2 image was built, the last one tested. Move it with DSH_VERSION, then
+# re-run gate-assertions.mjs.
+ARG DSH_NPM_BEFORE=2026-09-10T17:41:34Z
+RUN npm install -g --before="${DSH_NPM_BEFORE}" @deepseek-ai/dsh@${DSH_VERSION}
 
 # Without this the Settings -> Models page is dead behind a public hostname, from the browser side
 # rather than the proxy. dsh-client-connection reads `isLoopback` off the PAGE's location.hostname,
@@ -74,17 +88,10 @@ RUN rg_bin="$(find "$(npm root -g)" -type f -path '*@vscode/ripgrep-*/bin/rg' -p
     && test -n "$rg_bin" && test -x "$rg_bin" \
     && echo "bundled ripgrep: $rg_bin"
 
-# A template, not the running config: entrypoint.sh substitutes the gate-cookie token at boot.
-# Checked against a stand-in of the REAL length, because what breaks depends on that length: a
-# 64-character map key overflows the default map hash bucket and nginx then refuses to start.
-# Debian's stock config is removed so a render that did not happen cannot fall back to no gate.
-COPY nginx.conf /etc/nginx/nginx.conf.template
-RUN mkdir -p /run/dsh /tmp/nginx \
-    && stand_in=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-    && sed "s|__DSH_GATE_TOKEN__|$stand_in|g" /etc/nginx/nginx.conf.template \
-        > /tmp/nginx.check.conf \
-    && nginx -t -c /tmp/nginx.check.conf \
-    && rm /tmp/nginx.check.conf /etc/nginx/nginx.conf
+# Replaces Debian's stock config, and checked here, so a config nginx will not load fails the build
+# rather than a deploy.
+COPY nginx.conf /etc/nginx/nginx.conf
+RUN mkdir -p /run/dsh /tmp/nginx && nginx -t
 
 ENV HOME=/data/home
 ENV DSH_HOME=/data/dsh

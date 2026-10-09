@@ -10,12 +10,12 @@ const openSlideConfig: OpenSlideConfig = {
   themesDir: '/data/themes',
   assetsDir: '/data/assets',
 
-  // nginx owns the routed port and reaches this over loopback.
+  // The sign-in gate owns the routed port and reaches this over loopback.
   port: 5173,
 
   // The dev server sees the deployment's public hostname in `Host`, which Vite's own
-  // DNS-rebinding guard refuses by default. Nothing but nginx can reach this port, and nginx
-  // requires the password first, so the guard has nothing left to protect.
+  // DNS-rebinding guard refuses by default. Nothing but the gate can reach this port, and the gate
+  // requires a sign-in first, so the guard has nothing left to protect.
   allowedHosts: true,
 };
 

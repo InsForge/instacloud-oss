@@ -22,6 +22,10 @@ const close = (server) =>
 
 // The terminal stand-in: echoes what reached it, and accepts a WebSocket-shaped upgrade.
 const upstream = createServer((req, res) => {
+  // /own-headers stands for an app that already sets its own framing and CSP headers, /cors for one
+  // that answers with CORS.
+  if (req.url === '/own-headers') res.setHeader('x-frame-options', 'DENY').setHeader('content-security-policy', "default-src 'self'")
+  if (req.url === '/cors') res.setHeader('access-control-allow-origin', '*').setHeader('access-control-allow-credentials', 'true')
   res.writeHead(200, { 'content-type': 'application/json' })
   res.end(JSON.stringify({ method: req.method, url: req.url, cookie: req.headers.cookie ?? null }))
 })
@@ -70,10 +74,11 @@ const signIn = (port, fields, headers = {}) =>
   })
 const sessionCookie = (res) => String(res.headers['set-cookie']?.[0] ?? '').split(';')[0]
 
-function rawUpgrade(port, cookie) {
+// origin: undefined sends no Origin (not a browser); a string sends that Origin.
+function rawUpgrade(port, cookie, origin) {
   return new Promise((ok, fail) => {
     const socket = connect(port, '127.0.0.1', () => {
-      socket.write(`GET /ws HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n${cookie ? `Cookie: ${cookie}\r\n` : ''}\r\n`)
+      socket.write(`GET /ws HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n${cookie ? `Cookie: ${cookie}\r\n` : ''}${origin ? `Origin: ${origin}\r\n` : ''}\r\n`)
     })
     let text = ''
     socket.on('data', (d) => {
@@ -293,6 +298,108 @@ describe('the sign-in rate limit', () => {
   })
 })
 
+// Every *.compute.instacloud-edge.com service is one site, so a browser sends the session cookie
+// from another tenant's page too. The gate must refuse what such a page could do as the visitor.
+describe('requests from another page, with the visitor signed in', () => {
+  const sibling = 'https://prod-main-evil-000000-attacker.compute.instacloud-edge.com'
+  const signedInCookie = async (port) =>
+    sessionCookie(await signIn(port, { username: 'admin', password: 'correct horse' }))
+
+  it("a WebSocket upgrade from another tenant's page is refused: it would be the terminal", async () => {
+    const port = await startGate()
+    const cookie = await signedInCookie(port)
+    expect(await rawUpgrade(port, cookie, sibling)).toMatch(/^HTTP\/1\.1 403/)
+    expect(await rawUpgrade(port, cookie, 'https://evil.example')).toMatch(/^HTTP\/1\.1 403/)
+  })
+
+  it('the same page, and a client that is not a browser, still get the WebSocket', async () => {
+    const port = await startGate()
+    const cookie = await signedInCookie(port)
+    expect(await rawUpgrade(port, cookie, `http://127.0.0.1:${port}`)).toMatch(/^HTTP\/1\.1 101/)
+    expect(await rawUpgrade(port, cookie)).toMatch(/^HTTP\/1\.1 101/)
+  })
+
+  it("a state-changing request from another page is refused, the page's own goes through", async () => {
+    const port = await startGate()
+    const cookie = await signedInCookie(port)
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      expect((await call(port, '/api/x', { method, headers: { cookie, origin: sibling } })).status).toBe(403)
+      expect((await call(port, '/api/x', { method, headers: { cookie, origin: `http://127.0.0.1:${port}` } })).status).toBe(200)
+    }
+    const byFetchMetadata = await call(port, '/api/x', { method: 'POST', headers: { cookie, 'sec-fetch-site': 'same-site' } })
+    expect(byFetchMetadata.status).toBe(403)
+  })
+
+  it('reads stay open, since the browser does not show them to the other page', async () => {
+    const port = await startGate()
+    const cookie = await signedInCookie(port)
+    expect((await call(port, '/token', { headers: { cookie, origin: sibling } })).status).toBe(200)
+  })
+
+  it("an app's CORS headers never reach another page, so its reads stay hidden from it", async () => {
+    const port = await startGate()
+    const cookie = await signedInCookie(port)
+    const other = await call(port, '/cors', { headers: { cookie, origin: sibling } })
+    expect(other.headers['access-control-allow-origin']).toBeUndefined()
+    expect(other.headers['access-control-allow-credentials']).toBeUndefined()
+    const own = await call(port, '/cors', { headers: { cookie, origin: `http://127.0.0.1:${port}` } })
+    expect(own.headers['access-control-allow-origin']).toBe('*')
+  })
+
+  it('a state change with no provenance header, or typed by the visitor, still goes through', async () => {
+    const port = await startGate()
+    const cookie = await signedInCookie(port)
+    expect((await call(port, '/api/x', { method: 'POST', headers: { cookie } })).status).toBe(200)
+    expect((await call(port, '/api/x', { method: 'POST', headers: { cookie, 'sec-fetch-site': 'none' } })).status).toBe(200)
+  })
+
+  it("another page cannot sign the visitor out, with an <img> or a POST", async () => {
+    const port = await startGate()
+    for (const headers of [{ 'sec-fetch-site': 'same-site' }, { origin: sibling }]) {
+      for (const method of ['GET', 'POST']) {
+        const res = await call(port, '/_insta/sign-out', { method, headers })
+        expect(res.status).toBe(403)
+        expect(res.headers['set-cookie']).toBeUndefined()
+      }
+    }
+    const typed = await call(port, '/_insta/sign-out', { headers: { 'sec-fetch-site': 'none' } })
+    expect(typed.status).toBe(303)
+  })
+
+  it('nothing behind the gate can be framed by another page, and an app keeps its own headers', async () => {
+    const port = await startGate()
+    const cookie = await signedInCookie(port)
+    const plain = await call(port, '/token', { headers: { cookie } })
+    expect(plain.headers['x-frame-options']).toBe('SAMEORIGIN')
+    expect(plain.headers['content-security-policy']).toBe("frame-ancestors 'self'")
+    const own = await call(port, '/own-headers', { headers: { cookie } })
+    expect(own.headers['x-frame-options']).toBe('DENY')
+    expect(own.headers['content-security-policy']).toBe("default-src 'self', frame-ancestors 'self'")
+  })
+})
+
+describe('the session cookie over https', () => {
+  const https = { 'x-forwarded-proto': 'https' }
+  const signInHttps = (port) =>
+    signIn(port, { username: 'admin', password: 'correct horse' }, { ...https, origin: `https://127.0.0.1:${port}` })
+
+  it('is named __Host-, so another subdomain cannot set one for this service', async () => {
+    const port = await startGate()
+    const cookie = String((await signInHttps(port)).headers['set-cookie'][0])
+    expect(cookie).toMatch(/^__Host-insta_gate=\d+\.[\w-]+; Path=\/;/)
+    expect(cookie).toContain('Secure')
+    expect(cookie).not.toMatch(/Domain=/i)
+  })
+
+  it('only the __Host- name counts over https, and a tossed plain cookie beside it is ignored', async () => {
+    const port = await startGate()
+    const hostCookie = sessionCookie(await signInHttps(port))
+    const value = hostCookie.slice(hostCookie.indexOf('=') + 1)
+    expect((await call(port, '/token', { headers: { ...https, cookie: `insta_gate=${value}` } })).status).toBe(401)
+    expect((await call(port, '/token', { headers: { ...https, cookie: `insta_gate=tossed; ${hostCookie}` } })).status).toBe(200)
+  })
+})
+
 describe('with a session', () => {
   it('requests reach the terminal unchanged, minus the gate cookie', async () => {
     const port = await startGate()
@@ -423,6 +530,13 @@ describe('as the container process', () => {
     } finally {
       child.kill('SIGKILL')
     }
+  })
+
+  it('the terminal, and an agent in it, does not inherit the credentials', () => {
+    const show = 'console.log(JSON.stringify([process.env.ADMIN_USERNAME ?? null, process.env.ADMIN_PASSWORD ?? null, process.env.KEEP ?? null]))'
+    const res = run(['--name', 't', '--port', '0', '--upstream-port', '1', '--', process.execPath, '-e', show], { ...env, KEEP: 'kept' })
+    expect(res.status).toBe(0)
+    expect(res.stdout).toContain('[null,null,"kept"]')
   })
 
   it('exits with the terminal process status', () => {

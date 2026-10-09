@@ -26,6 +26,14 @@ RUN arch="$(dpkg --print-architecture)"; \
     && echo "${patched_sha}  /usr/local/bin/ttyd" | sha256sum -c - \
     && chmod +x /usr/local/bin/ttyd
 
+# The InstaCloud sign-in page in front of ttyd (gate/ in this repository, released as gate-v*).
+# Plain JavaScript on Node built-ins, so one checksum covers both architectures.
+ARG INSTA_GATE_VERSION=0.1.1
+ARG INSTA_GATE_SHA256=75a11d24a0b60c277593de699505505e4d641d75077b1a32048318ba38a73966
+RUN curl -fsSL "https://github.com/InsForge/instacloud-oss/releases/download/gate-v${INSTA_GATE_VERSION}/insta-gate.mjs" \
+        -o /usr/local/lib/insta-gate.mjs \
+    && echo "${INSTA_GATE_SHA256}  /usr/local/lib/insta-gate.mjs" | sha256sum -c -
+
 # upstream pin: keep in sync with insta.template.yaml (upstream.pinned)
 RUN npm install -g @openai/codex@0.148.0
 

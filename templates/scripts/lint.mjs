@@ -42,6 +42,8 @@ for (const dir of dirs) {
   for (const f of ["code", "version", "maintainer"]) if (!m?.[f]) err(dir, `missing ${f}`);
   if (m?.version && !SEMVER_RE.test(String(m.version))) err(dir, `version '${m.version}' is not semver`);
   if (!m?.meta?.category) err(dir, "missing meta.category");
+  // Whether the platform lists the category needs the network, so check-categories asks that.
+  if (m?.meta?.category === "other") err(dir, "meta.category: other is for community templates, propose a category instead (AGENTS.md)");
   if (!m?.upstream?.pinned) err(dir, "missing upstream.pinned");
 
   // The version is written twice when we build the image ourselves, and the two must agree. Drafts

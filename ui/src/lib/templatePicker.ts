@@ -1,21 +1,21 @@
 // The Deploy a Template picker's view (insta-frontend console/templates/template-picker.tsx, template-category-rail.tsx,
-// lib/api/templates.ts `categoryLabel`, `TEMPLATE_CATEGORIES`). Pure so the root vitest covers it.
+// lib/api/templates.ts `categoryLabel`). Pure so the root vitest covers it.
 //
 // Two reductions in the console's order: the search first, then the category, so the rail counts what the SEARCH
 // found rather than what the catalog holds. The active category stays on the rail even when the search left it with
 // nothing, so a filter that is still applied never disappears from the screen.
 
 import { ALL_CATEGORIES, filterTemplates, type CatalogItem } from './catalog'
+// A snapshot of the platform's GET /template-categories, since this UI runs self-hosted and cannot read it. CI fails
+// when the two differ (templates/scripts/check-categories.mjs), and `npm run check-categories -- --write` refreshes it.
+import snapshot from './template-categories.json'
 
-/** The console's category order. A category it does not know follows, alphabetically. */
-export const TEMPLATE_CATEGORY_ORDER = ['ai-agent', 'llm', 'automation', 'backend', 'database', 'crm', 'analytics', 'dev-tools'] as const
+/** The platform's category order. A category it does not list follows, alphabetically. */
+export const TEMPLATE_CATEGORY_ORDER: readonly string[] = snapshot.categories.map((c) => c.slug)
 
-const LABELS: Record<string, string> = {
-  'ai-agent': 'AI Agent', llm: 'LLM', automation: 'Automation', backend: 'Backend', database: 'Database', crm: 'CRM',
-  analytics: 'Analytics', 'dev-tools': 'Dev Tools',
-}
+const LABELS: Record<string, string> = Object.fromEntries(snapshot.categories.map((c) => [c.slug, c.label]))
 
-/** The console's label for each of its categories; any other category reads as its words, first letter capitalised. */
+/** The platform's label for each of its categories; any other category reads as its words, first letter capitalised. */
 export function templateCategoryLabel(category: string): string {
   if (LABELS[category]) return LABELS[category]
   const words = category.replace(/-/g, ' ').trim()
@@ -37,7 +37,7 @@ export function pickerView<T extends CatalogItem>(items: readonly T[], query: st
   const byQuery = filterTemplates([...items], query)
   const present = new Set(byQuery.map((t) => t.category ?? '').filter(Boolean))
   if (active !== ALL_CATEGORIES) present.add(active)
-  const order = TEMPLATE_CATEGORY_ORDER as readonly string[]
+  const order = TEMPLATE_CATEGORY_ORDER
   const keys = [...order.filter((c) => present.has(c)), ...[...present].filter((c) => !order.includes(c)).sort()]
   const categories = keys.map((key) => ({
     key, label: templateCategoryLabel(key), count: byQuery.filter((t) => t.category === key).length,

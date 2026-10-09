@@ -27,5 +27,6 @@ export default tseslint.config(
   },
   // ui/ has its own toolchain (Vite + tsc in `npm --prefix ui run build`); linting it here
   // would need the React plugin set and trips over ui/dist locally.
-  { ignores: ['dist/', 'node_modules/', 'ui/'] },
+  // gate/dist/ is the built release file (gate/README.md), generated, never edited.
+  { ignores: ['dist/', 'node_modules/', 'ui/', 'gate/dist/'] },
 )

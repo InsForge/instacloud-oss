@@ -37,7 +37,7 @@ RUN curl -fsSL "https://github.com/InsForge/instacloud-oss/releases/download/gat
     && echo "${INSTA_GATE_SHA256}  /usr/local/lib/insta-gate.mjs" | sha256sum -c -
 
 # upstream pin: keep in sync with insta.template.yaml (upstream.pinned)
-RUN npm install -g @anthropic-ai/claude-code@2.1.235
+RUN npm install -g @anthropic-ai/claude-code@2.1.296
 
 ENV HOME=/data/home
 # ~/.local/bin is on the volume. /.insta/tools/bin is the platform toolbox (gh), when mounted.

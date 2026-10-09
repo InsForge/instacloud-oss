@@ -72,10 +72,14 @@ const card = h('main', { className: 'flex w-full max-w-[360px] flex-col border b
       ...mark('instacloud-icon.svg', 'instacloud-icon-inverse.svg', 'size-3.5'),
       'InstaCloud')))
 
-const errorHtml = renderToStaticMarkup(
+const alert = (text) => renderToStaticMarkup(
   h('p', { role: 'alert', className: 'flex items-center gap-1.5 text-[13px] leading-[18px] text-destructive' },
     h(CircleAlert, { className: 'size-4 shrink-0', 'aria-hidden': true }),
-    'Incorrect username or password'))
+    text))
+const errors = {
+  incorrect: alert('Incorrect username or password'),
+  throttled: alert('Too many sign-in attempts. Try again in a few seconds.'),
+}
 
 const page = '<!doctype html>' + renderToStaticMarkup(
   h('html', { lang: 'en' },
@@ -91,7 +95,7 @@ const page = '<!doctype html>' + renderToStaticMarkup(
 
 // Tailwind scans only the rendered markup (its working directory) plus the kit's own sources.
 mkdirSync(scratch, { recursive: true })
-writeFileSync(join(scratch, 'page.html'), page + errorHtml)
+writeFileSync(join(scratch, 'page.html'), page + Object.values(errors).join(''))
 const cssOut = join(scratch, 'page.css')
 execFileSync(tailwind, ['--input', join(gateDir, 'page', 'entry.css'), '--output', cssOut, '--minify', '--cwd', scratch], { stdio: 'inherit' })
 
@@ -102,7 +106,7 @@ const css = readFileSync(cssOut, 'utf8').replace(/@font-face\{[^}]*\}/g, (block)
 
 const built = {
   page: page.replace('__INSTA_CSS__', css),
-  errorHtml,
+  errors,
   scriptHashes: [`sha256-${createHash('sha256').update(SCRIPT).digest('base64')}`],
 }
 

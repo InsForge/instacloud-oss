@@ -32,6 +32,7 @@ the deploy fails instead of reporting healthy.
 ## Build
 
 ```bash
+npm ci                  # the repository's pinned Vitest
 npm --prefix ui ci      # the page is rendered from ui/'s @insforge/ui, React and console theme
 npm --prefix gate ci
 npm --prefix gate run build    # writes gate/dist/insta-gate.mjs

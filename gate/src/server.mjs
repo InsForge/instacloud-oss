@@ -29,7 +29,10 @@ const FALLBACK = {
     + `<label for="username">Username</label><input id="username" name="username" value="${USER_MARK}" autocomplete="username">`
     + '<label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password">'
     + '<button type="submit">Sign In</button></form></body></html>',
-  errorHtml: '<p role="alert">Incorrect username or password</p>',
+  errors: {
+    incorrect: '<p role="alert">Incorrect username or password</p>',
+    throttled: '<p role="alert">Too many sign-in attempts. Try again in a few seconds.</p>',
+  },
   scriptHashes: [],
 }
 
@@ -71,6 +74,8 @@ export function createGate({
   upstreamPort,
   sessionDays = 30,
   failDelayMs = 1000,
+  signInBurst = 10,
+  signInPerSecond = 1,
   now = () => Date.now(),
   built = BUILT ?? FALLBACK,
 }) {
@@ -97,6 +102,22 @@ export function createGate({
     return got.length === want.length && timingSafeEqual(got, want)
   }
   const signedIn = (req) => valid(parseCookies(req.headers.cookie)[COOKIE])
+  // One bucket for every sign-in, taken BEFORE the credentials are compared: a delay on failures
+  // alone does not cap guessing, since parallel attempts each wait on their own and a right guess
+  // answers at once. Global rather than per client: behind the router, the address the gate sees is
+  // a shared proxy's, and the forwarded chain is the client's to write.
+  let tokens = signInBurst
+  let refilledAt = now()
+  const takeSignInToken = () => {
+    const t = now()
+    tokens = Math.min(signInBurst, tokens + ((t - refilledAt) / 1000) * signInPerSecond)
+    refilledAt = t
+    if (tokens < 1) return false
+    tokens -= 1
+    return true
+  }
+  const retryAfter = () => Math.max(1, Math.ceil((1 - tokens) / signInPerSecond))
+
   const credentialsMatch = (u, p) => {
     const userOk = timingSafeEqual(digest(u), wantUser)
     const passOk = timingSafeEqual(digest(p), wantPass)
@@ -136,11 +157,12 @@ export function createGate({
       .replaceAll(NAME_MARK, escapeHtml(name))
       .replaceAll(NEXT_MARK, escapeHtml(next))
       .replaceAll(USER_MARK, escapeHtml(user))
-      .replace(ERROR_MARK, error ? built.errorHtml : '')
+      .replace(ERROR_MARK, error ? built.errors[error] : '')
 
-  const sendPage = (res, status, next, error, user) => {
+  const sendPage = (res, status, next, error, user, extraHeaders = {}) => {
     const body = renderPage(next, error, user)
     res.writeHead(status, {
+      ...extraHeaders,
       'content-type': 'text/html; charset=utf-8',
       'content-length': Buffer.byteLength(body),
       'cache-control': 'no-store',
@@ -188,6 +210,10 @@ export function createGate({
       const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'))
       const next = safeNext(form.get('next'))
       const user = form.get('username') ?? ''
+      if (!takeSignInToken()) {
+        sendPage(res, 429, next, 'throttled', user, { 'retry-after': String(retryAfter()) })
+        return
+      }
       if (credentialsMatch(user, form.get('password') ?? '')) {
         res.writeHead(303, {
           location: next,
@@ -196,7 +222,7 @@ export function createGate({
         }).end()
         return
       }
-      setTimeout(() => sendPage(res, 401, next, true, user), failDelayMs)
+      setTimeout(() => sendPage(res, 401, next, 'incorrect', user), failDelayMs)
     })
   }
 

@@ -256,6 +256,43 @@ describe('signing in', () => {
   })
 })
 
+describe('the sign-in rate limit', () => {
+  const wrong = { username: 'admin', password: 'wrong' }
+  const right = { username: 'admin', password: 'correct horse' }
+
+  it('past the burst, even the right password gets a 429, so nothing was compared', async () => {
+    const port = await startGate({ signInBurst: 3, signInPerSecond: 0.001 })
+    for (let i = 0; i < 3; i++) expect((await signIn(port, wrong)).status).toBe(401)
+    const res = await signIn(port, right)
+    expect(res.status).toBe(429)
+    expect(res.headers['set-cookie']).toBeUndefined()
+    expect(Number(res.headers['retry-after'])).toBeGreaterThanOrEqual(1)
+    expect(res.body).toContain('Too many sign-in attempts')
+  })
+
+  it('parallel guesses count too: the ones past the burst are refused at once', async () => {
+    const port = await startGate({ signInBurst: 3, signInPerSecond: 0.001 })
+    const statuses = (await Promise.all(Array.from({ length: 8 }, () => signIn(port, wrong)))).map((r) => r.status)
+    expect(statuses.filter((s) => s === 401)).toHaveLength(3)
+    expect(statuses.filter((s) => s === 429)).toHaveLength(5)
+  })
+
+  it('the bucket refills with time', async () => {
+    let t = Date.now()
+    const port = await startGate({ signInBurst: 1, signInPerSecond: 1, now: () => t })
+    expect((await signIn(port, wrong)).status).toBe(401)
+    expect((await signIn(port, right)).status).toBe(429)
+    t += 1000
+    expect((await signIn(port, right)).status).toBe(303)
+  })
+
+  it('an off-origin POST is refused without spending the bucket', async () => {
+    const port = await startGate({ signInBurst: 1, signInPerSecond: 0.001 })
+    expect((await signIn(port, right, { origin: 'https://evil.example' })).status).toBe(403)
+    expect((await signIn(port, right)).status).toBe(303)
+  })
+})
+
 describe('with a session', () => {
   it('requests reach the terminal unchanged, minus the gate cookie', async () => {
     const port = await startGate()

@@ -1,6 +1,7 @@
 # ttyd login gate: an InstaCloud sign-in page for the browser terminal templates
 
-Status: approved direction (Carmen, 2026-10-08), not yet built.
+Status: approved direction (Carmen, 2026-10-08). The gate and its release workflow are built
+(`gate/`, `.github/workflows/gate.yml`). The three templates adopt it in a follow-up pull request.
 
 ## What
 
@@ -35,6 +36,7 @@ Out of scope: every other template, and a platform-level password gate in front 
 |---|---|
 | A browser page load (`GET`, `Accept: text/html`) with no valid session | `200`, the sign-in page |
 | Any other request with no valid session, including ttyd's `/token` and the WebSocket upgrade | `401`, empty body |
+| `POST /_insta/sign-in` past the sign-in rate limit | `429` with `Retry-After`, the sign-in page with "Too many sign-in attempts", credentials not compared |
 | `POST /_insta/sign-in` with the wrong username or password | `401`, the sign-in page with the error and the username still filled in, after a one second delay |
 | `POST /_insta/sign-in` with the right ones | `303` to the page the visitor asked for, and a session cookie |
 | Anything with a valid session | proxied to ttyd unchanged, WebSocket included |
@@ -199,5 +201,11 @@ would make an upgrade change how people sign in.
 prompt and the reconnect is refused with a 401. Reloading the page shows the sign-in page. Changing
 ttyd's own front end to do that automatically is out of scope.
 
-**Is there brute-force protection?** A one second delay on every failed attempt. There is no lockout,
-which would let anyone lock the owner out. Passwords are chosen by the deployer and required.
+**Is there brute-force protection?** Yes: one rate limit for every sign-in, taken before the
+credentials are compared. A burst of 10 attempts, then 1 per second, and past it a `429`. A delay on
+failures alone would not cap guessing, since parallel attempts each wait on their own and a right
+guess answers at once. The limit is global, not per client, because behind the router the address
+the gate sees belongs to a shared proxy and the forwarded chain is the client's to write. The cost:
+while someone floods the sign-in, new sign-ins (the owner's too) are refused, and browsers already
+signed in keep working for their 30 days. There is no lockout. Failed attempts still wait one
+second. Passwords are chosen by the deployer and required.

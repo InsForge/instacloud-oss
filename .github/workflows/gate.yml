@@ -7,10 +7,15 @@ name: gate
 # listens on v* tags, which gate-v* does not match.
 on:
   pull_request:
+    # Everything the build reads or installs: the gate, ui/'s theme and pins, the root test runner.
     paths:
       - "gate/**"
       - "ui/src/styles.css"
+      - "ui/package.json"
       - "ui/package-lock.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".nvmrc"
       - ".github/workflows/gate.yml"
   push:
     tags: ["gate-v*"]

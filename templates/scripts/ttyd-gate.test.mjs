@@ -30,6 +30,15 @@ describe('ttyd templates sign in through the gate', () => {
     expect(dockerfile.indexOf(CHECK, download)).toBeGreaterThan(download)
   })
 
+  // 0.1.0 let another tenant's page open a signed-in terminal's WebSocket (same site, since
+  // instacloud-edge.com is not on the Public Suffix List). 0.1.1 is the first gate safe to ship.
+  it.each(ttyd)('$code pins gate 0.1.1 or later', ({ dockerfile }) => {
+    const version = (dockerfile.match(/^ARG INSTA_GATE_VERSION=(\d+)\.(\d+)\.(\d+)$/m) ?? []).slice(1).map(Number)
+    expect(version).toHaveLength(3)
+    const [major, minor, patch] = version
+    expect(major > 0 || minor > 1 || (minor === 1 && patch >= 1)).toBe(true)
+  })
+
   it('every ttyd template pins the same gate version and checksum', () => {
     const [first, ...rest] = ttyd.map((t) => pins(t.dockerfile))
     expect(first.map((p) => p.split('=')[0])).toEqual(['INSTA_GATE_VERSION', 'INSTA_GATE_SHA256'])

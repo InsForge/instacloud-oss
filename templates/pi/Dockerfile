@@ -28,8 +28,8 @@ RUN arch="$(dpkg --print-architecture)"; \
 
 # The InstaCloud sign-in page in front of ttyd (gate/ in this repository, released as gate-v*).
 # Plain JavaScript on Node built-ins, so one checksum covers both architectures.
-ARG INSTA_GATE_VERSION=0.1.0
-ARG INSTA_GATE_SHA256=97e8fc8b2b63de580347a69693f5847d8dd4898a9b5c10b6c3c6a3d81dcdd9f9
+ARG INSTA_GATE_VERSION=0.1.1
+ARG INSTA_GATE_SHA256=75a11d24a0b60c277593de699505505e4d641d75077b1a32048318ba38a73966
 RUN curl -fsSL "https://github.com/InsForge/instacloud-oss/releases/download/gate-v${INSTA_GATE_VERSION}/insta-gate.mjs" \
         -o /usr/local/lib/insta-gate.mjs \
     && echo "${INSTA_GATE_SHA256}  /usr/local/lib/insta-gate.mjs" | sha256sum -c -

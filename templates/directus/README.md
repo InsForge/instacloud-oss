@@ -39,6 +39,7 @@ exactly as it does anywhere else.
 | `ADMIN_EMAIL` | yes | Email address for the first administrator, created on first boot. It is the login, and must be a valid address shape; it only has to receive mail if you configure SMTP. |
 | `ADMIN_PASSWORD` | yes | Password for that administrator. Directus enforces no password policy by default. It is not generated here on purpose: a template variable is stored write-only, so a generated password could never be read back. |
 | `PROJECT_NAME` | no | Name shown on the login page and in the admin app's header. Applied on first boot only; afterwards it is Settings > Project Settings. |
+| `PROJECT_OWNER` | no | Email of the person responsible for this deployment. Directus asks for one in a dialog on first sign-in, to record licence acceptance; setting it here answers that in advance. Applied on first boot only, and ignored unless it parses as an email. |
 | `AUTH_PASSWORD_POLICY` | no | Regex every password must match. Unset means no policy, which is upstream's default. |
 | `CORS_ENABLED` | no | Set to `true` to let browsers on other origins call the API. Off by default; the admin app is same-origin. |
 | `CORS_ORIGIN` | no | Which origins CORS allows when `CORS_ENABLED` is true. An origin, a comma-separated list, or `true` to echo the request's own origin. |
@@ -63,9 +64,19 @@ to `/data/extensions`, both on the same volume.
 `PUBLIC_URL` is set to the service's own URL. It is what the app puts in password-reset and
 email-verification links, in SSO redirect targets and in the MCP resource URLs.
 
-The service listens on 8055 and is health-checked on `/server/health`, which is the app's own
-readiness probe: it pings the database and answers 503 when a check reports an error. `/` is not
-used for it, because `/` is a redirect to `/admin` rather than a 2xx.
+The service listens on 8055 and is health-checked on `/server/ping`, which answers `200 pong`
+before the authenticate middleware runs. Neither of the two likelier paths works: `/` is a 302 to
+`/admin`, and `/server/health`, the app's own readiness probe, throws `ForbiddenError` for an
+unauthenticated caller in Directus 12 and answers 403. `/server/ping` does not touch the database,
+which it does not need to here: the entrypoint runs `directus bootstrap` to completion and only
+hands off to pm2 if it exited 0, so the server binds at all only after the schema is installed and
+migrated.
+
+The first boot logs `Upload directory (/data/uploads) is not read/writeable!` and
+`Extensions directory (/data/extensions) is not readable!`. Both are a boot-time `access()` on a
+directory that does not exist yet rather than a permission problem: the same check passes for the
+SQLite file's directory, which is the same volume. Each directory is created on first use, and the
+warning stops from the next boot on.
 
 It is declared `alwaysOn: true`. Flows with a schedule trigger fire from inside the process, and
 the app runs its own timed jobs besides, so a machine that had scaled to zero would never wake to
@@ -93,7 +104,11 @@ Use.
 
 ## After deploy
 
-1. Open the service URL and sign in with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` you set.
+1. Open the service URL and sign in with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` you set. The first
+   sign-in raises two dialogs before you reach anything: one asking for a licence key, where
+   **I'm using Core plan** or **Skip** is the free path, and one asking for a project owner email
+   and licence acceptance, which has a **Remind Later**. Setting `PROJECT_OWNER` answers the
+   second in advance.
 2. **Settings > Data Model > Create Collection** to make your first table. Add fields to it, then
    switch to the **Content** module to add rows.
 3. The same rows are already an API. `GET <service-url>/items/<collection>` serves them, and

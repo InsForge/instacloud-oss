@@ -28,12 +28,16 @@ services:
     type: web
     image: docker.io/directus/directus:12.5.0
     port: 8055
-    # Not `/`: that is a redirect to /admin, and the gate wants a 2xx. `/server/health` is the
-    # app's own readiness probe, it is unauthenticated (an anonymous caller gets `{"status":"ok"}`
-    # rather than the per-check detail an admin sees), and it pings the database, so a pass means
-    # the schema is reachable and not just that express is listening. It answers 503 when a check
-    # reports `error`.
-    healthcheck: /server/health
+    # Not `/`, which is a 302 to /admin, and NOT `/server/health`, which is the obvious choice and
+    # the wrong one: in Directus 12 `ServerService.health()` throws ForbiddenError for an
+    # unauthenticated caller, so that path answers 403 forever. (Deployed on it once to find out:
+    # the log line is `GET /server/health 403`.) `/server/ping` answers 200 `pong`, and app.ts
+    # registers it ahead of the authenticate middleware on purpose.
+    #
+    # It does not touch the database, but it does not need to here: the image's entrypoint runs
+    # `directus bootstrap` to completion, and only hands off to pm2 if it exited 0, so the server
+    # binds at all only after the schema is installed and migrated.
+    healthcheck: /server/ping
     # Directus Flows fire schedule (cron) triggers from inside this process, and the app runs its
     # own timed jobs besides, so a machine that had scaled to zero would never wake to run one.
     # Same case as n8n's schedule triggers. This bills continuously; see the README.
@@ -56,13 +60,18 @@ services:
         # pointing somewhere else does not get.
         DB_CLIENT: sqlite3
         DB_FILENAME: /data/database.sqlite
-        # Uploaded files. The local storage driver mkdir -p's as it writes, so this does not need
-        # to exist beforehand.
+        # Uploaded files, and Marketplace installs. Neither directory exists on a fresh volume and
+        # neither is created at boot, so the first boot logs `Upload directory (/data/uploads) is
+        # not read/writeable!` and `Extensions directory (/data/extensions) is not readable!`.
+        # Both are `access()` on a path that is not there yet rather than a permission problem:
+        # the same boot check passes for the SQLite directory, which is this same volume. Each is
+        # created on first use (the local storage driver mkdir -p's as it writes, and fs-extra's
+        # `move` creates the destination's parents for an extension install) and the warning stops
+        # from the next boot on. Fixable with a `command:` that mkdir -p's them first, at the cost
+        # of making the template cloud-only, which did not look worth it for a cosmetic line.
         STORAGE_LOCATIONS: local
         STORAGE_LOCAL_DRIVER: local
         STORAGE_LOCAL_ROOT: /data/uploads
-        # Marketplace installs land here. A missing directory is handled (the resolver returns an
-        # empty set rather than throwing), so an install is what creates it.
         EXTENSIONS_PATH: /data/extensions
       generated:
         SECRET: ${secret}
@@ -82,6 +91,8 @@ services:
       optional:
         PROJECT_NAME:
           description: "Name shown on the login page and in the admin app's header. Applied on first boot only; afterwards it is Settings > Project Settings in the app"
+        PROJECT_OWNER:
+          description: "Email of the person responsible for this deployment. Directus 12 asks for one in a dialog on first sign-in, to record licence acceptance; setting it here answers that in advance. Applied on first boot only, and ignored unless it parses as an email"
         AUTH_PASSWORD_POLICY:
           description: "Regex every password must match, e.g. /^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$/. Unset means no policy, which is upstream's default"
         CORS_ENABLED:

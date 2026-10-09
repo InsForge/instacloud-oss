@@ -46,7 +46,12 @@ const HEALTHCHECK_RE = /^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]*$/
 /** Env names, the same grammar user secrets use (platform secretNames.ts USER_SECRET_NAME_RE). */
 export const ENV_NAME_RE = /^[A-Z][A-Z0-9_]{0,63}$/
 /** Every key a service may carry (the platform's TEMPLATE_FIELDS), spec and volumeGib included so their own refusals fire. */
-const SERVICE_KEYS = ['type', 'image', 'build', 'port', 'healthcheck', 'volume', 'volumeGib', 'spec', 'alwaysOn', 'command', 'mountPath', 'env', 'pgVersion', 'public']
+const SERVICE_KEYS = ['type', 'image', 'build', 'source', 'port', 'healthcheck', 'volume', 'volumeGib', 'spec', 'alwaysOn', 'command', 'mountPath', 'env', 'pgVersion', 'public']
+/** The keys of `source`: the platform API's SourceInput names. */
+const SOURCE_KEYS = ['owner', 'repo', 'branch', 'rootDir', 'buildCommand']
+// GitHub's own grammars for an account login and a repository name.
+const GITHUB_OWNER_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
+const GITHUB_REPO_RE = /^[A-Za-z0-9._-]{1,100}$/
 
 export type TemplateVarSpec = {
   description?: string
@@ -66,6 +71,9 @@ export type TemplateServiceEnv = {
   optional: Record<string, TemplateVarSpec>
 }
 
+/** A compute service's GitHub repo, as the platform parser normalizes it: only the keys present. */
+export type TemplateSource = { owner: string; repo: string; branch?: string; rootDir?: string; buildCommand?: string }
+
 export type TemplateService = {
   type: 'web' | 'worker' | 'postgres' | 'storage'
   /** Postgres only: the major version. Parsed for digest parity, refused at execution unless it is the local major. */
@@ -74,6 +82,8 @@ export type TemplateService = {
   public?: boolean
   image?: string
   build?: string
+  /** A GitHub repo the cloud builds at deploy. Parsed for digest parity, refused at execution. */
+  source?: TemplateSource
   port?: number
   healthcheck?: string
   /** Needs a /data disk. Boolean: the daemon owns the size (INSTA_OSS_TEMPLATE_VOLUME_GIB). */
@@ -215,6 +225,41 @@ function parseEnvNames(raw: unknown, where: string): Record<string, unknown> {
   return raw
 }
 
+// The platform parser's `source` rules. Only known keys present come back, so digests match.
+function parseSource(raw: unknown, at: string, strict: boolean): TemplateSource {
+  if (!isRecord(raw)) return bad(`${at}.source must be a map`)
+  // Like an unknown service key: refused when authored, dropped from a stored row.
+  if (strict) {
+    for (const key of Object.keys(raw)) {
+      if (!SOURCE_KEYS.includes(key)) return bad(`${at}.source.${key} is not a source field`)
+    }
+  }
+  const { owner, repo } = raw
+  if (typeof owner !== 'string' || !GITHUB_OWNER_RE.test(owner)) return bad(`${at}.source.owner must be a GitHub user or organization name`)
+  if (typeof repo !== 'string' || !GITHUB_REPO_RE.test(repo) || repo === '.' || repo === '..') return bad(`${at}.source.repo must be a GitHub repository name`)
+  const source: TemplateSource = { owner, repo }
+  if (raw.branch !== undefined) {
+    const branch = typeof raw.branch === 'string' ? raw.branch.trim() : ''
+    if (!branch || branch.length > 255 || /\s/.test(branch) || branch.includes('..') || branch.startsWith('/') || branch.endsWith('/')) {
+      return bad(`${at}.source.branch must be a branch name`)
+    }
+    source.branch = branch
+  }
+  if (raw.rootDir !== undefined) {
+    const dir = typeof raw.rootDir === 'string' ? raw.rootDir.trim() : null
+    if (dir === null || dir.startsWith('/') || dir.split('/').includes('..')) return bad(`${at}.source.rootDir must be a relative path inside the repository`)
+    // The platform's normalizeRootDir: `./a` and `a//b/` are one path, and the root is absent.
+    const normalized = posix.normalize(dir).replace(/^(?:\.?\/)+/, '').replace(/\/+$/, '')
+    if (normalized && normalized !== '.' && !normalized.startsWith('..')) source.rootDir = normalized
+  }
+  if (raw.buildCommand !== undefined) {
+    const command = typeof raw.buildCommand === 'string' ? raw.buildCommand.trim() : null
+    if (command === null || command.length > 1000) return bad(`${at}.source.buildCommand must be a command of at most 1000 characters`)
+    if (command) source.buildCommand = command
+  }
+  return source
+}
+
 /**
  * Parse and validate a manifest: a YAML/JSON string or an already-parsed document. Throws
  * ManifestError with an author-actionable message on any shape problem; what comes back is fully
@@ -263,7 +308,7 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
     // so a manifest has nothing to configure on it and anything it set would be silently ignored.
     // Refused with the field named. pgVersion and public are the one field each takes.
     if (type === 'postgres' || type === 'storage') {
-      for (const field of ['image', 'build', 'port', 'healthcheck', 'volume', 'volumeGib', 'spec', 'alwaysOn', 'command', 'mountPath'] as const) {
+      for (const field of ['image', 'build', 'source', 'port', 'healthcheck', 'volume', 'volumeGib', 'spec', 'alwaysOn', 'command', 'mountPath'] as const) {
         if (rawSvc[field] !== undefined) return bad(`${at}.${field}: a ${type} service is platform-managed and carries no ${field} (declare it bare: { type: ${type} })`)
       }
       // env must be absent or an EXACT empty shell (known group names, each an empty map): the
@@ -295,8 +340,11 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
     }
     const image = rawSvc.image !== undefined ? scalarString(rawSvc.image, `${at}.image`) : undefined
     const build = rawSvc.build !== undefined ? scalarString(rawSvc.build, `${at}.build`) : undefined
-    if (!image && !build) return bad(`${at}: one of image or build is required`)
-    if (image && build) return bad(`${at}: image and build are mutually exclusive`)
+    // Present, not truthy: a malformed source is refused by parseSource, never read as absent.
+    const ways = [!!image, !!build, rawSvc.source !== undefined].filter(Boolean).length
+    if (ways === 0) return bad(`${at}: one of image, build or source is required`)
+    if (ways > 1) return bad(`${at}: image, build and source are mutually exclusive`)
+    const source = rawSvc.source !== undefined ? parseSource(rawSvc.source, at, opts?.rejectAuthoredSizing === true) : undefined
     let port: number | undefined
     if (rawSvc.port !== undefined) {
       port = Number(rawSvc.port)
@@ -390,6 +438,8 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
 
     services[name] = {
       type, image, build, port, healthcheck, volume, alwaysOn,
+      // Only when authored, so a manifest without it keeps its digest.
+      ...(source !== undefined ? { source } : {}),
       ...(command !== undefined ? { command } : {}),
       ...(mountPath !== undefined ? { mountPath } : {}),
       env: { fixed, generated: generatedEnv, platform, required, optional },

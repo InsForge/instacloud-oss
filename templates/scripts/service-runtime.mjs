@@ -29,3 +29,20 @@ export function checkTypedFields(name, svc) {
   }
   return { errors, warnings };
 }
+
+// source: a GitHub repo the cloud builds at deploy. The shape here, the field grammar at publish.
+const SOURCE_FIELDS = ['owner', 'repo', 'branch', 'rootDir', 'buildCommand'];
+export function checkServiceSource(name, svc) {
+  const errors = [];
+  const warnings = [];
+  if (svc.source === undefined) return { errors, warnings };
+  const s = svc.source;
+  if (s === null || typeof s !== 'object' || Array.isArray(s)) {
+    errors.push(`${name}: source must be a map with owner and repo`);
+    return { errors, warnings };
+  }
+  for (const key of Object.keys(s)) if (!SOURCE_FIELDS.includes(key)) errors.push(`${name}: source.${key} is not a source field`);
+  for (const key of ['owner', 'repo']) if (typeof s[key] !== 'string' || !s[key].trim()) errors.push(`${name}: source.${key} must be a non-empty string`);
+  if (!errors.length) warnings.push(`${name}: source is cloud-only today, the self-hosted runtime refuses it`);
+  return { errors, warnings };
+}

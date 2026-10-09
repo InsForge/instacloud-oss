@@ -309,6 +309,41 @@ test('an authored manifest refuses a service key the platform does not know, a s
   refuses({ ...base, services: { web: { ...base.services.web, spec: '1vcpu' } } }, /compute size is the daemon's to choose/, authored)
 })
 
+// Spec 2026-10-08 template GitHub sources: the platform parser's rules, so the digest matches it.
+test('manifest parity: source is the third way to run a compute service, with the platform field rules', () => {
+  const gh = (source: unknown, extra: Record<string, unknown> = {}) => ({ ...base, services: { web: { type: 'web', port: 3000, source, ...extra } } })
+  const sourceOf = (doc: unknown) => parse(doc).services.web.source
+  expect(sourceOf(gh({ owner: 'acme', repo: 'shop' }))).toEqual({ owner: 'acme', repo: 'shop' })
+  // Trimmed and normalized the platform's way, and only the keys present come back.
+  expect(sourceOf(gh({ owner: 'acme', repo: 'shop.js', branch: ' release/2 ', rootDir: './apps//web/', buildCommand: ' pnpm build ' })))
+    .toEqual({ owner: 'acme', repo: 'shop.js', branch: 'release/2', rootDir: 'apps/web', buildCommand: 'pnpm build' })
+  expect(sourceOf(gh({ owner: 'acme', repo: 'shop', rootDir: '.', buildCommand: '  ' }))).toEqual({ owner: 'acme', repo: 'shop' })
+  expect(Object.keys(sourceOf(gh({ owner: 'acme', repo: 'shop', rootDir: './' }))!)).toEqual(['owner', 'repo'])
+  // A manifest without source carries no source key, so it hashes byte-identically.
+  expect(Object.keys(parse(base).services.web)).not.toContain('source')
+  expect(manifestDigest(parse(gh({ owner: 'acme', repo: 'shop' })))).not.toBe(manifestDigest(parse(base)))
+  // A worker builds from GitHub too, and an authored manifest knows the key.
+  expect(parse({ ...base, services: { jobs: { type: 'worker', source: { owner: 'acme', repo: 'jobs' } } } }).services.jobs.source).toEqual({ owner: 'acme', repo: 'jobs' })
+  expect(parse(gh({ owner: 'acme', repo: 'shop' }), { rejectAuthoredSizing: true }).services.web.source).toEqual({ owner: 'acme', repo: 'shop' })
+  // Exactly one of image, build and source.
+  refuses({ ...base, services: { web: { type: 'web', port: 3000 } } }, /services\.web: one of image, build or source is required/)
+  refuses(gh({ owner: 'acme', repo: 'shop' }, { image: 'i' }), /services\.web: image, build and source are mutually exclusive/)
+  refuses(gh({ owner: 'acme', repo: 'shop' }, { build: '.' }), /services\.web: image, build and source are mutually exclusive/)
+  refuses({ ...base, services: { web: { ...base.services.web, build: '.' } } }, /services\.web: image, build and source are mutually exclusive/)
+  // The fields, one refusal each.
+  for (const source of ['acme/shop', null, ['acme', 'shop']]) refuses(gh(source), /services\.web\.source must be a map/)
+  // An unknown key is refused when authored and dropped from a stored row, like a service key.
+  refuses(gh({ owner: 'acme', repo: 'shop', commit: 'abc' }), /services\.web\.source\.commit is not a source field/, { rejectAuthoredSizing: true })
+  expect(sourceOf(gh({ owner: 'acme', repo: 'shop', commit: 'abc' }))).toEqual({ owner: 'acme', repo: 'shop' })
+  for (const owner of [undefined, '', '-acme', 'a'.repeat(40), 'ac_me', 42]) refuses(gh({ owner, repo: 'shop' }), /services\.web\.source\.owner must be a GitHub user or organization name/)
+  for (const repo of [undefined, '', '.', '..', 'a b', 'a/b', 'r'.repeat(101)]) refuses(gh({ owner: 'acme', repo }), /services\.web\.source\.repo must be a GitHub repository name/)
+  for (const branch of ['', '  ', 'a b', 'a..b', '/main', 'main/', 'b'.repeat(256), 7]) refuses(gh({ owner: 'acme', repo: 'shop', branch }), /services\.web\.source\.branch must be a branch name/)
+  for (const rootDir of ['/apps/web', '../web', 'apps/../../web', 3]) refuses(gh({ owner: 'acme', repo: 'shop', rootDir }), /services\.web\.source\.rootDir must be a relative path inside the repository/)
+  for (const buildCommand of ['x'.repeat(1001), false]) refuses(gh({ owner: 'acme', repo: 'shop', buildCommand }), /services\.web\.source\.buildCommand must be a command of at most 1000 characters/)
+  // A managed service is bare, so it takes no source either.
+  refuses({ ...base, services: { db: { type: 'postgres', source: { owner: 'acme', repo: 'shop' } } } }, /services\.db\.source: a postgres service is platform-managed and carries no source/)
+})
+
 // The parser claims to apply the engine's grammar, and it did not: both regexes were local copies
 // permitting a trailing hyphen, which the engine rejects. A code or service name ending in `-`
 // therefore passed validation here and failed partway through DEPLOYMENT, after preliminary state
@@ -475,6 +510,16 @@ test('a storage service and a pgVersion other than the local major are refused a
   // The local major itself is accepted.
   const sameMajor = { code: 'p', version: '1', services: { db: { type: 'postgres', pgVersion: PG_VERSION } } }
   expect((await deploy(id, { manifest: sameMajor, branch: 'main' })).statusCode).toBe(202)
+})
+
+test('a service built from GitHub parses but is refused as cloud-only, before anything runs', async () => {
+  const id = await project()
+  const fromGitHub = { code: 'g', version: '1', services: { web: { type: 'web', source: { owner: 'acme', repo: 'shop' }, port: 3000 } } }
+  const r = await post(`/projects/${id}/template-deployments`, { manifest: fromGitHub, branch: 'main' })
+  expect(r.statusCode).toBe(400)
+  expect(r.json().error).toBe('services.web builds from GitHub (source:): self-hosted template deploys run images only, deploy this template on InstaCloud cloud')
+  expect(Object.keys(loadState().templateDeployments ?? {})).toHaveLength(0)
+  expect((await get(`/projects/${id}/services`)).json().services).toEqual([])
 })
 
 test('a template whose image this box cannot run is refused before any service exists', async () => {

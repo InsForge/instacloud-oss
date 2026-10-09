@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkServiceRuntime, checkTypedFields } from './service-runtime.mjs';
+import { checkServiceRuntime, checkServiceSource, checkTypedFields } from './service-runtime.mjs';
 
 describe('checkServiceRuntime', () => {
   it('passes a service without the fields', () => {
@@ -58,5 +58,25 @@ describe('checkTypedFields', () => {
     for (const type of ['web', 'postgres']) {
       expect(checkTypedFields('x', { type, public: true }).errors, type).toEqual(['x: public is only valid on a storage service']);
     }
+  });
+});
+
+describe('checkServiceSource', () => {
+  it('passes a service without source', () => {
+    expect(checkServiceSource('app', { type: 'web', image: 'i:1' })).toEqual({ errors: [], warnings: [] });
+  });
+  it('takes owner and repo with the optional fields, and warns that it is cloud-only', () => {
+    const source = { owner: 'acme', repo: 'shop', branch: 'main', rootDir: 'apps/web', buildCommand: 'pnpm build' };
+    expect(checkServiceSource('app', { type: 'web', source })).toEqual({ errors: [], warnings: ['app: source is cloud-only today, the self-hosted runtime refuses it'] });
+  });
+  it('refuses a source that is not a map', () => {
+    for (const source of ['acme/shop', null, ['acme', 'shop']]) {
+      expect(checkServiceSource('app', { type: 'web', source }).errors, String(source)).toEqual(['app: source must be a map with owner and repo']);
+    }
+  });
+  it('refuses a key the platform does not take, and a missing owner or repo', () => {
+    expect(checkServiceSource('app', { type: 'web', source: { repo: 'shop', commit: 'abc' } }).errors)
+      .toEqual(['app: source.commit is not a source field', 'app: source.owner must be a non-empty string']);
+    expect(checkServiceSource('app', { type: 'web', source: { owner: 'acme', repo: ' ' } }).errors).toEqual(['app: source.repo must be a non-empty string']);
   });
 });

@@ -59,7 +59,10 @@ IS the template code. Copying the closest existing template is the fastest way t
    to be the pinned one and its digest, if the manifest carries one, has to match. The version is
    written twice and nothing else notices when the two disagree: the image would be built from one
    version while the catalog advertises another, and the build would succeed.
-6. A service may not carry both `image:` and `build:`.
+6. A service carries one of `image:`, `build:` and `source:`, never two. `source:` names a GitHub repo
+   (`owner`, `repo`, and optionally `branch`, `rootDir` and `buildCommand`) that InstaCloud cloud
+   builds when the template deploys. It is cloud-only today: the self-hosted runtime refuses it, and
+   `npm run lint` prints a warning. The templates in this repository keep their images.
 7. `constraints[].oneOf` and `allOf` may only name variables the manifest declares.
 8. A manifest never sizes a service. There is no `spec:`, and `volume:` is the boolean `true`, not
    a size. CPU, memory and disk are the platform's to choose and are capped for the org's plan, so

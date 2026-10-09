@@ -7,7 +7,7 @@ import yaml from "js-yaml";
 import { FIXED_REF_RE, checkFixedRef, MANAGED_TYPES, BARE_TYPES } from "./manifest-refs.mjs";
 import { DEPLOY_BUTTON_ASSET, findDeployButtons } from "./publish-lib.mjs";
 import { ARCHITECTURES } from "./build-targets.mjs";
-import { checkServiceRuntime, checkTypedFields } from "./service-runtime.mjs";
+import { checkServiceRuntime, checkServiceSource, checkTypedFields } from "./service-runtime.mjs";
 import { checkDockerfilePin, checkUpstreamFrom } from "./dockerfile-pin.mjs";
 import { validateCompanionRef } from "./companions.mjs";
 
@@ -24,7 +24,7 @@ const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 // BARE_TYPES comes from manifest-refs.mjs, which already needs it: one definition, not two.
 const TYPES = ["web", "worker", ...BARE_TYPES];
 // Every key a service may carry. spec and volumeGib stay listed because the sizing checks below refuse them by name.
-const SERVICE_KEYS = ["type", "image", "build", "port", "healthcheck", "volume", "volumeGib", "spec", "alwaysOn", "command", "mountPath", "env", "pgVersion", "public"];
+const SERVICE_KEYS = ["type", "image", "build", "source", "port", "healthcheck", "volume", "volumeGib", "spec", "alwaysOn", "command", "mountPath", "env", "pgVersion", "public"];
 // The platform's HEALTHCHECK_RE, as in src/templates/manifest.ts: one slash, no scheme or host.
 const HEALTHCHECK_RE = /^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]*$/;
 // Images this repo builds for itself; templates-build-images derives their tag from `version:`.
@@ -198,15 +198,20 @@ for (const dir of dirs) {
       // empty shell. That tolerance is a storage round-trip concern: a NORMALIZED stored manifest
       // always carries an env record, and it must still parse on every by-code deploy. This linter
       // only ever sees hand-authored files, where an empty env shell is noise no author writes.
-      for (const field of ["image", "build", "port", "healthcheck", "volume", "volumeGib", "alwaysOn", "command", "mountPath", "env"]) {
+      for (const field of ["image", "build", "source", "port", "healthcheck", "volume", "volumeGib", "alwaysOn", "command", "mountPath", "env"]) {
         if (svc[field] !== undefined) err(dir, `${name}: a ${svc.type} service is platform-managed and carries no ${field}, declare it bare`);
       }
       continue;
     }
     // rule 1: image must be pinned (tag or digest), never latest/tagless
-    if (!svc.image && !svc.build) err(dir, `${name}: needs image or build`);
+    if (!svc.image && !svc.build && svc.source === undefined) err(dir, `${name}: needs image, build or source`);
     // the platform parser refuses both (image is what deploys; the Dockerfile is wired by convention)
     if (svc.image && svc.build) err(dir, `${name}: image and build are mutually exclusive: drop build:, keep image:`);
+    // source is the third way, a GitHub repo the cloud builds. Its field grammar is publish's.
+    if (svc.source !== undefined && (svc.image || svc.build)) err(dir, `${name}: source and ${svc.image ? "image" : "build"} are mutually exclusive: keep one`);
+    const sourceCheck = checkServiceSource(name, svc);
+    for (const e of sourceCheck.errors) err(dir, e);
+    for (const w of sourceCheck.warnings) console.warn(`~ ${dir}: ${w}`);
     if (svc.image && !draft) {
       const ref = String(svc.image);
       if (!/[@:]/.test(ref.split("/").pop()) || /:latest$/.test(ref)) err(dir, `${name}: image must pin a tag or digest (got '${ref}')`);

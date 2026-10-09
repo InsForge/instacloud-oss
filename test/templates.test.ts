@@ -330,6 +330,20 @@ test('manifest parity: source is the third way to run a compute service, with th
   refuses(gh({ owner: 'acme', repo: 'shop' }, { image: 'i' }), /services\.web: image, build and source are mutually exclusive/)
   refuses(gh({ owner: 'acme', repo: 'shop' }, { build: '.' }), /services\.web: image, build and source are mutually exclusive/)
   refuses({ ...base, services: { web: { ...base.services.web, build: '.' } } }, /services\.web: image, build and source are mutually exclusive/)
+  // The platform's order: field types, then required by truthiness, then exclusive by key presence.
+  for (const extra of [{ image: '' }, { build: '' }]) {
+    refuses(gh({ owner: 'acme', repo: 'shop' }, extra), /services\.web: image, build and source are mutually exclusive/)
+  }
+  refuses({ ...base, services: { web: { ...base.services.web, build: '' } } }, /services\.web: image, build and source are mutually exclusive/)
+  // A null is no string, so the type sentence comes first, as on the platform.
+  refuses(gh({ owner: 'acme', repo: 'shop' }, { image: null }), /services\.web\.image must be a string/)
+  refuses(gh({ owner: 'acme', repo: 'shop' }, { build: null }), /services\.web\.build must be a string/)
+  // A malformed source is read before the exclusive count, so its own sentence wins.
+  refuses(gh('acme/shop', { image: 'i' }), /services\.web\.source must be a map/)
+  // Empty image or build with no way behind them is "required", so no empty image is ever emitted.
+  refuses({ ...base, services: { web: { type: 'web', port: 3000, image: '' } } }, /services\.web: one of image, build or source is required/)
+  refuses({ ...base, services: { web: { type: 'web', port: 3000, image: '', build: '' } } }, /services\.web: one of image, build or source is required/)
+  expect(parse(gh({ owner: 'acme', repo: 'shop' })).services.web.image).toBeUndefined()
   // The fields, one refusal each.
   for (const source of ['acme/shop', null, ['acme', 'shop']]) refuses(gh(source), /services\.web\.source must be a map/)
   // An unknown key is refused when authored and dropped from a stored row, like a service key.
@@ -518,6 +532,16 @@ test('a service built from GitHub parses but is refused as cloud-only, before an
   const r = await post(`/projects/${id}/template-deployments`, { manifest: fromGitHub, branch: 'main' })
   expect(r.statusCode).toBe(400)
   expect(r.json().error).toBe('services.web builds from GitHub (source:): self-hosted template deploys run images only, deploy this template on InstaCloud cloud')
+  expect(Object.keys(loadState().templateDeployments ?? {})).toHaveLength(0)
+  expect((await get(`/projects/${id}/services`)).json().services).toEqual([])
+})
+
+test('a worker built from GitHub gets the source refusal, not the worker one, before anything runs', async () => {
+  const id = await project()
+  const fromGitHub = { code: 'g', version: '1', services: { jobs: { type: 'worker', source: { owner: 'acme', repo: 'jobs' } } } }
+  const r = await post(`/projects/${id}/template-deployments`, { manifest: fromGitHub, branch: 'main' })
+  expect(r.statusCode).toBe(400)
+  expect(r.json().error).toBe('services.jobs builds from GitHub (source:): self-hosted template deploys run images only, deploy this template on InstaCloud cloud')
   expect(Object.keys(loadState().templateDeployments ?? {})).toHaveLength(0)
   expect((await get(`/projects/${id}/services`)).json().services).toEqual([])
 })

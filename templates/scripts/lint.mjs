@@ -7,7 +7,7 @@ import yaml from "js-yaml";
 import { FIXED_REF_RE, checkFixedRef, MANAGED_TYPES, BARE_TYPES } from "./manifest-refs.mjs";
 import { DEPLOY_BUTTON_ASSET, findDeployButtons } from "./publish-lib.mjs";
 import { ARCHITECTURES } from "./build-targets.mjs";
-import { checkServiceRuntime, checkServiceSource, checkTypedFields } from "./service-runtime.mjs";
+import { checkServiceRuntime, checkServiceSource, checkServiceWays, checkTypedFields } from "./service-runtime.mjs";
 import { checkDockerfilePin, checkUpstreamFrom } from "./dockerfile-pin.mjs";
 import { validateCompanionRef } from "./companions.mjs";
 
@@ -203,12 +203,9 @@ for (const dir of dirs) {
       }
       continue;
     }
-    // rule 1: image must be pinned (tag or digest), never latest/tagless
-    if (!svc.image && !svc.build && svc.source === undefined) err(dir, `${name}: needs image, build or source`);
-    // the platform parser refuses both (image is what deploys; the Dockerfile is wired by convention)
-    if (svc.image && svc.build) err(dir, `${name}: image and build are mutually exclusive: drop build:, keep image:`);
+    // exactly one of image, build and source: the platform parser refuses two
+    for (const e of checkServiceWays(name, svc).errors) err(dir, e);
     // source is the third way, a GitHub repo the cloud builds. Its field grammar is publish's.
-    if (svc.source !== undefined && (svc.image || svc.build)) err(dir, `${name}: source and ${svc.image ? "image" : "build"} are mutually exclusive: keep one`);
     const sourceCheck = checkServiceSource(name, svc);
     for (const e of sourceCheck.errors) err(dir, e);
     for (const w of sourceCheck.warnings) console.warn(`~ ${dir}: ${w}`);

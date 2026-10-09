@@ -30,6 +30,17 @@ export function checkTypedFields(name, svc) {
   return { errors, warnings };
 }
 
+// A deployable service carries exactly one of image, build and source, counted by key presence.
+export function checkServiceWays(name, svc) {
+  const [hasImage, hasBuild, hasSource] = [svc.image, svc.build, svc.source].map((v) => v !== undefined);
+  // Required by truthiness: an empty image alone is no way. Exclusive is judged only past this.
+  if (!svc.image && !svc.build && !hasSource) return { errors: [`${name}: needs image, build or source`] };
+  const errors = [];
+  if (hasImage && hasBuild) errors.push(`${name}: image and build are mutually exclusive: drop build:, keep image:`);
+  if (hasSource && (hasImage || hasBuild)) errors.push(`${name}: source and ${hasImage ? 'image' : 'build'} are mutually exclusive: keep one`);
+  return { errors };
+}
+
 // source: a GitHub repo the cloud builds at deploy. The shape here, the field grammar at publish.
 const SOURCE_FIELDS = ['owner', 'repo', 'branch', 'rootDir', 'buildCommand'];
 export function checkServiceSource(name, svc) {

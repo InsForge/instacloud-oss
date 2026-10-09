@@ -340,11 +340,11 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
     }
     const image = rawSvc.image !== undefined ? scalarString(rawSvc.image, `${at}.image`) : undefined
     const build = rawSvc.build !== undefined ? scalarString(rawSvc.build, `${at}.build`) : undefined
-    // Present, not truthy: a malformed source is refused by parseSource, never read as absent.
-    const ways = [!!image, !!build, rawSvc.source !== undefined].filter(Boolean).length
-    if (ways === 0) return bad(`${at}: one of image, build or source is required`)
-    if (ways > 1) return bad(`${at}: image, build and source are mutually exclusive`)
     const source = rawSvc.source !== undefined ? parseSource(rawSvc.source, at, opts?.rejectAuthoredSizing === true) : undefined
+    // Required by truthiness: an empty image alone is no way at all.
+    if (!image && !build && !source) return bad(`${at}: one of image, build or source is required`)
+    // Then exclusive by key presence, so an empty image beside a source is two ways, not one.
+    if ([rawSvc.image, rawSvc.build, rawSvc.source].filter((v) => v !== undefined).length > 1) return bad(`${at}: image, build and source are mutually exclusive`)
     let port: number | undefined
     if (rawSvc.port !== undefined) {
       port = Number(rawSvc.port)

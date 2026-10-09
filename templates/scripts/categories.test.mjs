@@ -19,6 +19,14 @@ describe('readCategories', () => {
     expect(readCategories({ categories: [{ slug: 'cms' }] })).toBeNull();
     expect(readCategories(null)).toBeNull();
   });
+
+  it('refuses a list the snapshot must never hold: empty, a bad or repeated slug, a blank label', () => {
+    expect(readCategories({ categories: [] })).toBeNull();
+    expect(readCategories({ categories: [{ slug: 'CMS', label: 'CMS' }] })).toBeNull();
+    expect(readCategories({ categories: [{ slug: '', label: 'CMS' }] })).toBeNull();
+    expect(readCategories({ categories: [{ slug: 'cms', label: '  ' }] })).toBeNull();
+    expect(readCategories({ categories: [{ slug: 'cms', label: 'CMS' }, { slug: 'cms', label: 'Blogs' }] })).toBeNull();
+  });
 });
 
 describe('categoryProblems', () => {

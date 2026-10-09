@@ -5,12 +5,19 @@
 // the self-hosted UI ships (ui/src/lib/template-categories.json), which runs with no platform at
 // all. Pure, so the test needs no network: check-categories.mjs does the fetching.
 
-/** The `{ categories: [{ slug, label }] }` envelope, or null for anything else. */
+const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/**
+ * The `{ categories: [{ slug, label }] }` envelope, or null for anything else. Strict because
+ * `--write` persists what this returns: an empty list, a blank label or a repeated slug would land
+ * in the UI snapshot as a broken picker.
+ */
 export function readCategories(body) {
   const list = body?.categories;
-  if (!Array.isArray(list)) return null;
-  const ok = list.every((c) => typeof c?.slug === "string" && typeof c?.label === "string");
-  return ok ? list.map(({ slug, label }) => ({ slug, label })) : null;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const ok = list.every((c) => typeof c?.slug === "string" && SLUG_RE.test(c.slug) && typeof c?.label === "string" && c.label.trim() !== "");
+  if (!ok || new Set(list.map((c) => c.slug)).size !== list.length) return null;
+  return list.map(({ slug, label }) => ({ slug, label }));
 }
 
 /**

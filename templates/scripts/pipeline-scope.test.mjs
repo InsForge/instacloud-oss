@@ -4,12 +4,13 @@
 // and assert the exit status as well as the value. That distinction is the whole point: an earlier
 // version computed `[]` correctly and still exited 1, which killed the step on exactly the
 // "nothing to build" case the job exists to produce.
-import { describe, it, expect } from 'vitest';
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
+import { targetsFor } from './build-targets.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // The workflow step runs from the repo root, so `find templates ...` resolves there, not here.
@@ -79,7 +80,7 @@ describe('discover: which templates a push rebuilds', () => {
   it('builds every buildable template on workflow_dispatch', () => {
     const out = discover({ event: 'workflow_dispatch' });
     expect(out.ok).toBe(true);
-    expect(JSON.parse(out.json)).toEqual(['9router', 'claude-code', 'codex', 'dsh', 'hermes', 'openclaw', 'pi']);
+    expect(JSON.parse(out.json)).toEqual(['9router', 'anythingllm', 'claude-code', 'clickhouse', 'codex', 'documenso', 'dsh', 'gitea', 'hermes', 'insforge', 'laya', 'lev', 'open-slide', 'openbot', 'openclaw', 'opendots', 'openmuse', 'openmuse-browser', 'pi', 'supabase', 'twenty', 'umami', 'whisper-turbo']);
   });
 
   it('builds everything when the workflow itself changed', () => {
@@ -91,13 +92,333 @@ describe('discover: which templates a push rebuilds', () => {
 
 // version-guard and lint are exercised end to end: both read the working tree, so driving them
 // through their real entrypoints is closer to what CI runs than re-implementing their predicates.
+// stdout and stderr are combined into one `out`, on success as well as failure, because lint's
+// warnings (console.warn) go to stderr on an otherwise-passing (exit 0) run, and a case asserting
+// "warns but does not fail" needs to see them.
 function run(script, args = []) {
+  const r = spawnSync('node', [join(root, 'scripts', script), ...args], { cwd: root, encoding: 'utf8' });
+  return { out: `${r.stdout ?? ''}${r.stderr ?? ''}`, code: r.status ?? 1 };
+}
+
+// lint discovers any directory under templates/, so a case has to BE a directory here — in the
+// contributor's source tree, which this helper then rm -rf's. So it may only ever remove a
+// directory it provably created: the name is unique per call, and `mkdir` is NOT recursive, so an
+// existing path throws EEXIST instead of being adopted and deleted. A fixed name would take an
+// untracked draft template with it.
+const FIXTURE_PREFIX = 'zz-selftest-';
+let fixtureN = 0;
+function withTemplate(manifest, fn) {
+  const code = `${FIXTURE_PREFIX}${process.pid}-${++fixtureN}`;
+  const dir = join(root, code);
+  mkdirSync(dir); // throws EEXIST rather than adopting a directory this helper did not make
   try {
-    return { out: execFileSync('node', [join(root, 'scripts', script), ...args], { cwd: root, encoding: 'utf8' }), code: 0 };
-  } catch (e) {
-    return { out: `${e.stdout ?? ''}${e.stderr ?? ''}`, code: e.status ?? 1 };
+    // `code` must equal the folder name (lint.mjs), so the helper owns it, not the caller.
+    writeFileSync(join(dir, 'insta.template.yaml'), yaml.dump({ ...manifest, code }));
+    return fn();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 }
+
+// A killed run leaves its fixture behind, and lint scans every directory here — so the next run
+// would fail on someone else's litter. Only the prefix this helper mints is ever swept.
+beforeAll(() => {
+  for (const d of readdirSync(root)) {
+    if (d.startsWith(FIXTURE_PREFIX)) rmSync(join(root, d), { recursive: true, force: true });
+  }
+});
+
+// logo: none and architectures declared so the fixture is otherwise CLEAN, and a positive case can
+// assert exit 0.
+const lintBase = {
+  version: '1.0.0', maintainer: 'official', upstream: { pinned: 'v1' },
+  meta: { category: 'test', logo: 'none', architectures: ['amd64', 'arm64'] },
+};
+const lintWeb = { type: 'web', image: 'docker.io/library/nginx:1.27', port: 80, healthcheck: '/' };
+
+describe('lint: sizing is the platform\'s, on every service type', () => {
+  const base = lintBase;
+  const web = lintWeb;
+
+  it('refuses spec and a sized volume on a compute service', () => {
+    for (const [field, extra] of [['spec', { spec: '1vcpu-1gb' }], ['volume', { volume: { size: 10 } }]]) {
+      const r = withTemplate({ ...base, services: { web: { ...web, ...extra } } }, () => run('lint.mjs'));
+      expect(r.code, `${field} should fail lint`).toBe(1);
+      expect(r.out).toContain("the platform's to choose");
+    }
+  });
+
+  // The postgres skip used to sit ABOVE these checks, so a managed DB could carry either field
+  // through lint and only fail at publish. The platform refuses them on every type; so does this.
+  it('refuses them on a postgres service too, despite the managed-service skip', () => {
+    for (const extra of [{ spec: '1vcpu-1gb' }, { volume: { size: 10 } }]) {
+      const r = withTemplate({ ...base, services: { web, db: { type: 'postgres', ...extra } } }, () => run('lint.mjs'));
+      expect(r.code).toBe(1);
+      expect(r.out).toContain("the platform's to choose");
+    }
+  });
+
+  it('accepts `volume: true`', () => {
+    const r = withTemplate({ ...base, services: { web: { ...web, volume: true } } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+  });
+});
+
+describe('lint: a managed datastore is declared bare, the shape the platform owns', () => {
+  const base = lintBase;
+  const web = lintWeb;
+  const MANAGED = ['postgres', 'redis', 'mysql', 'mongodb'];
+
+  it('accepts a bare service of each managed type', () => {
+    for (const type of MANAGED) {
+      const r = withTemplate({ ...base, services: { web, store: { type } } }, () => run('lint.mjs'));
+      expect(r.code, `${type}: ${r.out}`).toBe(0);
+    }
+  });
+
+  it('names every accepted type when the type is misspelled', () => {
+    const r = withTemplate({ ...base, services: { web, store: { type: 'redys' } } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('type must be one of web, worker, postgres, redis, mysql, mongodb, storage');
+  });
+
+  // These seven are the fields unique to the managed-type loop: spec and volume are covered in
+  // their own cases below, because both interact with the shared spec/volume check above.
+  it('refuses every field the platform owns, naming the field and the type', () => {
+    const fields = [
+      ['image', { image: 'docker.io/library/redis:7' }],
+      ['build', { build: './Dockerfile' }],
+      ['port', { port: 6379 }],
+      ['healthcheck', { healthcheck: '/' }],
+      ['volumeGib', { volumeGib: 10 }],
+      ['alwaysOn', { alwaysOn: true }],
+      // An exact empty shell, the one shape the platform's own parser tolerates. This lint refuses
+      // it anyway: the platform's tolerance is a storage round-trip concern, this only ever sees
+      // hand-authored files.
+      ['env', { env: {} }],
+    ];
+    for (const type of MANAGED) {
+      for (const [field, extra] of fields) {
+        const r = withTemplate({ ...base, services: { web, store: { type, ...extra } } }, () => run('lint.mjs'));
+        expect(r.code, `${type}.${field}: ${r.out}`).toBe(1);
+        expect(r.out).toContain(`a ${type} service is platform-managed and carries no ${field}`);
+      }
+    }
+  });
+
+  it('refuses volume: true too, the one shape the shared volume check lets through', () => {
+    const r = withTemplate({ ...base, services: { web, store: { type: 'redis', volume: true } } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('a redis service is platform-managed and carries no volume');
+    // Only the managed-type message fires here: `volume: true` is the shape the shared check
+    // accepts, so it stays silent, which is the whole reason volume has to stay in this loop.
+    expect(r.out).not.toContain("the platform's to choose");
+  });
+
+  it('reports a SIZED volume on a managed type twice, on purpose: once from each check', () => {
+    const r = withTemplate({ ...base, services: { web, store: { type: 'redis', volume: { size: 10 } } } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain("the platform's to choose");
+    expect(r.out).toContain('a redis service is platform-managed and carries no volume');
+    // Count lines, not just substrings: a merged single message would still contain both.
+    const diagnosticLines = r.out.split('\n').filter((line) => line.startsWith('✗ ') && line.includes('store:'));
+    expect(diagnosticLines, r.out).toHaveLength(2);
+  });
+
+  it('reports spec on a managed type once, from the shared check alone', () => {
+    // spec is deliberately absent from the managed-type loop's field list: the shared check above
+    // already refuses it on every service type, so it can never reach this loop first, and
+    // repeating it here would only double the message for one violation.
+    const r = withTemplate({ ...base, services: { web, store: { type: 'redis', spec: '1vcpu-1gb' } } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain("the platform's to choose");
+    expect(r.out).not.toContain('platform-managed and carries no spec');
+  });
+});
+
+describe('lint: warns above two managed datastores per template, never fails on the count', () => {
+  const base = lintBase;
+  const web = lintWeb;
+
+  it('does not warn at exactly two', () => {
+    const services = { web, a: { type: 'redis' }, b: { type: 'mysql' } };
+    const r = withTemplate({ ...base, services }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).not.toContain('managed datastores');
+  });
+
+  it('warns above two, without failing', () => {
+    const services = { web, a: { type: 'redis' }, b: { type: 'mysql' }, c: { type: 'mongodb' } };
+    const r = withTemplate({ ...base, services }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('declares 3 managed datastores');
+  });
+
+  it('does not count a bucket, which has no volume of its own', () => {
+    const services = { web, a: { type: 'redis' }, b: { type: 'mysql' }, files: { type: 'storage' } };
+    const r = withTemplate({ ...base, services }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).not.toContain('managed datastores');
+  });
+});
+
+describe('lint: a bucket is declared bare, and the self-hosted runtime does not deploy it', () => {
+  const base = lintBase;
+  const web = lintWeb;
+
+  it('accepts a bare, a public and an explicitly private bucket, warning that each is cloud-only', () => {
+    for (const files of [{ type: 'storage' }, { type: 'storage', public: true }, { type: 'storage', public: false }]) {
+      const r = withTemplate({ ...base, services: { web, files } }, () => run('lint.mjs'));
+      expect(r.code, r.out).toBe(0);
+      expect(r.out).toContain('files declares a storage service, cloud-only today');
+    }
+  });
+
+  it('refuses every field the platform owns, naming the field and the type', () => {
+    const fields = [
+      ['image', { image: 'docker.io/library/redis:7' }],
+      ['build', { build: './Dockerfile' }],
+      ['port', { port: 9000 }],
+      ['healthcheck', { healthcheck: '/' }],
+      ['volumeGib', { volumeGib: 10 }],
+      ['alwaysOn', { alwaysOn: true }],
+      ['command', { command: 'run' }],
+      ['mountPath', { mountPath: '/x' }],
+      ['env', { env: {} }],
+    ];
+    for (const [field, extra] of fields) {
+      const r = withTemplate({ ...base, services: { web, files: { type: 'storage', ...extra } } }, () => run('lint.mjs'));
+      expect(r.code, `storage.${field}: ${r.out}`).toBe(1);
+      expect(r.out).toContain(`a storage service is platform-managed and carries no ${field}`);
+    }
+  });
+
+  it('lets a web service bind the bucket credentials', () => {
+    const app = { ...web, env: { platform: { S3_KEY: '${{services.files.AWS_ACCESS_KEY_ID}}' } } };
+    const r = withTemplate({ ...base, services: { app, files: { type: 'storage', public: true } } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+  });
+
+  it('refuses a fixed-value url ref to a bucket, as for a managed database', () => {
+    const app = { ...web, env: { fixed: { ASSETS: '${services.files.url}' } } };
+    const r = withTemplate({ ...base, services: { app, files: { type: 'storage' } } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain("service 'files' is a managed storage");
+  });
+});
+
+describe('lint: pgVersion belongs to postgres and public to storage', () => {
+  const base = lintBase;
+  const web = lintWeb;
+
+  it('accepts an integer pgVersion, warning it is cloud-only unless it is the local major', () => {
+    const r = withTemplate({ ...base, services: { web, db: { type: 'postgres', pgVersion: 17 } } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('db: pgVersion is cloud-only today unless it equals the major the self-hosted runtime runs');
+  });
+
+  it('refuses a pgVersion that is not an integer', () => {
+    for (const pgVersion of ['17', 17.5]) {
+      const r = withTemplate({ ...base, services: { web, db: { type: 'postgres', pgVersion } } }, () => run('lint.mjs'));
+      expect(r.code, String(pgVersion)).toBe(1);
+      expect(r.out).toContain('db: pgVersion must be an integer');
+    }
+  });
+
+  it('refuses pgVersion on a web service and on a bucket, and public on a web service and on postgres', () => {
+    const cases = [
+      [{ web: { ...web, pgVersion: 17 } }, 'web: pgVersion is only valid on a postgres service'],
+      [{ web, files: { type: 'storage', pgVersion: 17 } }, 'files: pgVersion is only valid on a postgres service'],
+      [{ web: { ...web, public: true } }, 'web: public is only valid on a storage service'],
+      [{ web, db: { type: 'postgres', public: true } }, 'db: public is only valid on a storage service'],
+    ];
+    for (const [services, message] of cases) {
+      const r = withTemplate({ ...base, services }, () => run('lint.mjs'));
+      expect(r.code, message).toBe(1);
+      expect(r.out).toContain(message);
+    }
+  });
+
+  it('refuses a public that is not a boolean', () => {
+    for (const value of ['yes', 1]) {
+      const r = withTemplate({ ...base, services: { web, files: { type: 'storage', public: value } } }, () => run('lint.mjs'));
+      expect(r.code, String(value)).toBe(1);
+      expect(r.out).toContain('files: public must be a boolean');
+    }
+  });
+});
+
+describe('lint: a web service\'s health check path is optional, a worker still may not have one', () => {
+  const base = lintBase;
+  const web = lintWeb;
+
+  it('accepts a web service without a path, as the platform does', () => {
+    const bare = { type: web.type, image: web.image, port: web.port };
+    const r = withTemplate({ ...base, services: { web: bare } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+  });
+
+  it('refuses a web service that declares the key without a path, as null (bare YAML key) or empty', () => {
+    for (const healthcheck of [null, '', 'healthz']) {
+      const r = withTemplate({ ...base, services: { web: { ...web, healthcheck } } }, () => run('lint.mjs'));
+      expect(r.code, JSON.stringify(healthcheck)).toBe(1);
+      expect(r.out).toContain('web: healthcheck must be a path starting with /');
+    }
+  });
+
+  it('refuses a path that would leave the service, as the platform does', () => {
+    for (const healthcheck of ['//evil.example', '//evil.example/x', 'https://evil.example/x', '/a\\b']) {
+      const r = withTemplate({ ...base, services: { web: { ...web, healthcheck } } }, () => run('lint.mjs'));
+      expect(r.code, healthcheck).toBe(1);
+      expect(r.out).toContain('web: healthcheck must be a path starting with /');
+    }
+  });
+
+  it('accepts a single-slash path, with or without a query', () => {
+    for (const healthcheck of ['/healthz', '/', '/api/health?ready=1']) {
+      const r = withTemplate({ ...base, services: { web: { ...web, healthcheck } } }, () => run('lint.mjs'));
+      expect(r.code, `${healthcheck}: ${r.out}`).toBe(0);
+    }
+  });
+
+  it('refuses a worker that declares a path', () => {
+    const job = { type: 'worker', image: web.image, healthcheck: '/' };
+    const r = withTemplate({ ...base, services: { web, job } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('job: a worker has no HTTP endpoint to probe');
+  });
+});
+
+describe('lint: a misspelt service key is refused, while the rest of the manifest stays open', () => {
+  const base = lintBase;
+  const web = lintWeb;
+
+  it('names an unknown key on a service of every type', () => {
+    const cases = [
+      [{ web: { ...web, colour: 'red' } }, 'web: colour is not a template field'],
+      [{ web, store: { type: 'postgres', flavour: 'spicy' } }, 'store: flavour is not a template field'],
+      [{ web, store: { type: 'storage', visibility: 'public' } }, 'store: visibility is not a template field'],
+    ];
+    for (const [services, message] of cases) {
+      const r = withTemplate({ ...base, services }, () => run('lint.mjs'));
+      expect(r.code, message).toBe(1);
+      expect(r.out).toContain(message);
+    }
+  });
+
+  it('leaves the top level, meta and upstream open', () => {
+    const manifest = { ...base, extra: 1, meta: { ...base.meta, extra: 1 }, upstream: { ...base.upstream, extra: 1 }, services: { web } };
+    const r = withTemplate(manifest, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+  });
+
+  it('still refuses spec and a sized volume by their own messages, not as unknown keys', () => {
+    const r = withTemplate({ ...base, services: { web: { ...web, spec: '1vcpu-1gb' } } }, () => run('lint.mjs'));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("the platform's to choose");
+    expect(r.out).not.toContain('is not a template field');
+  });
+});
 
 describe('lint: a self-built image must be tagged with its own version', () => {
   it('passes the registry as it stands', () => {
@@ -110,5 +431,77 @@ describe('lint: a self-built image must be tagged with its own version', () => {
     const m = yaml.load(readFileSync(join(root, 'hermes/insta.template.yaml'), 'utf8'));
     expect(String(Object.values(m.services)[0].image)).toContain('ghcr.io/insforge/insta-oss/templates/hermes:');
     expect(String(Object.values(m.services)[0].image)).toContain(String(m.version));
+  });
+});
+
+// The architectures a template's image is published for: the workflow's buildx `platforms`, the
+// catalog's answer to "will this run here", and the deploy path's precondition all read this one
+// field, so a template that omits it or misspells it must not reach main.
+describe('lint and the build matrix agree on meta.architectures', () => {
+  const base = lintBase;
+  const web = lintWeb;
+
+  it('rejects a template that declares none', () => {
+    const meta = { ...base.meta };
+    delete meta.architectures;
+    const r = withTemplate({ ...base, meta, services: { web } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('missing meta.architectures');
+  });
+
+  it('rejects an unknown architecture and a repeated one', () => {
+    const bad = withTemplate({ ...base, meta: { ...base.meta, architectures: ['amd64', 'riscv64'] }, services: { web } }, () => run('lint.mjs'));
+    expect(bad.code).toBe(1);
+    expect(bad.out).toContain("carries 'riscv64'");
+    const dupe = withTemplate({ ...base, meta: { ...base.meta, architectures: ['amd64', 'amd64'] }, services: { web } }, () => run('lint.mjs'));
+    expect(dupe.code).toBe(1);
+    expect(dupe.out).toContain('the same architecture twice');
+  });
+
+  it('accepts an honestly single-architecture template', () => {
+    const r = withTemplate({ ...base, meta: { ...base.meta, architectures: ['amd64'] }, services: { web } }, () => run('lint.mjs'));
+    expect(r.code, r.out).toBe(0);
+  });
+
+  it('turns each code into its own version tag and platform list', () => {
+    const targets = targetsFor(['n8n', 'hermes'], root);
+    expect(targets).toEqual([
+      { code: 'n8n', version: yaml.load(readFileSync(join(root, 'n8n/insta.template.yaml'), 'utf8')).version, platforms: 'linux/amd64,linux/arm64' },
+      { code: 'hermes', version: yaml.load(readFileSync(join(root, 'hermes/insta.template.yaml'), 'utf8')).version, platforms: 'linux/amd64,linux/arm64' },
+    ]);
+  });
+
+  it('derives an amd64-only platform list rather than assuming both', () => {
+    withTemplate({ ...base, meta: { ...base.meta, architectures: ['amd64'] }, services: { web } }, () => {
+      const [dir] = readdirSync(root).filter((d) => d.startsWith(FIXTURE_PREFIX));
+      expect(targetsFor([dir], root)).toEqual([{ code: dir, version: '1.0.0', platforms: 'linux/amd64' }]);
+    });
+  });
+
+  it('stops the build instead of guessing when a template declares none', () => {
+    withTemplate({ ...base, meta: (() => { const meta = { ...base.meta }; delete meta.architectures; return meta; })(), services: { web } }, () => {
+      const dirs = readdirSync(root).filter((d) => d.startsWith(FIXTURE_PREFIX));
+      expect(() => targetsFor([dirs[0]], root)).toThrow(/meta\.architectures is missing/);
+    });
+  });
+
+  it('every buildable template in the tree yields a platform list', () => {
+    const buildable = readdirSync(root)
+      .filter((d) => d !== 'scripts' && d !== 'node_modules' && existsSync(join(root, d, 'Dockerfile')))
+      .sort();
+    expect(buildable.length).toBeGreaterThan(0);
+    for (const t of targetsFor(buildable, root)) {
+      expect(t.platforms, t.code).toMatch(/^linux\/(amd64|arm64)(,linux\/(amd64|arm64))*$/);
+    }
+  });
+
+  it('the workflow reads its matrix from the manifest, not from a fixed platform line', () => {
+    const wf = yaml.load(readFileSync(join(repoRoot, '.github/workflows/templates-build-images.yml'), 'utf8'));
+    expect(wf.jobs.build.strategy.matrix.include).toBe('${{ fromJson(needs.discover.outputs.targets) }}');
+    const push = wf.jobs.build.steps.find((s) => String(s.uses ?? '').startsWith('docker/build-push-action'));
+    expect(push.with.platforms).toBe('${{ matrix.platforms }}');
+    // The pushed index is checked against the same claim, which is what the amd64-only state
+    // this replaced would have failed on.
+    expect(JSON.stringify(wf.jobs.build.steps)).toContain('carries every declared architecture');
   });
 });

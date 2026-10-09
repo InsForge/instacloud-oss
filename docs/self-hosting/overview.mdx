@@ -1,0 +1,69 @@
+---
+title: "Self-hosting"
+description: "Run the InstaCloud runtime on your own machine: one daemon over Docker, the same CLI, the same URL shape."
+---
+
+InstaCloud's runtime is open source. [InstaCloud OSS](https://github.com/InsForge/instacloud-oss) is one
+daemon that drives your Docker and answers the same API the hosted platform answers, so the same
+`insta` CLI, the same MCP server and the same agent skills work against it.
+
+## What you get
+
+- One daemon (`instad`) over Docker: a Postgres container per branch, an S3-compatible bucket per
+  storage service, your app containers, managed Redis, MySQL and MongoDB.
+- The cloud's API surface: `insta status`, `project`, `services`, `deploy`, `branch`, `secrets`,
+  `db`, `template`, `compute`, `metrics`, `logs`, `events`, `approvals`, plus the governance policy
+  routes the dashboard drives (the CLI has no `policy` command, here or on the cloud).
+- The cloud's URL shape: `https://<group>-<project>-<branch>.<your-domain>` for apps and
+  `pg-<name>-<project>-<branch>.<your-domain>:5432` for databases.
+- Serverless behaviour on one box: idle services sleep, traffic wakes them. See [sleep and
+  wake](/self-hosting/sleep).
+- Branches that fork the disk: `insta branch create` reflink-copies a sleeping database in about
+  a second at any size, and streams an awake one (or any, without reflinks) in time proportional
+  to its size. See [branching](/self-hosting/branching).
+- The bundled template catalog served through the cloud's `/templates` routes, so
+  `insta template list` works with no internet access. Each template declares the CPU
+  architectures its image is published for, and a deploy this box cannot run is refused up front.
+- The dashboard, served by the daemon itself and laid out like the hosted console: a Service
+  canvas, Quick Start, Observability, Secrets, Branches and Settings, and each service's own
+  detail with Metrics, Variables, Runtime Logs and Settings, plus a Database tab for Postgres, a
+  Volume tab for apps, and Connect on every database.
+
+Not there yet: billing and usage metering, organizations and members, multi-node scheduling, and
+the backups API (`pg_dump` plus a tar of the data directory is the documented path until it
+ships). Those routes answer `501` with guidance that names the alternative rather than pretending
+to work. [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md) is
+the command-by-command list.
+
+## Two ways to run it
+
+| Mode | Where | Address | Auth | Data dir | Use it for |
+| --- | --- | --- | --- | --- | --- |
+| Server | a VPS | `https://api.<domain>` and `https://console.<domain>` | one admin plus `insta_` tokens | `/var/lib/instacloud` | a shared environment, agents, CI, anything with a URL you send to someone |
+| Local | your laptop | `http://127.0.0.1:8080` and `*.localhost` names | none, `user: local` | `~/.insta-oss` | development on the daemon itself, offline work, a throwaway stack |
+
+Server mode is the one-liner on the [install](/self-hosting/install) page. Local mode is the clone
+and `npm run dev` on the same page.
+
+## The pages
+
+<CardGroup cols={2}>
+  <Card title="Install" icon="download" href="/self-hosting/install">
+    The one-liner, what it writes, the firewall and Docker settings it changes, and local mode.
+  </Card>
+  <Card title="Set up access" icon="key" href="/self-hosting/setup">
+    The admin account, API tokens, `insta login --api-key`, MCP, and a lost password.
+  </Card>
+  <Card title="Domains and TLS" icon="globe" href="/self-hosting/domains">
+    Every hostname the daemon mints, your own domain, certificates, and public database ports.
+  </Card>
+  <Card title="Sleep and wake" icon="moon" href="/self-hosting/sleep">
+    What counts as activity, when a service sleeps, how it wakes, always-on, and the knobs.
+  </Card>
+  <Card title="Branching" icon="code-branch" href="/self-hosting/branching">
+    How a branch forks the database files and volumes, and where the data lives.
+  </Card>
+  <Card title="Upgrade and backups" icon="arrows-rotate" href="/self-hosting/upgrade">
+    Re-run the installer, pin a version, roll back, and back up until the API ships.
+  </Card>
+</CardGroup>

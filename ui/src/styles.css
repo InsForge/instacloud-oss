@@ -1,16 +1,30 @@
 @import "tailwindcss";
 @import "@insforge/ui/styles.css";
-
-/* Tailwind can't see class names inside pre-built packages — scan the ui dist. */
-@source "../node_modules/@insforge/ui/dist";
+/* The console's typefaces, self-hosted (next/font is Next-only; the fonts are not): Inter for
+ * text and Geist Mono for code. Without these, Inter only rendered for viewers who happen to
+ * have it installed, and code fell back to the OS mono stack — the largest single "looks
+ * different from the console" cause. */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/geist-mono";
 
 /*
- * Map @insforge/ui design tokens (defined in styles.css above) to Tailwind v4
- * theme colors — same mapping as insta-frontend's globals.css. RGB-triplet
- * tokens are wrapped in rgb(); alpha tokens are already full colors.
- * (Font: the package's Inter-first stack; no webfont bundled — the dashboard
- * must work offline, so we take the system fallback when Inter isn't local.)
+ * The cloud console's globals.css (InsForge/insta-frontend src/app/globals.css), minus what needs
+ * Next (next/font) or a cloud-only feature (identity-mark palette, Quick Start motion). Keep the
+ * two in step: the self-hosted dashboard is meant to look like the console.
  */
+
+/* The loaded webfonts first; the kit's stack (plain Inter, then system) stays as the fallback. */
+:root {
+  --insforge-font: 'Inter Variable', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+/* `inline`, like the --font-sans override below: the value bakes into the generated `font-mono`
+ * utility, so an unlayered :root declaration elsewhere cannot win the cascade over it. */
+@theme inline {
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}
+
+/* Dark mode is class-based (`.dark` on <html>), so `dark:` utilities key off the class too. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* InstaCloud brand: primary actions are black (white in dark mode), per Figma. */
 :root {
@@ -18,6 +32,64 @@
 }
 .dark {
   --primary: var(--insforge-white);
+}
+
+/* InstaCloud brand accent: emerald per theme — light #059669, dark #6EE7B7. */
+:root {
+  --theme: var(--insforge-emerald-600);
+}
+.dark {
+  --theme: var(--insforge-emerald-300);
+}
+
+/*
+ * special/page — per the design library: light #E8E8E8 (semantic-3), dark #161616 (semantic-0).
+ * The kit still maps light --page to semantic-1, which leaves the canvas indistinguishable from
+ * the chrome.
+ */
+:root {
+  --page: var(--semantic-3);
+}
+.dark {
+  --page: var(--semantic-0);
+}
+
+/*
+ * Pin a subtree to the LIGHT palette regardless of the active theme (the auth pages keep their
+ * light card even in dark mode). Restates the kit's light tokens plus this app's overrides; custom
+ * properties resolve from the nearest setter, so this wins over `.dark` on <html> inside the scope.
+ */
+.light {
+  --semantic-0: 255 255 255;
+  --semantic-1: 247 247 247;
+  --semantic-2: 240 240 240;
+  --semantic-3: 232 232 232;
+  --semantic-4: 224 224 224;
+  --semantic-5: 217 217 217;
+  --semantic-6: 209 209 209;
+  --alpha-4: rgba(0, 0, 0, 0.04);
+  --alpha-8: rgba(0, 0, 0, 0.08);
+  --alpha-12: rgba(0, 0, 0, 0.12);
+  --alpha-16: rgba(0, 0, 0, 0.16);
+  --alpha-inverse-4: rgba(255, 255, 255, 0.04);
+  --alpha-inverse-8: rgba(255, 255, 255, 0.08);
+  --alpha-inverse-12: rgba(255, 255, 255, 0.12);
+  --alpha-inverse-16: rgba(255, 255, 255, 0.16);
+  --foreground: var(--insforge-black);
+  --muted-foreground: var(--insforge-neutral-600);
+  --disabled: var(--insforge-neutral-400);
+  --inverse: var(--insforge-white);
+  --primary: var(--insforge-black);
+  --theme: var(--insforge-emerald-600);
+  --success: var(--insforge-green-600);
+  --destructive: var(--insforge-red-600);
+  --warning: var(--insforge-amber-600);
+  --info: var(--insforge-sky-600);
+  --border: var(--alpha-8);
+  --card: var(--insforge-white);
+  --toast: var(--insforge-white);
+  --page: var(--semantic-3);
+  color-scheme: light;
 }
 
 @theme inline {
@@ -29,6 +101,7 @@
   --color-disabled: rgb(var(--disabled));
   --color-inverse: rgb(var(--inverse));
   --color-primary: rgb(var(--primary));
+  --color-theme: rgb(var(--theme));
   --color-success: rgb(var(--success));
   --color-destructive: rgb(var(--destructive));
   --color-warning: rgb(var(--warning));
@@ -60,9 +133,212 @@
   --color-alpha-inverse-16: var(--alpha-inverse-16);
 }
 
+/*
+ * InstaCloud is squared: zero the whole Tailwind radius scale so every `rounded*` utility, ours
+ * and @insforge/ui's, renders square. `rounded-full` is untouched (calc(infinity*1px), not a
+ * variable), so dots, pills, switches and spinners stay circular.
+ */
+:root {
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
+}
+
+/* The bare `rounded` utility and the kit Toast's `rounded-[8px]` inline their radius instead of
+ * reading a variable. Attribute selectors, unlayered, so they win over the layered originals. */
+[class~="rounded"],
+[class~="rounded-[8px]"] {
+  border-radius: 0;
+}
+
 body {
-  background: rgb(var(--page));
+  /* semantic-1, matching the console's center containers; --page is the recessed canvas. */
+  background: rgb(var(--semantic-1));
   color: rgb(var(--foreground));
   font-family: var(--insforge-font);
   -webkit-font-smoothing: antialiased;
+}
+
+/* The kit's menu items ship `gap-1`, which sets icons too close to their labels (console rule). */
+[role="menuitem"],
+[role="menuitemcheckbox"],
+[role="menuitemradio"] {
+  gap: 0.5rem;
+}
+
+/*
+ * Filled actions carry the theme accent (emerald), not black: the kit's primary Button ships
+ * `bg-primary`, repainted here rather than remapping --primary so `text-primary` keeps meaning the
+ * default foreground (console rule).
+ */
+[class~="bg-primary"] {
+  background-color: rgb(var(--theme));
+}
+
+/*
+ * The rule above is UNLAYERED, so it outranks every layered Tailwind utility regardless of
+ * specificity: while `bg-primary` is on the element, any hover or active background the kit's
+ * Button adds is suppressed and a filled button looks inert under the cursor. These restate the
+ * accent's own states at the same precedence, so the button responds again.
+ */
+[class~="bg-primary"]:hover:not(:disabled):not([data-disabled]) {
+  background-color: rgb(var(--theme) / 0.9);
+}
+[class~="bg-primary"]:active:not(:disabled):not([data-disabled]) {
+  background-color: rgb(var(--theme) / 0.8);
+}
+
+/*
+ * The console's Activities side panel (insta-frontend globals.css): a 320px column docked to the right of
+ * the content. It grows in from zero width while its content slides in, so the page is pushed aside
+ * rather than covered.
+ */
+.project-feed-panel-shell {
+  position: relative;
+  z-index: 40;
+  flex: 0 0 auto;
+  width: 0;
+  overflow: hidden;
+  transition: width 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.project-feed-panel-shell[data-open="true"] {
+  width: 320px;
+}
+.project-feed-panel-content {
+  transform: translateX(100%);
+  opacity: 0;
+  transition:
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms ease;
+}
+.project-feed-panel-shell[data-open="true"] > .project-feed-panel-content {
+  transform: translateX(0);
+  opacity: 1;
+}
+@starting-style {
+  .project-feed-panel-shell[data-open="true"] {
+    width: 0;
+  }
+  .project-feed-panel-shell[data-open="true"] > .project-feed-panel-content {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-feed-panel-shell,
+  .project-feed-panel-content {
+    transition-duration: 1ms;
+  }
+}
+
+/*
+ * The console's pending-review stack and cards (insta-frontend globals.css): a warning wash over an opaque card,
+ * cards that drop in, step up as the front one is decided and slide out to the right, and a dismissed stack
+ * that shrinks toward the bell. The stack sits clear of an open Activities column and fades out under
+ * Notifications, staying mounted so its dismissals survive.
+ */
+.review-notification-surface {
+  background:
+    linear-gradient(rgb(var(--warning) / 0.08), rgb(var(--warning) / 0.08)), rgb(var(--card));
+}
+.review-notification-enter,
+.review-notification-layer-second,
+.review-notification-layer-third {
+  animation: review-notification-enter 280ms ease-out both;
+}
+.review-notification-layer-second {
+  --review-opacity: 0.7;
+  animation-delay: 100ms;
+}
+.review-notification-layer-third {
+  --review-opacity: 0.4;
+  animation-delay: 200ms;
+}
+.review-notification-promote {
+  animation: review-notification-promote 240ms ease-out both;
+}
+.review-notification-exit {
+  animation: review-notification-exit 240ms ease-in both;
+}
+@keyframes review-notification-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: var(--review-opacity, 1);
+    transform: translateY(0);
+  }
+}
+@keyframes review-notification-promote {
+  from {
+    transform: translateY(6px) scale(0.9625);
+  }
+  to {
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes review-notification-exit {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(100% + 12px));
+  }
+}
+.review-notification-dismiss {
+  pointer-events: none;
+  animation: review-notification-dismiss 280ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes review-notification-dismiss {
+  from {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(var(--review-dismiss-x), var(--review-dismiss-y)) scale(0.08);
+  }
+}
+.review-notification-position {
+  right: 0;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    right 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 140ms ease,
+    visibility 0s;
+}
+.review-notification-position[data-panel="activities"] {
+  right: 320px;
+}
+.review-notification-position[data-panel="notifications"] {
+  right: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    right 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 140ms ease 140ms,
+    visibility 0s 280ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-notification-enter,
+  .review-notification-layer-second,
+  .review-notification-layer-third,
+  .review-notification-promote,
+  .review-notification-exit,
+  .review-notification-dismiss {
+    animation-duration: 1ms;
+    animation-delay: 0ms;
+  }
+  .review-notification-position,
+  .review-notification-position[data-panel="notifications"] {
+    transition-duration: 1ms;
+    transition-delay: 0ms;
+  }
 }

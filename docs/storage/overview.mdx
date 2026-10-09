@@ -1,0 +1,43 @@
+---
+title: "Storage buckets"
+description: "An S3-compatible bucket per branch, forked with the branch."
+---
+
+A storage service is an S3-compatible bucket. Your app talks to it with any S3 client or SDK, and it branches with your environment — a branch's bucket forks copy-on-write with the parent's objects.
+
+```bash
+insta services add storage files
+```
+
+Buckets are private by default; create with `--public` (or flip later) to serve objects with anonymous public read.
+
+## What you get
+
+- **S3 compatibility.** Point any S3 SDK, the aws CLI, or rclone at it — no proprietary client.
+- **Terminal access.** `insta storage list` (prefix filtering, cursor paging), `insta storage get <key>` (downloads through a short-lived presigned URL), `insta storage delete <key>`.
+- **Per-branch buckets.** Each branch has its own bucket, so work on a branch stays on that branch. The storage commands accept `--branch` to reach another branch's bucket when you mean to.
+
+## Branching a bucket
+
+`insta branch create` forks the bucket copy-on-write: the branch opens with all of the parent's objects, and writes on either side never touch the other. Uploads an agent makes on its task branch disappear with `insta branch delete`.
+
+<Note>
+On self-hosted InstaCloud OSS the fork is a full object sync rather than copy-on-write — same isolation, duplicated at clone time.
+</Note>
+
+## Credentials
+
+Bucket credentials are provider-minted and live on the platform, like the database DSN. List what a bucket exposes and bind it into a compute service:
+
+```bash
+insta secrets sources
+insta secrets bind BUCKET_NAME storage/files --source-name BUCKET_NAME --to compute/app
+```
+
+<Note>
+On self-hosted InstaCloud OSS, `insta secrets bind` answers `501`. Skip it: every compute container already receives the bucket's credentials under their own names (`insta secrets list` names them), or set your own with `insta secrets set`.
+</Note>
+
+Storage exposes several credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `BUCKET_NAME`, `AWS_REGION`), so `--source-name` is required — unlike Postgres, which exposes exactly one.
+
+Bindings are injected as environment variables at deploy time. For local development, `insta secrets` writes user secrets to `.env` and `insta run <cmd>` injects the branch bundle into one process.

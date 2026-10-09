@@ -1,5 +1,5 @@
 code: claude-code
-version: 0.6.1
+version: 0.10.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -13,16 +13,16 @@ services:
   # the same branch, the second overwriting the first (QA.md finding 1).
   claude-code:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/claude-code:0.6.1   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/claude-code:0.10.0   # built from ./Dockerfile by templates-build-images.yml
     port: 7681
     healthcheck: /
-    # Stays at 1 GB: 2vcpu-2gb was tried on a live deployment against a ~30s first-response
-    # complaint and made no difference, so the cost is not memory or core count.
-    spec: 1vcpu-1gb              # created at 1GB (QA.md: "512 MB is not enough for an agent CLI")
-    # A volume makes scale-to-zero a cold boot, not a resume (24.5s measured).
-    alwaysOn: true
-    volume:
-      size: 1                    # mounts at /data
+    # No `spec:`, so the platform's birth size applies. Worth keeping from when this asked for
+    # 1 GB: 2vcpu-2gb was tried on a live deployment against a ~30s first-response complaint and
+    # made no difference, so that cost is not memory or core count and a bigger machine will not
+    # fix it.
+    # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works (hermes and n8n
+    # cannot). Costs a ~25s cold boot, and an agent left running with no browser is stopped.
+    volume: true  # mounts at /data
     env:
       fixed:
         HOME: /data/home
@@ -38,12 +38,21 @@ services:
       optional:
         ANTHROPIC_API_KEY:
           description: "Anthropic API key. Leave blank and run `claude login` in the terminal instead"
+        # setup-token's token can only make model requests, so it rules out Remote Control.
+        CLAUDE_CODE_OAUTH_TOKEN:
+          description: "Claude subscription token from running `claude setup-token` on your own computer, so every box is signed in without `claude login`. `ANTHROPIC_API_KEY` takes precedence if both are set. Leave blank if you want Remote Control, which this token cannot start"
+        GH_TOKEN:
+          description: "GitHub token for gh, for example the output of `gh auth token` on your own computer. Leave blank and run `gh auth login` in the terminal instead"
 
 meta:
   name: Claude Code
   tagline: Anthropic's coding agent, editing files and running commands in a browser terminal
   category: ai-agent
   tags: [ai-agent, ai]
+  # Architectures the published image carries. A box on anything else is told at deploy time
+  # rather than left to fail on the pull: the node base and the ttyd asset both carry aarch64, and
+  # both arches build and start.
+  architectures: [amd64, arm64]
   logo: ./logo.svg
   links:
     upstream: https://github.com/anthropics/claude-code

@@ -1,0 +1,50 @@
+---
+title: "Build & deploy"
+description: "From a directory, a Dockerfile, an image, or GitHub to a running service."
+---
+
+A deploy puts a container on a compute service and prints its URL. There are three ways in; all of them end at the same place.
+
+## Deploy paths
+
+**From source.** The default. Requires a Dockerfile in the directory; the build runs remotely, and the image is deployed pinned by digest:
+
+```bash
+insta deploy .
+```
+
+The listen port is read from the Dockerfile's last `EXPOSE` line (8080 if there is none); override with `--port`. Check whether a directory will build — locally, offline, before deploying:
+
+```bash
+insta build . --explain
+```
+
+**From a prebuilt image.** Skip the build entirely — exactly one of a directory or `--image` per deploy:
+
+```bash
+insta deploy --image ghcr.io/acme/api:v3
+```
+
+**From GitHub.** Connect a repository in the console and pushes deploy automatically, with per-pull-request environments.
+
+## Compute groups
+
+A branch can run several compute services — an API, a worker, a websocket server. Each is its own group with its own URL, port, and deploys. With one compute service, `insta deploy .` needs no addressing; with more than one, pick the target:
+
+```bash
+insta deploy . --group worker
+```
+
+Deploy to a branch's compute from anywhere with `--branch <name>`. WebSocket apps should deploy with `--websocket` — it provisions a larger guest and connection-based concurrency.
+
+## What happens on redeploy
+
+- Secrets and credential bindings (`insta secrets bind`) are injected as environment variables at deploy time. To land a changed secret without rebuilding, `insta compute restart` re-runs the already-deployed image against a freshly resolved bundle — no new image, no new spec.
+- The service's URL is stable across deploys.
+- Sleeping services wake on request; a redeploy replaces the image they wake into.
+
+If a deploy fails, check `insta build . --explain` for build-side problems, `insta build logs <id>` for the remote build's own compile output (the deploy operation ID by default; `--follow` watches it live), and `insta compute logs --deploy` for the machine lifecycle log.
+
+<Note>
+On self-hosted InstaCloud OSS, source deploys build locally with Docker (there is no remote builder, so `insta build logs` is cloud-only) and `insta compute logs --deploy` is cloud-only. `insta secrets bind` answers `501`: every compute container already receives each service's credentials under their own names, so read those (`insta secrets list` names them) or set your own with `insta secrets set`. The command-by-command list is in [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md).
+</Note>

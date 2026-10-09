@@ -1,227 +1,219 @@
-import { useState } from 'react'
-import { useParams } from 'react-router-dom'
-import {
-  Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
-  DropdownMenuTrigger, Input,
-} from '@insforge/ui'
-import { EllipsisVertical, Plus, X } from 'lucide-react'
-import type { Service } from '../api'
-import { api, relTime } from '../api'
-import { usePoll } from '../hooks'
-import { ErrorNote, Modal, StatusDot, TypeIcon } from '../components/ui'
+// The Service page, ported from the console (insta-frontend services/service-view.tsx): the Canvas /
+// List toggle, Add Service in the corner, and the dashed empty-state CTA that opens the "Add Your
+// Service" picker. Canvas is the default, as on the console, and an explicit List choice is the only
+// thing stored. Canvas mode is full-bleed; the toggle and Add Service float at the same spots in both
+// views, so switching never moves them.
+//
+// The empty state docks the console's connect-agent panel over the bottom of both views, CLI first
+// (components/console/ConnectAgentPanel.tsx), with this daemon's setup commands from lib/quickStart.ts.
+//
+// Self-host divergences: the canvas's own are in components/console/ServiceCanvas.tsx.
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { cn, Switch } from '@insforge/ui'
+import { Rows3, Workflow } from 'lucide-react'
+import { api, type Service } from '../api'
+import { usePoll, useWaking } from '../hooks'
+import { useLocalPref } from '../lib/localPref'
+import { afterLoad, loadSecretTree, pollsTree, treeFor } from '../lib/secretTreeLoad'
+import { linksFromSecretTree } from '../lib/serviceLinks'
+import { healthFor } from '../lib/status'
 import { ApprovalPrompt, type PendingApproval } from '../components/ApprovalPrompt'
+import { AddFirstServiceDialog, AddServiceButton, AddSourceDialog } from '../components/console/AddService'
+import { addIntent, cliSteps, setupPrompt } from '../lib/quickStart'
+import { servicesFor } from '../lib/servicesLoad'
+import { useAuth } from '../components/AuthGate'
+import { ConnectAgentPanel } from '../components/console/ConnectAgentPanel'
+import { ServiceCanvas } from '../components/console/ServiceCanvas'
+import { ServiceTable } from '../components/console/ServiceTable'
+import { ServiceDetailModal } from '../components/console/ServiceDetailModal'
+import { ErrorNote } from '../components/ui'
 
-function AddDialog({ projectId, onClose, onDone, onApproval }: {
-  projectId: string; onClose: () => void; onDone: () => void
-  onApproval: (p: NonNullable<PendingApproval>) => void
+/** User-level preference (not per project): how the service list is drawn. The console's key. */
+const VIEW_MODE_KEY = 'insta-services-view'
+
+/** Always-on for compute and managed rows: `PUT /services/:sid/always-on {enabled}`. */
+export function AlwaysOnSwitch({ projectId, branch, service, onDone, onError, onApproval }: {
+  projectId: string; branch: string; service: Service; onDone: () => void
+  onError: (m: string) => void; onApproval: (p: NonNullable<PendingApproval>) => void
 }) {
-  const [name, setName] = useState('')
-  const [error, setError] = useState<string>()
-  const submit = async () => {
-    if (!name.trim()) return setError('name required')
-    const r = await api.addComputeService(projectId, name.trim())
-    if (r.kind === 'error') return setError(r.error)
-    if (r.kind === 'approval') { onClose(); return onApproval({ ...r, retry: submit }) }
-    onClose(); onDone()
+  const [busy, setBusy] = useState(false)
+  const set = async (enabled: boolean) => {
+    setBusy(true)
+    const r = await api.setAlwaysOn(projectId, service.id, enabled, branch)
+    setBusy(false)
+    if (r.kind === 'error') return onError(r.error)
+    if (r.kind === 'approval') return onApproval({ ...r, retry: () => set(enabled) })
+    onDone()
   }
   return (
-    <Modal
-      title="Add service"
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={submit}>Add</Button>
-        </>
-      }
-    >
-      <label className="text-xs font-medium text-muted-foreground">Compute group name</label>
-      <Input
-        autoFocus value={name} onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && submit()}
-        placeholder="worker" className="mt-1"
-      />
-      <p className="mt-3 text-xs text-muted-foreground">
-        Postgres and storage are the fixed local pair — one of each per project, provisioned automatically.
-        A compute group materializes on its first <code className="font-mono">insta deploy --group</code>.
-      </p>
-      <ErrorNote error={error} />
-    </Modal>
+    <Switch checked={!!service.always_on} disabled={busy} onCheckedChange={set}
+      aria-label={`Always on for ${service.name}`} onClick={(e) => e.stopPropagation()} />
   )
 }
 
-function RenameDialog({ projectId, service, onClose, onDone, onApproval }: {
-  projectId: string; service: Service; onClose: () => void; onDone: () => void
-  onApproval: (p: NonNullable<PendingApproval>) => void
+/** Postgres has no always-on column: the same intent is scale-to-zero, inverted (decision 48). */
+export function PgAlwaysOnSwitch({ projectId, branch, group, onError, onApproval }: {
+  projectId: string; branch: string; group: string
+  onError: (m: string) => void; onApproval: (p: NonNullable<PendingApproval>) => void
 }) {
-  const [name, setName] = useState(service.name)
-  const [error, setError] = useState<string>()
-  const submit = async () => {
-    if (!name.trim()) return setError('name required')
-    const r = await api.renameService(projectId, service.id, name.trim())
-    if (r.kind === 'error') return setError(r.error)
-    if (r.kind === 'approval') { onClose(); return onApproval({ ...r, retry: submit }) }
-    onClose(); onDone()
+  const { data, reload } = usePoll(() => api.dbInstance(projectId, branch, group), [projectId, branch, group], 15000)
+  const [busy, setBusy] = useState(false)
+  const set = async (checked: boolean) => {
+    setBusy(true)
+    const r = await api.dbSettings(projectId, branch, { scaleToZero: !checked }, group)
+    setBusy(false)
+    if (r.kind === 'error') return onError(r.error)
+    if (r.kind === 'approval') return onApproval({ ...r, retry: () => set(checked) })
+    reload()
   }
   return (
-    <Modal
-      title="Rename Service"
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={submit}>Rename</Button>
-        </>
-      }
-    >
-      <label className="text-xs font-medium text-muted-foreground">New name</label>
-      <Input autoFocus value={name} onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && submit()} className="mt-1 font-mono" />
-      <p className="mt-3 text-xs text-muted-foreground">
-        Lower-kebab (a-z, 0-9, hyphen). The deployed container and any bound secrets follow the rename.
-      </p>
-      <ErrorNote error={error} />
-    </Modal>
-  )
-}
-
-// Row-level actions, mirroring the cloud console's kebab: lifecycle + rename for compute,
-// access mode for storage. Postgres is the fixed local pair — no actions.
-function ServiceActionsMenu({ projectId, branch, service, onError, onDone, onRename, onApproval }: {
-  projectId: string; branch: string; service: Service
-  onError: (m: string) => void; onDone: () => void; onRename: () => void
-  onApproval: (p: NonNullable<PendingApproval>) => void
-}) {
-  // lifecycle is ungated by default; access is gated (service.setAccess) — both route a 202 to
-  // the shared approval prompt so a policy=approve gate isn't silently swallowed.
-  const life = async (verb: 'start' | 'stop' | 'suspend') => {
-    const r = await api.lifecycle(projectId, service.id, verb, branch)
-    if (r.kind === 'error') return onError(r.error)
-    if (r.kind === 'approval') return onApproval({ ...r, retry: () => life(verb) })
-    onDone()
-  }
-  const access = async (isPublic: boolean) => {
-    const r = await api.setAccess(projectId, service.id, isPublic, branch)
-    if (r.kind === 'error') return onError(r.error)
-    if (r.kind === 'approval') return onApproval({ ...r, retry: () => access(isPublic) })
-    onDone()
-  }
-  if (service.type === 'postgres') return null
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${service.name}`}>
-          <EllipsisVertical className="size-4 text-muted-foreground" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {service.type === 'compute' && (
-          <>
-            {service.runtime === 'online'
-              ? <>
-                  <DropdownMenuItem onSelect={() => life('stop')}>Stop</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => life('suspend')}>Suspend</DropdownMenuItem>
-                </>
-              : <DropdownMenuItem onSelect={() => life('start')}>Start</DropdownMenuItem>}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onRename}>Rename Service</DropdownMenuItem>
-          </>
-        )}
-        {service.type === 'storage' && (
-          <DropdownMenuItem onSelect={() => access(!service.public)}>
-            {service.public ? 'Make Private' : 'Make Public'}
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Switch checked={data ? !data.scaleToZero : false} disabled={busy || !data} onCheckedChange={set}
+      aria-label={`Always on for ${group}`} onClick={(e) => e.stopPropagation()} />
   )
 }
 
 export function Services() {
   const { projectId, branch } = useParams() as { projectId: string; branch: string }
-  const { data: services, error, reload } = usePoll(() => api.services(projectId, branch), [projectId, branch])
-  const [adding, setAdding] = useState(false)
-  const [renaming, setRenaming] = useState<Service | null>(null)
+  // The detail overlay is URL-driven (`?service=<id>&tab=`), as on the console: deep links,
+  // refresh and the back button all open and close it.
+  const [params, setParams] = useSearchParams()
+  const openId = params.get('service')
+  const closeDetail = useCallback(() => setParams({}), [setParams])
+  const openService = useCallback((s: Service, tab?: string) => setParams(tab ? { service: s.id, tab } : { service: s.id }), [setParams])
+  const waking = useWaking()
+  const interval = waking.anyWaking ? 2000 : 5000
+  // Tagged with the scope that made it: the hook keeps its last data across a project or branch switch and a failed
+  // read, and an empty branch's list must not keep the next branch looking empty (lib/servicesLoad.ts).
+  const { data: servicesLoad, error, reload } = usePoll(
+    async () => ({ projectId, branch, services: await api.services(projectId, branch) }), [projectId, branch], interval)
+  const services = servicesFor(servicesLoad, projectId, branch)
+  const { data: health } = usePoll(() => api.runtimeHealth(projectId, branch), [projectId, branch], interval)
+  const [storedMode, setStoredMode] = useLocalPref(VIEW_MODE_KEY)
+  const mode: 'canvas' | 'list' = storedMode === 'list' ? 'list' : 'canvas'
+  // The canvas's edges, so only the canvas polls for them, on the console's cadence for bindings. A
+  // member without secrets.read gets an approval or a refusal instead of a tree: a canvas with no edges,
+  // and no further asks this visit, since each governed read mints an approval (secretTreeLoad.ts).
+  // Gated projects only accumulate: reads finish out of order, and a stale one must never un-gate the
+  // project shown now (secretTreeLoad.ts).
+  const [gated, setGated] = useState<ReadonlySet<string>>(() => new Set())
+  const { data: treeLoad } = usePoll(async () => {
+    const load = await loadSecretTree(api.secretTreeResult, projectId)
+    setGated((prev) => afterLoad(prev, load))
+    return load
+  }, [projectId], { intervalMs: 30_000, enabled: pollsTree(gated, projectId, mode) })
+  const secretTree = treeFor(treeLoad, projectId)
   const [approval, setApproval] = useState<PendingApproval>(null)
   const [actionError, setActionError] = useState<string>()
+  const [addFirstOpen, setAddFirstOpen] = useState(false)
+  // Quick Start's cards deep-link here, as on the console: `?add=postgres` opens the Postgres dialog and
+  // `?add=service` the full source picker. Read, then dropped from the URL so a refresh does not reopen it.
+  const [addSource, setAddSource] = useState<string | null>(null)
+  const intent = addIntent(params.get('add'))
+  useEffect(() => {
+    if (!intent) return
+    if (intent === 'picker') setAddFirstOpen(true)
+    else setAddSource(intent)
+    setParams((prev) => { const next = new URLSearchParams(prev); next.delete('add'); return next }, { replace: true })
+  }, [intent, setParams])
+  const closeAddSource = useCallback(() => setAddSource(null), [])
 
-  const remove = async (sid: string) => {
-    setActionError(undefined)
-    const r = await api.removeService(projectId, sid)
-    if (r.kind === 'error') return setActionError(r.error)
-    if (r.kind === 'approval') return setApproval({ ...r, retry: () => remove(sid) })
-    reload()
+  useEffect(() => { waking.reconcile(health, healthFor) }, [health, waking])
+
+  const { boot } = useAuth()
+  const rows = services ?? []
+  const empty = services !== undefined && rows.length === 0
+  const links = useMemo(() => linksFromSecretTree(secretTree, branch, rows), [secretTree, branch, rows])
+  const flow = { projectId, branch, services: rows, onDone: reload, onApproval: setApproval }
+
+  // Squared segmented toggle: 36px card-surface buttons in a hairline-bordered group, equal-width
+  // halves, the active one an inner box on the page surface, 13px label beside a 20px icon.
+  const toggle = (
+    <div className="grid grid-cols-2 border border-border bg-card">
+      {([{ value: 'canvas', label: 'Canvas', icon: Workflow }, { value: 'list', label: 'List', icon: Rows3 }] as const).map(({ value, label, icon: Icon }) => (
+        <button key={value} type="button" title={`${label} view`} aria-pressed={mode === value}
+          onClick={() => setStoredMode(value === 'list' ? 'list' : null)}
+          className={cn('group flex h-9 w-28 cursor-pointer items-center justify-center px-0.5', mode === value ? 'text-foreground' : 'text-muted-foreground')}>
+          <span className={cn('flex w-full items-center justify-center gap-1 p-1.5 text-[13px] leading-[18px] transition-colors', mode === value ? 'bg-page' : 'group-hover:bg-alpha-4')}>
+            <Icon className="size-5" />
+            {label}
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+  const floating = (
+    <>
+      <div className="absolute top-6 left-1/2 z-10 -translate-x-1/2">{toggle}</div>
+      <div className="absolute top-6 right-6 z-10"><AddServiceButton {...flow} /></div>
+    </>
+  )
+  // The empty state's agent bar, docked 40px above the view's bottom edge in both views, CLI first, as on the console.
+  // Pointer events pass through around it.
+  const emptyConnectBar = empty ? (
+    <div className="pointer-events-none absolute inset-x-0 bottom-10 z-10 flex justify-center px-6">
+      <ConnectAgentPanel title="Connect your agent to deploy services directly" leadWith="cli" className="pointer-events-auto w-[720px]"
+        cli={cliSteps(projectId, boot.mode, boot.apiUrl)} prompt={setupPrompt(projectId, boot.mode, boot.apiUrl, boot.consoleUrl)} />
+    </div>
+  ) : null
+  const overlays = (
+    <>
+      <AddFirstServiceDialog {...flow} open={addFirstOpen} onOpenChange={setAddFirstOpen} />
+      {addSource && <AddSourceDialog {...flow} sourceKey={addSource} onClose={closeAddSource} />}
+      {openId && (
+        <ServiceDetailModal projectId={projectId} branch={branch} serviceId={openId} requestedTab={params.get('tab')}
+          onClose={closeDetail} />
+      )}
+      <ApprovalPrompt projectId={projectId} pending={approval} onClose={() => setApproval(null)} />
+    </>
+  )
+
+  if (mode === 'canvas') {
+    // Full-bleed: the canvas fills <main> (the positioned ancestor), escaping its padding, and the
+    // toggle and Add Service float inside it at a 24px inset.
+    return (
+      <div className="absolute inset-0 min-h-[420px]">
+        <ServiceCanvas projectId={projectId} branch={branch} services={rows} links={links} health={health}
+          isWaking={waking.isWaking} onOpen={openService}
+          onAddFirstService={empty ? () => setAddFirstOpen(true) : undefined}
+          onDone={reload} onError={setActionError} onApproval={setApproval} />
+        {floating}
+        {emptyConnectBar}
+        {(actionError || error) && <div className="absolute bottom-6 left-6 z-10"><ErrorNote error={actionError ?? error} /></div>}
+        {overlays}
+      </div>
+    )
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[64rem] flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-[32px] leading-12 font-bold">Service</h1>
-        <Button variant="primary" className="gap-1.5" onClick={() => setAdding(true)}>
-          <Plus className="size-4" />
-          Add Service
-        </Button>
+    // A title band spanning the content column (escaping <main>'s padding), then the rows at a
+    // 24px inset, as on the console.
+    <div className={cn('relative -mx-8 -mt-8 flex w-auto flex-col gap-4', empty && '-mb-6 min-h-[420px] flex-1')}>
+      <div className="px-6">
+        <div className="flex items-center py-4.5">
+          <h1 className="text-[32px] leading-12 font-semibold">Service</h1>
+        </div>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="px-4 py-3 text-left text-sm font-normal text-muted-foreground">Service</th>
-              <th className="px-4 py-3 text-left text-sm font-normal text-muted-foreground">Status</th>
-              <th className="px-4 py-3 text-left text-sm font-normal text-muted-foreground">Endpoint</th>
-              <th className="px-4 py-3 text-left text-sm font-normal text-muted-foreground">Updated</th>
-              <th className="w-12" aria-label="Actions" />
-            </tr>
-          </thead>
-          <tbody>
-            {(services ?? []).map((s) => (
-              <tr key={s.id} className="group border-b border-border last:border-b-0">
-                <td className="px-4 py-2">
-                  <div className="flex items-center gap-3">
-                    <TypeIcon type={s.type} />
-                    <span className="text-sm font-medium capitalize">
-                      {s.type === 'postgres' ? 'Postgres' : s.type === 'storage' ? 'Storage' : s.name}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-4 py-2"><StatusDot runtime={s.runtime} /></td>
-                <td className="max-w-48 truncate px-4 py-2 font-mono text-xs text-muted-foreground" title={s.endpoint}>
-                  {s.endpoint ?? '—'}
-                </td>
-                <td className="px-4 py-2 text-sm text-muted-foreground">{relTime(s.updated_at)}</td>
-                <td className="px-2 py-2 text-right">
-                  <div className="flex items-center justify-end gap-0.5">
-                    <ServiceActionsMenu projectId={projectId} branch={branch} service={s}
-                      onError={setActionError} onDone={reload} onRename={() => setRenaming(s)}
-                      onApproval={setApproval} />
-                    {s.type === 'compute' && (
-                      <Button variant="ghost" size="icon-sm" onClick={() => remove(s.id)}
-                        title={`remove ${s.name}`} className="invisible group-hover:visible">
-                        <X className="size-4 text-destructive" />
-                      </Button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {services && services.length === 2 && (
-        <p className="text-center text-sm text-muted-foreground">
-          No compute yet — deploy with <code className="font-mono">insta deploy --image &lt;img&gt; --port &lt;p&gt;</code> or add a group.
-        </p>
+      {floating}
+      {empty ? (
+        <div className="px-6">
+          <button type="button" onClick={() => setAddFirstOpen(true)}
+            className="flex w-full cursor-pointer flex-col items-center justify-center gap-3 border border-dashed border-alpha-16 bg-semantic-2 px-6 py-10 transition-colors hover:bg-card">
+            <span className="text-xl leading-7 font-medium">No Service Deployed</span>
+            <span className="text-sm leading-6 text-muted-foreground">Add your first service</span>
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col px-6">
+          <ServiceTable projectId={projectId} branch={branch} services={rows} health={health} isWaking={waking.isWaking}
+            onOpen={openService}
+            onDone={reload} onError={setActionError} onApproval={setApproval} />
+        </div>
       )}
-      <ErrorNote error={actionError ?? error} />
-      {renaming && (
-        <RenameDialog projectId={projectId} service={renaming}
-          onClose={() => setRenaming(null)} onDone={reload} onApproval={setApproval} />
-      )}
-      {adding && (
-        <AddDialog projectId={projectId} onClose={() => setAdding(false)} onDone={reload}
-          onApproval={setApproval} />
-      )}
-      <ApprovalPrompt projectId={projectId} pending={approval} onClose={() => setApproval(null)} />
+      {(actionError || error) && <div className="px-6"><ErrorNote error={actionError ?? error} /></div>}
+      {emptyConnectBar}
+      {overlays}
     </div>
   )
 }

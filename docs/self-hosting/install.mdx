@@ -1,0 +1,479 @@
+---
+title: "Install"
+description: "One command on a VPS, or a clone and npm run dev on your laptop."
+---
+
+## Requirements
+
+Server mode wants a machine you can point DNS at:
+
+- Ubuntu 22.04+ or Debian 12+, `x86_64` or `aarch64`. The daemon image and every bundled template
+  publish both, and `insta template list` reports each template's `architectures` next to this
+  box's own `hostArchitecture`, so a template that will not run here is refused before it creates
+  anything rather than failing on the image pull
+- root: pipe the one-liner to `sudo sh` (the script itself calls `sudo` for nothing, and a
+  non-root run stops at once with the command to use)
+- inbound TCP 80 and 443 allowed in the cloud firewall or security group, and 5432 only if
+  Postgres clients outside the box need it. Keep Redis (6379), MongoDB (27017) and the MySQL lane
+  range closed at the provider: those lanes are for containers on the box, and the installer's own
+  firewall rules leave them private. It opens a host firewall it finds active, but it cannot see
+  your provider's, and certificates are issued through 80 and 443
+- 2 vCPU, 2 GiB RAM, 15 GiB free disk. A first install refuses a box under the memory or disk
+  minimum and says which one; an upgrade of a box that is already installed warns and continues.
+  One vCPU is a warning either way: it runs, and every deploy and fork is slow
+- ports 80, 443, 8080, 8081, 5432, 6379 and 27017 free (the script refuses to start if any is
+  bound, and prints the holder). Those are the defaults; the refusal names the
+  `INSTA_OSS_LANE_*` key that moves each lane, and everything the installer then checks, opens,
+  writes and prints follows the value you set
+- Docker, installed by the script when it is missing
+
+## The one-liner
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh
+```
+
+It pulls `ghcr.io/insforge/instacloud`, published for linux/amd64 and linux/arm64.
+
+With no `--version` and no tag on `INSTA_OSS_IMAGE`, the installer asks GitHub for the newest
+published **Release** and installs that, on a first install and on an upgrade alike. The mutable
+`latest` tag is only the fallback, used when that lookup returns nothing. Pin a specific one by
+ending the one-liner with `| sudo sh -s -- --version v0.1.0`: flags go after `sh -s --`, because the
+script arrives on stdin. (The `--print-*` modes skip the lookup, so the version they print is the
+fallback rather than what a real run would choose.)
+
+## Build the image yourself
+
+You do not need to: the image is published. This is for running a build of your own, from a patch
+or an unreleased commit. Build it on the box and point the installer at it with
+`INSTA_OSS_IMAGE`:
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh          # only when the box has no Docker yet
+git clone https://github.com/InsForge/instacloud-oss.git
+cd instacloud-oss
+sudo docker build -t instacloud:dev .
+sudo INSTA_OSS_IMAGE=instacloud:dev sh install.sh
+```
+
+`INSTA_OSS_IMAGE` may carry a tag, and that tag is the version, so there is nothing else to pin.
+The installer pulls with pull failures ignored, finds the tag already in the local Docker, and
+starts it. The upgrade is the same commands again: pull the branch, rebuild the tag, re-run the
+script. The build needs about 1 GiB of free memory and a minute on a 2 vCPU box.
+
+## What the script does
+
+1. Renders and exits for any `--print-*` flag, with no root and no side effects.
+2. Checks preconditions: root, Linux, a supported architecture. It installs `curl` and `iproute2`
+   when the box does not have them, before it resolves anything, because it needs `curl` for the
+   release tag and the public address and `ip` and `ss` for the address fallback and the port
+   check. An existing `/etc/instacloud/instad.env` puts it in upgrade mode.
+3. Checks ports and refuses when any of them is taken, naming the holder: 80 and 443 for the edge,
+   8080 and 8081 for the daemon, and 5432, 6379 and 27017 for the three database lanes. The daemon
+   binds all three lanes at startup and exits if one is busy, so a busy lane port is a refusal, not
+   a warning; the message names the `INSTA_OSS_LANE_*` key that moves that lane elsewhere. While
+   the stack is already up this check is skipped.
+4. Checks the sizing: the vCPU count, `MemTotal`, and the free space on the filesystem that will
+   hold the data directory. See [Requirements](#requirements) for what is fatal and what is a
+   warning.
+5. Installs Docker when missing, enables it, requires `docker compose version`, and starts the
+   daemon when it is installed but not answering.
+6. Writes `/etc/docker/daemon.json` with `default-address-pools` and restarts Docker when the file
+   is missing or empty. A `daemon.json` that already holds other settings is
+   left untouched, with a warning that prints the key to add: until you add it and restart Docker,
+   the box holds only 31 branch networks. See [Docker address
+   pools](#docker-address-pools) for why.
+7. Opens the firewall, but only when one is active, and only for its own services (see below:
+   never for SSH). Under `ufw`: inbound 80, 443 and the Postgres lane, plus 443, the three
+   database lanes and the per-service lane range from `docker0` and from every Docker address
+   pool. The ports come from the values it resolved, so a lane you moved is the lane it opens;
+   the numbers below are what those resolve to on a default install (5432, 6379, 27017 and
+   20000 to 20999).
+   Under `firewalld`: the same container ports in the `docker` zone and 80, 443 and 5432 in the
+   `public` one. Both are idempotent and every rule is printed. `--print-firewall` shows the list
+   without touching anything.
+
+   **The installer never adds, edits or removes an SSH rule.** It opens the ports for the
+   services it installs and nothing else: your SSH policy is yours, and a script that edits it
+   either skips a rule your box needed or widens one you narrowed on purpose. What it does do is
+   tell you, when it finds no active firewall, which ports to allow before you enable one. It
+   reads three sources and takes the UNION of them, because they answer different questions and
+   none is authoritative: `sshd -T` (the effective sshd config), `systemctl show ssh.socket
+   sshd.socket -p Listen` (socket activation, which is the Ubuntu 24.04 default) and `ss -tlnpH`
+   (what is listening now). Allow EVERY port any of them names.
+
+   Take that seriously if you enable `ufw` yourself: Ubuntu's `ufw` defaults its input policy to
+   `DROP`, so enabling it without a rule for every port `sshd` listens on cuts you off. Quietly,
+   too, because established connections keep working and the lockout only shows on the next
+   reconnect or reboot.
+
+   `sshd -T | grep '^port '` on its own is NOT the check, and this is the trap the union exists
+   for: the documented way to move SSH on Ubuntu 24.04 is `systemctl edit ssh.socket` with
+   `ListenStream=2222`, which leaves `sshd_config` at `#Port 22`, so `sshd -T` answers 22 on the
+   box that moved it. Ask all three, and allow all three answers:
+
+   ```bash
+   sshd -T | awk '/^port /{print $2}'
+   systemctl show ssh.socket sshd.socket --value -p Listen
+   ss -tlnpH | grep -i ssh
+   ```
+8. Creates `/var/lib/instacloud` and probes for reflinks, falling back to an XFS loop image. See
+   [Reflinks](#reflinks).
+9. Resolves the domain: `--domain`, then `INSTA_OSS_DOMAIN`, then the value already in
+   `instad.env`, then automatically from the public IPv4 address as `<a-b-c-d>.sslip.io`.
+10. Writes the secrets and files: `INSTA_OSS_SECRET` (kept if present, else 64 hex characters), the
+    Garage `rpc_secret` and toml, `instad.env` (`chmod 600`), `compose.yml` and the `Caddyfile`.
+11. Pulls and starts the stack: `docker compose --env-file instad.env up -d --remove-orphans`.
+12. Waits on `http://127.0.0.1:8080/healthz` for up to 60 seconds. On timeout it prints the tail of
+    `docker compose logs instad` and exits 1.
+13. Checks the certificate, in the way that mode calls for. Under `acme` and `internal` it asks
+    the edge for `api.<domain>` over loopback and waits until the file appears in the store, up to
+    4 minutes with a public CA and 60 seconds with the internal issuer. A certificate that has not
+    landed by then is a warning, not a failure: the edge keeps retrying on its own, and the
+    database lanes start presenting it the moment it lands. With `INSTA_OSS_TLS=internal` the root
+    CA is then copied to `/var/lib/instacloud/edge/ca.pem`. Under `custom` there is nothing to wait
+    for, so it probes instead: the edge has to answer `api.<domain>` with the SHA-256
+    fingerprint of the certificate you supplied, and a pair the edge cannot load fails the install rather than
+    leaving it crash-looping behind a success message.
+
+Then it prints where to go. This is a real run on a `t3.small` (2 vCPU, 2 GiB) with Ubuntu 24.04,
+start to finish in about a minute, with the address replaced by a documentation one:
+
+```
+InstaCloud is running.
+  Setup:    https://console.203-0-113-10.sslip.io/setup
+  API:      https://api.203-0-113-10.sslip.io
+  Note:     203.0.113.10 is this cloud VM's public address, mapped by the provider: make sure its security group or firewall allows 80 and 443 (and the database lanes you use).
+  CLI:      insta login --api-key <token from the setup page> --api-url https://api.203-0-113-10.sslip.io
+  Config /etc/instacloud   Data /var/lib/instacloud   Reflinks: loop image (10 GiB)
+```
+
+- `Setup:` is where you create the admin account. See [set up access](/self-hosting/setup).
+- `API:` is what the CLI, MCP and agents talk to.
+- `Note:` appears when the box's public address is mapped by a cloud provider or NAT. Act on it
+  before anything else: the certificates for your URLs are issued through 80 and 443.
+- `CA:` appears with `--tls internal`, naming the root clients must trust.
+- `CLI:` is the login line, once you have a token.
+
+Check it answers: `curl -s https://api.<domain>/healthz` returns `{"ok":true}`.
+
+## What it writes
+
+| Path | What |
+| --- | --- |
+| `/etc/instacloud/instad.env` | every `INSTA_OSS_*` setting, mode 600 |
+| `/etc/instacloud/compose.yml` | the three services `io-instad`, `io-edge`, `io-garage` |
+| `/etc/instacloud/Caddyfile` | the edge configuration: on-demand TLS under `acme` and `internal`, and under `custom` the supplied pair with no on-demand machinery at all |
+| `/etc/instacloud/.env` | a symlink to `instad.env`, so a plain `docker compose` in that directory interpolates the same values |
+| `/var/lib/instacloud` | all data: `state.json`, `pg/`, `vol/`, `md/`, `garage/`, `caddy/`, `edge/ca.pem` |
+| `/var/lib/instacloud.img` | the XFS loop image, only when one was needed |
+| `/etc/fstab` | `/var/lib/instacloud.img /var/lib/instacloud xfs loop,nofail,x-systemd.required-by=docker.service,x-systemd.before=docker.service 0 0` |
+| `/etc/docker/daemon.json` | `default-address-pools`, when the file is missing or empty |
+
+The `x-systemd.required-by=docker.service` part matters: Docker must not start before the data
+mount is there. Without it a reboot where the image failed to mount would let dockerd restart the
+Postgres containers against empty directories.
+
+## Options
+
+| Flag | Env | What |
+| --- | --- | --- |
+| `--domain <host>` | `INSTA_OSS_DOMAIN` | your own apex, instead of the automatic sslip.io name |
+| `--email <addr>` | `INSTA_OSS_ACME_EMAIL` | the ACME account address. Written into the Caddyfile under `acme` and `internal`, and omitted under `custom`, which contacts no issuer |
+| `--version <vX.Y.Z>` | `INSTA_OSS_VERSION` | pin the image; omit for the newest release |
+| | `INSTA_OSS_IMAGE` | the daemon image, `name` or `name:tag`; a tag here is the version. Use it to run an image you built yourself |
+| `--tls acme\|internal\|custom` | `INSTA_OSS_TLS` | public certificates, an internal issuer for a private box, or one wildcard you supply. See [TLS and what your domain costs you](#tls-and-what-your-domain-costs-you) |
+| `--tls-cert <path>` | `INSTA_OSS_TLS_CERT_FILE` | with `--tls custom`: the certificate to serve, which must carry `*.<domain>` and `*.s3.<domain>` |
+| `--tls-key <path>` | `INSTA_OSS_TLS_KEY_FILE` | with `--tls custom`: its private key. Both are required together |
+| `--data-img-gib <n>` | `INSTA_OSS_DATA_IMG_GIB` | size of the loop image when one is created |
+| `--data-dir <path>` | `INSTA_OSS_DATA_DIR` | required to change the data directory of an existing install |
+| `--print-firewall` | | print the firewall rules and exit |
+| `--print-daemon-json` | | print the Docker address-pool block and exit |
+| `--print-env`, `--print-compose`, `--print-caddyfile` | | print the file and exit |
+| `--print-ssh-advice` | | print which ports your SSH daemon listens on, to allow before you enable a firewall, and exit |
+| `--print-domain-note` | | print whether the automatic domain resolves to this box, and exit |
+| `-y` | | assume yes |
+
+Every `INSTA_OSS_*` variable the script runs with is passed through into `instad.env`, so the idle
+and sleep knobs can be set at install time. They are all listed on the
+[sleep and wake](/self-hosting/sleep) page. Put them after `sudo`, as below: `sudo` resets the
+environment it inherits, so a variable you only `export` in your shell never reaches the script, and
+the install succeeds with the defaults instead.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo INSTA_OSS_IDLE_COMPUTE_SEC=900 sh -s -- --domain example.com --email ops@example.com
+```
+
+## Docker address pools
+
+Every branch gets its own user-defined Docker network, and stock dockerd can only hand out 31 of
+them: `172.17.0.0/16` through `172.31.0.0/16` minus `docker0`, plus 16 `/20` networks under
+`192.168.0.0/16`. Without a wider pool the 32nd `insta branch create` answers `507` with
+`docker has no free network subnets`.
+
+```json
+{ "default-address-pools": [ { "base": "10.100.0.0/14", "size": 24 } ] }
+```
+
+That is 1024 `/24` networks. The installer writes it only when `/etc/docker/daemon.json` is missing
+or empty. A box that already sets the key keeps its own value, and when the file carries other keys
+but not this one the script leaves it untouched and prints the block for you to merge by hand.
+
+## Reflinks
+
+Branch creation copies the Postgres data directory and every volume with a reflink copy: the kernel
+shares the blocks and only writes diverge, so a fork of a 50 GiB database that is asleep is a
+sub-second metadata operation. A database that is awake streams `pg_basebackup` instead, in time
+proportional to its size. XFS with `reflink=1` and Btrfs support reflinks. ext4 does not.
+
+The script probes with `cp --reflink=always` on two temporary files inside the data directory:
+
+- Probe succeeds: native reflinks, nothing else to do.
+- Probe fails and the data directory is empty: the script installs `xfsprogs`, checks for at least
+  15 GiB free, creates `/var/lib/instacloud.img` (`--data-img-gib`, or free space minus 5 GiB, at
+  least 10 GiB), formats it with `mkfs.xfs -m reflink=1`, adds the fstab line and mounts it.
+- Probe fails and the data directory already has data: the script warns and continues. This is not
+  an install failure. The daemon boots, logs one warning, and branch forks stream
+  `pg_basebackup` instead. They are correct, just proportional to the database size.
+
+Check afterwards:
+
+```bash
+findmnt -no FSTYPE /var/lib/instacloud     # xfs
+xfs_info /var/lib/instacloud | grep reflink=1
+```
+
+Grow the loop image later:
+
+```bash
+truncate -s +20G /var/lib/instacloud.img
+losetup -c "$(findmnt -no SOURCE /var/lib/instacloud)"
+xfs_growfs /var/lib/instacloud
+```
+
+### ZFS
+
+ZFS works, and nothing here needs configuring for it. Two things are worth knowing.
+
+**Branching uses native cloning only when block cloning is on.** The probe is a real
+`cp --reflink=always`, not a list of filesystem names, so a pool with block cloning enabled gets
+sub-second forks the same way XFS and Btrfs do, and a pool without it falls back to
+`pg_basebackup` and a file copy. Block cloning arrived in OpenZFS 2.2 and ships DISABLED by
+default in the 2.2 series after an early data-corruption bug, which includes the 2.2.x that Ubuntu
+24.04 carries. So a stock Ubuntu 24.04 ZFS root probes as no-reflink, and on an empty data
+directory the installer then builds its XFS loop image on top of ZFS. That works, and it is two
+layers of copy-on-write with the ARC caching the image underneath. If you would rather have one
+layer, turn block cloning on before installing, or pass `--data-dir` to a dataset you are happy to
+keep as ZFS and accept streaming forks.
+
+```bash
+zpool get feature@block_cloning rpool          # active | enabled | disabled
+cat /sys/module/zfs/parameters/zfs_bclone_enabled   # 1 = on
+```
+
+Enabling it is a pool upgrade plus the module parameter, and it is your call whether to take that
+on: read the OpenZFS release notes for the version you run first.
+
+**The ARC is counted as available memory.** The daemon evicts sleeping services when free memory
+falls under a floor (see [sleep](/self-hosting/sleep)). On Linux the ZFS ARC is not page cache, so
+the kernel's own `MemAvailable` does not count it even though the ARC gives memory back under
+pressure. The daemon reads `/proc/spl/kstat/zfs/arcstats` and adds back the part the ARC will
+release (`size` minus `c_min`), so a warm ARC does not read as a full machine. You do not need to
+cap `zfs_arc_max` to keep the daemon from evicting; cap it if you want the ARC smaller for its own
+sake.
+
+## TLS and what your domain costs you
+
+Three modes, and the choice decides whether scale-to-zero holds for public compute services.
+
+| `--tls` | What the edge serves | What gets published |
+|---|---|---|
+| `acme` (default) | a certificate per hostname, issued on demand by Let's Encrypt | every hostname you deploy, to the public certificate transparency logs |
+| `internal` | a certificate per hostname from Caddy's own CA | nothing, but no browser trusts it without installing the root |
+| `custom` | one certificate you supply, for `*.<domain>` and `*.s3.<domain>` | nothing |
+
+### The cost of the auto sslip.io domain
+
+If you do not pass `--domain`, the installer derives one from your public IPv4 address
+(`<a-b-c-d>.sslip.io`) and `--tls acme` then issues a certificate per hostname. That is an
+evaluation convenience, and it has a measured consequence:
+
+- Certificate transparency is public and indexed. Every service you deploy publishes its exact
+  hostname within minutes of its first request.
+- Scanners read those logs. On a live box, a freshly issued service hostname drew 141 requests
+  from a credential scanner probing `/.env`, `/.env.local`, `/config.js` and `/settings.js`
+  within about 15 minutes, and then kept arriving every 1 to 3 minutes.
+- The idle timer for compute is 300 seconds and any request resets it. So a public compute
+  service on this configuration **never sleeps**. Scale-to-zero still holds for databases, whose
+  lanes are not discoverable this way, but not for the thing you point a browser at.
+
+That is not a warning about a risk; it is what happens. Use it to try the product, and use a
+domain of your own for anything you leave running.
+
+### `--tls custom`: a wildcard you supply
+
+With a certificate for `*.example.com` the edge serves it for every name under it and issues
+nothing, which is what the managed cloud does. No hostname is ever published, so nothing arrives
+to find it, so an idle compute service reaches its timer and sleeps.
+
+```bash
+sh install.sh --domain example.com --tls custom \
+  --tls-cert /etc/instacloud/tls/wildcard.crt \
+  --tls-key  /etc/instacloud/tls/wildcard.key
+```
+
+The certificate must carry **two** SANs, `*.<domain>` and `*.s3.<domain>`, because a wildcard
+matches exactly one label and this box serves two depths. Every service name is one label
+(`api.<domain>`, `console.<domain>`, `web-<ref>.<domain>`, `pg-db-<ref>.<domain>`,
+`s3.<domain>`), and every bucket is two: `<bucket>.s3.<domain>`, which is how the AWS SDKs
+address a bucket by default and what `AWS_ENDPOINT_URL_S3` resolves to inside every deployed
+app. In the other two modes those names get a certificate of their own on demand. This mode
+issues nothing, deliberately, so one certificate has to cover them. Ask your CA for both on the
+same certificate:
+
+```
+subjectAltName = DNS:*.example.com, DNS:*.s3.example.com, DNS:example.com
+```
+
+The installer checks all of it before it starts anything: the PEM has to parse, the key has to
+match the certificate, it must be inside BOTH its validity dates, it must carry both wildcards
+(sampling a few names cannot promise the arbitrary future hostnames this mode exists to serve),
+and it must cover `api.<domain>` and `console.<domain>`. A pair that cannot serve fails the
+install rather than leaving the edge crash-looping behind a success message. The post-install
+probe is part of that: the edge has to answer with **that** certificate before this prints
+anything reassuring.
+
+The **directory** holding the pair is mounted read-only into the edge and the daemon (the same
+path on both sides), not the two files, and the daemon presents the same certificate on the
+database lanes, so nothing anywhere asks for a per-hostname certificate. Keep the pair in a
+directory of its own, such as `/etc/instacloud/tls`: everything beside it is visible to both
+containers. The installer refuses a directory that would collide with the stack's own mounts,
+which means the data directory, anything inside it, any directory that contains it, and the
+system directories the images own.
+
+What you take on:
+
+- **Renewal is yours, and the daemon will not let it fail silently.** Nothing renews a supplied
+  certificate. Write the new pair into the same directory and move it over the old names, which
+  is what renewal tooling does:
+
+  ```bash
+  # your tool writes wildcard.crt.new / wildcard.key.new into /etc/instacloud/tls, then:
+  mv -f /etc/instacloud/tls/wildcard.crt.new /etc/instacloud/tls/wildcard.crt
+  mv -f /etc/instacloud/tls/wildcard.key.new /etc/instacloud/tls/wildcard.key
+  cd /etc/instacloud && docker compose --env-file instad.env restart edge
+  ```
+
+  The daemon needs nothing: its lanes re-read the file on the next handshake that sends SNI (every
+  current client), the default they hand a client that sends none (libpq before 14, older JDBC,
+  which are then told to send it) follows on the daemon's next beat, and `healthz` reports the
+  new certificate within that same sweep interval (30 s by default, `INSTA_OSS_SWEEP_SEC`).
+  That lag is deliberate: `/healthz` is public and unauthenticated, so the request path reads no
+  file and makes no syscall, and the daemon's own beat is what looks at the disk. Both were
+  measured after a real rename. The edge needs its process restarted, because Caddy loads certificates when it
+  loads its config and does not watch the file. Nothing needs the containers RECREATED, which is
+  why the directory is what gets mounted: a bind-mounted FILE stays attached to the inode it
+  resolved at mount time, so a rename over it would be invisible inside the container and the
+  edge would keep serving the old certificate until it expired.
+
+  Symlinks are followed: certbot's `live/<domain>/fullchain.pem` points into
+  `archive/<domain>/`, and the installer mounts both directories, so the link resolves inside
+  the containers and a renewal that re-points it stays visible. Point `--tls-cert` at the
+  `live/` path, not the `archive/` one. ONE link is followed, because only the link's directory
+  and its target's are mounted: a link to another link is refused, since the middle hop would
+  not exist inside the containers. A symlinked directory on the way (an `/etc/letsencrypt` kept
+  on another volume) is fine; the target is mounted at the path the link leads to.
+
+  The daemon logs a warning at boot and every few hours once the certificate is inside 21 days,
+  says something louder once it has expired, and `GET /healthz` carries the remaining lifetime
+  unconditionally so you can alert on your own margin:
+
+  ```bash
+  curl -s https://api.example.com/healthz
+  # {"ok":true,"certificate":{"notAfter":"2027-03-01T00:00:00.000Z","daysLeft":172,"secondsLeft":14860800}}
+  ```
+
+  The `certificate` object is absent in the other TLS modes, and absent if the file cannot be
+  read, which is worth alerting on too.
+- **A custom domain outside your wildcard has no certificate.** `insta domain attach` still
+  attaches the hostname and routes it, and `insta domain check` reports it as `pending`
+  rather than `ready` because the certificate does not cover it. Add it as a SAN to the
+  certificate you supply, or keep that name on `--tls acme`.
+- **Issuance for the wildcard itself is not automated here.** A DNS-01 wildcard order needs a
+  Caddy build with your DNS provider's plugin, and the stock `caddy:2.11.4` image this stack runs
+  has none. Get the certificate however you already get certificates and hand it over.
+
+Moving back is a re-run: `sh install.sh --tls acme` drops the supplied pair and restores
+on-demand issuance.
+
+## Uninstall
+
+Stop the stack and keep every byte of data:
+
+```bash
+cd /etc/instacloud && docker compose down
+```
+
+Re-running the installer brings it back with the same domain, the same secret and the same data.
+
+Remove the whole install instead, data included. This deletes every project on the box:
+
+```bash
+cd /etc/instacloud && docker compose down
+docker ps -aq --filter name=io- | xargs -r docker rm -f
+docker network ls -q --filter name=io- | xargs -r docker network rm
+rm -rf /etc/instacloud
+umount /var/lib/instacloud 2>/dev/null
+sed -i '\|/var/lib/instacloud|d' /etc/fstab
+rm -rf /var/lib/instacloud /var/lib/instacloud.img
+```
+
+The `umount` and the `sed` matter only when the installer created a loop image, and both are safe
+to run when it did not. Two things are left behind on purpose:
+
+- `/etc/docker/daemon.json`, because taking the address pool back out needs another Docker restart.
+  Delete the file and run `systemctl restart docker` when you want the stock pools again.
+- Docker itself, even when the installer is what put it there.
+
+## Security posture
+
+- The daemon mounts the Docker socket. That is root on the box. Treat the admin password and every
+  `insta_` token as root credentials.
+- Firewall everything except 80, 443 and the database ports you actually use.
+- Keep the `docker0` to host rules the installer adds. Container traffic to `api.<domain>`,
+  `s3.<domain>` and its own `DATABASE_URL` arrives at the host through the bridge gateway and
+  traverses the host `INPUT` chain, so a default-deny firewall silently drops every in-container
+  call while the same URLs keep working from outside.
+- There is one admin account and no organizations. Anyone with the password or a token can do
+  anything.
+
+## Local mode on a laptop
+
+No installer, no domain, no auth:
+
+```bash
+git clone https://github.com/InsForge/instacloud-oss.git && cd instacloud-oss
+npm install
+npm run build:ui                     # the dashboard, served by the daemon itself
+npm run dev                          # the daemon on http://127.0.0.1:8080
+```
+
+Then, in another terminal:
+
+```bash
+npm install -g insta
+export INSTA_API_URL=http://127.0.0.1:8080
+insta status                         # user: local
+```
+
+Prerequisites are Docker (running) and Node 22 or newer. The first run pulls the Postgres, Garage
+and rclone images. State lives in `~/.insta-oss`.
+
+App URLs in local mode are `http://<group>-<project>-<branch>.localhost:8080`.
+
+<Note>
+macOS and every current browser resolve `*.localhost` to 127.0.0.1 on their own. Containers and
+Linux hosts without `systemd-resolved` do not, which is why database DSNs in local mode use
+`127.0.0.1:<port>` rather than a name. If a `.localhost` URL does not resolve for you, add the
+name to `/etc/hosts`.
+</Note>

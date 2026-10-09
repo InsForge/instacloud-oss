@@ -1,148 +1,147 @@
-import { Outlet, NavLink, Link, useNavigate, useParams } from 'react-router-dom'
-import { cn } from '@insforge/ui'
-import {
-  Box,
-  ChartColumn,
-  Database,
-  GitBranch,
-  History,
-  KeyRound,
-  ScrollText,
-  Settings,
-  ShieldCheck,
-  Zap,
-  type LucideIcon,
-} from 'lucide-react'
+// The project shell, ported from the console (insta-frontend app/projects/[id]/layout.tsx,
+// project-sidebar.tsx, project-topbar.tsx): a fixed viewport where only <main> scrolls; the
+// collapsible sidebar with the project switcher at its head; a 48px topbar with the branch switcher
+// on the left and the Activities, Notifications and account cells on the right; the Activities or
+// Notifications panel docked to the right of the content, pushing it aside rather than covering it; and
+// the pending-review stack over the top right of the content; and Settings as a modal over whatever page
+// is open (`?panel=settings`, ProjectSettingsPanel.tsx).
+//
+// Sidebar, as the console orders it: Service, Observability, Secrets | Branches | Quick Start,
+// Settings. Self-host divergences: no Usage (billing) entry; Observability opens the live CPU/memory
+// page. Logs and Database live in the service detail, as they do on the console.
+
+import { useState } from 'react'
+import { Outlet, useLocation, useParams } from 'react-router-dom'
+import { Activity, Box, Download, KeyRound, Settings, Settings2, type LucideIcon } from 'lucide-react'
+import { AppSidebar, SidebarDivider, SidebarLink } from './console/AppSidebar'
+import { ProjectSwitcher, TopbarProjectSwitcher } from './console/ProjectSwitcher'
+import { EnvSwitcher } from './console/EnvSwitcher'
+import { ActivitiesButton, ActivitiesPanel } from './console/ActivitiesButton'
+import { NotificationsButton, NotificationsPanel, ReviewNotificationStack } from './console/NotificationsPanel'
+import { AccountMenu } from './console/AccountMenu'
+import { ProjectSettingsPanel } from './console/ProjectSettingsPanel'
 import { api } from '../api'
 import { usePoll } from '../hooks'
-import { Chip } from './ui'
+import { pendingCount, reviewsFor, type Decisions, type ReviewDecision } from '../lib/notifications'
+import { withSettings } from '../lib/panels'
 
-function Picker({ value, options, onPick }: { value: string; options: { key: string; label: string }[]; onPick: (k: string) => void }) {
-  return (
-    <select
-      className="cursor-pointer appearance-none rounded-md bg-transparent py-1 pr-5 text-sm font-medium text-foreground hover:bg-alpha-4"
-      style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2710%27 height=%276%27%3E%3Cpath d=%27M1 1l4 4 4-4%27 stroke=%27%23737373%27 fill=%27none%27/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center', paddingLeft: 6 }}
-      value={value}
-      onChange={(e) => onPick(e.target.value)}
-    >
-      {options.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-    </select>
-  )
-}
+type NavItem = { label: string; segment: string; icon: LucideIcon }
 
-function TopBar() {
-  const { projectId, branch } = useParams()
-  const nav = useNavigate()
-  const { data: projects } = usePoll(api.projects, [])
-  const { data: branches } = usePoll(() => api.branches(projectId!), [projectId])
-  const { data: health } = usePoll(api.health, [], 10000)
-  const project = projects?.find((p) => p.id === projectId)
+const primaryNav: NavItem[] = [
+  { label: 'Service', segment: 'services', icon: Box },
+  { label: 'Observability', segment: 'observability', icon: Activity },
+  { label: 'Secrets', segment: 'secrets', icon: KeyRound },
+]
+const envNav: NavItem[] = [{ label: 'Branches', segment: 'branches', icon: Settings2 }]
+const bottomNav: NavItem[] = [
+  { label: 'Quick Start', segment: 'quick-start', icon: Download },
+  { label: 'Settings', segment: 'settings', icon: Settings },
+]
 
-  return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-muted-foreground">local</span>
-        <span className="text-border">/</span>
-        <Picker
-          value={projectId ?? ''}
-          options={(projects ?? (project ? [project] : [])).map((p) => ({ key: p.id, label: p.name }))}
-          onPick={(id) => nav(`/p/${id}/main/services`)}
-        />
-        <span className="text-border">/</span>
-        <Picker
-          value={branch ?? ''}
-          options={(branches ?? []).map((b) => ({ key: b.name, label: b.name }))}
-          onPick={(b) => nav(`/p/${projectId}/${b}/services`)}
-        />
-      </div>
-      <div className="flex items-center gap-4">
-        <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title="instad daemon">
-          <span className={cn('size-1.5 rounded-full', health?.ok ? 'bg-success' : 'bg-destructive')} />
-          daemon
-        </span>
-        <a href="https://github.com/InsForge/insta-oss#readme" target="_blank" rel="noreferrer"
-          className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-alpha-4 hover:text-foreground">
-          Docs
-        </a>
-      </div>
-    </header>
-  )
-}
-
-function SideItem({ to, label, icon: Icon, badge }: { to: string; label: string; icon: LucideIcon; badge?: number }) {
-  return (
-    <NavLink
-      to={to}
-      className={({ isActive }) =>
-        cn(
-          'flex h-10 items-center gap-3 pr-3 pl-3.5 text-sm transition-colors',
-          isActive
-            ? 'bg-alpha-8 font-medium text-foreground'
-            : 'text-muted-foreground hover:bg-alpha-4 hover:text-foreground',
-        )}
-    >
-      <Icon className="size-5 shrink-0" />
-      {label}
-      {badge ? (
-        <span className="ml-auto rounded-full bg-warning px-1.5 text-[11px] font-semibold text-inverse">{badge}</span>
-      ) : null}
-    </NavLink>
-  )
-}
-
-function SideBar() {
-  const { projectId, branch } = useParams()
-  const { data: branches } = usePoll(() => api.branches(projectId!), [projectId])
-  const { data: approvals } = usePoll(() => api.approvals(projectId!), [projectId])
+function ProjectSidebar({ projectId, branch }: { projectId: string; branch: string }) {
+  const { pathname, search } = useLocation()
   const base = `/p/${projectId}/${branch}`
-  const isDefault = branches?.find((b) => b.name === branch)?.is_default
-  const pending = approvals?.filter((a) => a.status === 'pending').length ?? 0
-
+  const settingsOpen = new URLSearchParams(search).get('panel') === 'settings'
+  const item = ({ label, segment, icon }: NavItem) => {
+    // Settings opens the console's panel over the page you are on, not a page of its own.
+    if (segment === 'settings') {
+      return <SidebarLink key={label} to={`${pathname}${withSettings(search)}`} icon={icon} label={label} active={settingsOpen} />
+    }
+    const to = `${base}/${segment}`
+    const active = !settingsOpen && (pathname === to || pathname.startsWith(`${to}/`))
+    return <SidebarLink key={label} to={to} icon={icon} label={label} active={active} />
+  }
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-semantic-1">
-      <Link
-        to="/"
-        className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2.5 transition-colors hover:bg-alpha-4"
-        title="insta-oss"
-      >
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground text-inverse">
-          <Zap className="size-4" />
-        </span>
-        <span className="flex-1 truncate text-sm font-bold">insta-oss</span>
-      </Link>
-      <nav className="flex flex-1 flex-col py-2">
-        <SideItem to={`${base}/usage`} label="Usage" icon={ChartColumn} />
-        <SideItem to={`${base}/env`} label="Environments" icon={GitBranch} />
-        <SideItem to={`${base}/approvals`} label="Approvals" icon={ShieldCheck} badge={pending} />
-        <SideItem to={`${base}/operations`} label="Operations" icon={History} />
-        <div className="my-2 border-t border-border" />
-        <div className="flex h-10 items-center gap-3 pr-3 pl-3.5 text-sm">
-          <GitBranch className="size-5 shrink-0 text-muted-foreground" />
-          <span className="font-medium">{branch}</span>
-          {isDefault && <Chip>Prod</Chip>}
-        </div>
-        <SideItem to={`${base}/services`} label="Service" icon={Box} />
-        <SideItem to={`${base}/secrets`} label="Secrets" icon={KeyRound} />
-        <SideItem to={`${base}/database`} label="Database" icon={Database} />
-        <SideItem to={`${base}/logs`} label="Logs" icon={ScrollText} />
+    <AppSidebar>
+      <ProjectSwitcher projectId={projectId} />
+      <nav className="flex flex-1 flex-col">
+        {primaryNav.map(item)}
+        <SidebarDivider />
+        {envNav.map(item)}
+        <div className="flex-1" />
+        <SidebarDivider />
+        {bottomNav.map(item)}
       </nav>
-      <div className="border-t border-border py-2">
-        <SideItem to={`${base}/settings`} label="Settings" icon={Settings} />
-      </div>
-    </aside>
+    </AppSidebar>
+  )
+}
+
+/** The project's approvals as review cards, polled once for the bell, its panel and the stack. A decision shows at
+ *  once and is sent to the daemon; if the daemon refuses it, the card returns and the refusal is shown. */
+function useReviews(projectId: string) {
+  // Tagged with its project, so the previous project's approvals never show under this one (lib/notifications.ts).
+  const { data, reload } = usePoll(async () => ({ projectId, approvals: await api.approvals(projectId) }), [projectId], 10_000)
+  const [decisions, setDecisions] = useState<Decisions>({ projectId, byId: {} })
+  const [refusal, setRefusal] = useState<{ projectId: string; message: string } | null>(null)
+  const reviews = reviewsFor(data, projectId, decisions)
+
+  const decide = async (id: string, decision: ReviewDecision) => {
+    setRefusal(null)
+    setDecisions((prev) => ({ projectId, byId: { ...(prev.projectId === projectId ? prev.byId : {}), [id]: decision } }))
+    const result = await api.decide(projectId, id, decision === 'approved' ? 'approve' : 'deny')
+    if (result.kind === 'error') {
+      setDecisions((prev) => {
+        if (prev.projectId !== projectId) return prev
+        const byId = { ...prev.byId }
+        delete byId[id]
+        return { projectId, byId }
+      })
+      setRefusal({ projectId, message: result.error })
+      return
+    }
+    reload()
+  }
+
+  return { reviews, pending: pendingCount(reviews), error: refusal?.projectId === projectId ? refusal.message : null, decide }
+}
+
+/** The console's topbar Feedback control. Self-host divergence: feedback about the OSS daemon
+ *  goes to the repository's issues rather than the cloud's in-app form, so this is a plain link. */
+function FeedbackButton() {
+  return (
+    <div className="flex h-full shrink-0 items-center justify-center border-l border-border px-3">
+      <a href="https://github.com/InsForge/instacloud-oss/issues" target="_blank" rel="noreferrer"
+        className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+        Feedback
+      </a>
+    </div>
   )
 }
 
 export function Layout() {
+  const { projectId, branch } = useParams() as { projectId: string; branch: string }
+  const { reviews, pending, error, decide } = useReviews(projectId)
   return (
-    <div className="flex h-screen">
-      <SideBar />
-      <div className="flex min-w-0 flex-1 flex-col bg-semantic-0">
-        <TopBar />
-        <main className="min-w-0 flex-1 overflow-y-auto px-8 pt-8 pb-6">
-          <Outlet />
-        </main>
+    <div className="flex h-dvh overflow-hidden">
+      <ProjectSidebar projectId={projectId} branch={branch} />
+      <div className="flex min-w-0 flex-1 flex-col bg-semantic-1">
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-semantic-1">
+          <div className="flex h-full min-w-0 items-center">
+            <TopbarProjectSwitcher projectId={projectId} />
+            <EnvSwitcher projectId={projectId} branch={branch} />
+          </div>
+          <div className="flex h-full shrink-0 items-center">
+            <FeedbackButton />
+            <ActivitiesButton />
+            <NotificationsButton count={pending} />
+            <div className="flex h-full items-center justify-center border-l border-border p-2">
+              <AccountMenu />
+            </div>
+          </div>
+        </header>
+        <div className="relative flex min-h-0 flex-1">
+          <ReviewNotificationStack key={projectId} reviews={reviews} error={error} onDecide={decide} />
+          <main className="relative min-w-0 flex-1 overflow-y-auto px-8 pt-8 pb-6">
+            {/* Screens cap at 1620px on wide monitors, as on the console. */}
+            <div className="mx-auto flex min-h-full w-full max-w-[1620px] flex-col">
+              <Outlet />
+            </div>
+          </main>
+          <ActivitiesPanel projectId={projectId} />
+          <NotificationsPanel reviews={reviews} error={error} onDecide={decide} />
+        </div>
       </div>
+      <ProjectSettingsPanel projectId={projectId} />
     </div>
   )
 }

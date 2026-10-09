@@ -6,7 +6,7 @@ import { ErrorNote, Modal } from './ui'
 export type PendingApproval = { action: string; approvalId: string; retry: () => void } | null
 
 /** Shared HITL modal: any mutation that came back 202 lands here; granting retries the mutation
- *  (grants are one-shot server-side, mirroring the CLI's `insta approvals approve` flow). */
+ *  (grants are one-shot server-side, mirroring the CLI's `insta agent approvals approve` flow). */
 export function ApprovalPrompt({ projectId, pending, onClose }: {
   projectId: string; pending: PendingApproval; onClose: () => void
 }) {

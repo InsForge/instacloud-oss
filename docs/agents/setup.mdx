@@ -1,0 +1,56 @@
+---
+title: "Set up your coding agent"
+description: "One command installs the CLI, the skill, and the MCP server for every agent on the machine."
+---
+
+Agent setup is one command. It installs the CLI if it's missing, teaches every coding agent on your machine the `insta` workflow, and wires up the MCP server.
+
+## One-line install
+
+```bash
+npx insta@latest agent setup
+```
+
+Also available as a shell installer (`curl -fsSL https://agents.instacloud.com | sh`, macOS/Linux). Already have the CLI? Run the setup step directly:
+
+```bash
+insta agent setup
+```
+
+## What gets installed
+
+- **The `insta` skill**, installed user-globally into every agent directory the skills tool knows — including Claude Code, Cursor, OpenAI Codex, OpenCode, GitHub Copilot, Gemini CLI, Windsurf, Factory Droid, Goose, Aider, Continue, Roo, Kilo Code, Qwen, and the universal `.agents` directory.
+- **The MCP server registration.** For Claude Code, setup runs `claude mcp add --transport http --scope user insta-cloud https://mcp.instacloud.com/mcp`. For config-file agents (Cursor, Codex, OpenCode, Copilot, Factory Droid), it writes the equivalent entry into each agent's config — only for agents whose config directory already exists.
+
+By default the MCP connection authenticates with OAuth in the agent's own flow, so no credential is written to disk.
+
+## `insta agent setup`
+
+Flags:
+
+- `-y, --yes` — accept all prompts, for scripted setup
+- `--project <id>` — link the current directory to an existing project after setup (flows through login first if needed)
+- `--mcp-token` — Claude Code only: mint a durable API token (named `mcp-<hostname>`) and register the MCP server with it as a Bearer header instead of OAuth, for headless machines and CI. Other agents are always registered as OAuth entries
+- `--env <prod|staging>` — deployment to set this machine up for
+
+## `insta config install-mcp`
+
+To add the MCP server to one specific agent without rerunning full setup:
+
+```bash
+insta config install-mcp --agent claude-code
+```
+
+Valid agents: `claude-code`, `cursor`, `codex`, `opencode`, `copilot`, `factory-droid`. `--mcp-token` applies to `claude-code` only; the config-file agents authenticate with OAuth.
+
+## Verify
+
+```bash
+insta status
+```
+
+confirms the CLI is authenticated and shows the linked project. Then ask your agent to call `insta_whoami` (MCP) or run `insta status` itself (skill) — if both answer, the agent is wired. In Claude Code, `claude mcp list` should show `insta-cloud` as connected.
+
+<Note>
+MCP tools take explicit `projectId` and `branch` arguments — the CLI's linked directory does not carry over to MCP calls. Agents get the project ID from `insta_list_projects` or from you.
+</Note>

@@ -1,15 +1,17 @@
 {
-  "name": "insta-oss-ui",
+  "name": "instacloud-oss-ui",
   "private": true,
   "type": "module",
-  "description": "Local dashboard for the insta-oss daemon — built to ui/dist, served by instad itself.",
+  "description": "Local dashboard for the InstaCloud OSS daemon, built to ui/dist, served by instad itself.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@insforge/ui": "^0.1.7",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@insforge/ui": "^0.1.10",
     "lucide-react": "^0.536.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

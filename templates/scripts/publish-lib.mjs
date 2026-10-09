@@ -129,3 +129,110 @@ export function rewriteReadme(text, { dirInRepo, repo, sha, isDirectory = () => 
     (m, head, q, target) => head + q + (resolve(target, true) ?? target) + q);
   return out;
 }
+
+/**
+ * The repo-relative path of the one-click button asset. Referenced from a README as an absolute
+ * CDN URL (rewriteReadme leaves absolute targets alone), so this is matched as a URL SUFFIX.
+ */
+export const DEPLOY_BUTTON_ASSET = "assets/deploy-button.svg";
+
+// A whole line that is nothing but the linked button image. Anchored, and without /g, so it can
+// be tested line by line without carrying lastIndex between calls.
+//
+// Three bounds keep it from taking something that merely looks like the button:
+//   ^[ ]{0,3}  a paragraph may be indented up to three spaces. FOUR spaces, or a tab, opens an
+//              indented code block, where the same line is a sample rather than an affordance,
+//              and the fence tracking below only covers the fenced spelling of a sample.
+//   (?:...(/)? the asset has to be the LAST path segment, so 'myassets/deploy-button.svg' and a
+//              path that merely ends in the same letters are not it.
+//   (?:[?#]..) and it has to end there, give or take a query or a fragment, so a neighbouring
+//              file like 'deploy-button.svg.bak' stays.
+const DEPLOY_BUTTON_LINE = new RegExp(
+  `^[ ]{0,3}\\[!\\[[^\\]]*\\]\\((?:[^)\\s]*/)?${DEPLOY_BUTTON_ASSET.replace(/[.]/g, "\\.")}(?:[?#][^)\\s]*)?\\)\\]\\(([^)\\s]*)\\)[ \\t]*$`,
+);
+
+// A code fence: up to three spaces, three or more backticks or tildes, then the rest of the line
+// (an info string, on an opening fence).
+const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+
+/**
+ * The one place that decides what IS the button, so the publisher and the lint cannot drift:
+ * stripDeployBadge removes exactly what this finds, and lint.mjs validates exactly what this
+ * finds. A looser test in either one is a way for a README to pass CI carrying something the
+ * other will not act on.
+ *
+ * @param {string} text
+ * @returns {{ lines: string[], hits: Map<number, string> }} lines, and line index -> href
+ */
+function scanDeployButtons(text) {
+  const lines = String(text ?? "").split("\n");
+  const hits = new Map();
+  // Tracked as the OPENING fence's character and length, not as a parity flip: CommonMark closes
+  // a fence only with the same character, at least as long, carrying nothing else, so a
+  // four-backtick block quoting a three-backtick line stays open.
+  let fence = null;
+  for (let i = 0; i < lines.length; i++) {
+    const f = FENCE.exec(lines[i]);
+    if (f) {
+      const [, bars, rest] = f;
+      const char = bars[0];
+      if (!fence) {
+        // A backtick fence's info string may not itself contain a backtick, which is what keeps
+        // an inline code span from opening a block.
+        if (char !== "`" || !rest.includes("`")) fence = { char, len: bars.length };
+      } else if (char === fence.char && bars.length >= fence.len && rest.trim() === "") {
+        fence = null;
+      }
+      continue; // a fence line is never the button
+    }
+    // Inside a fence the same line is DOCUMENTATION of the button rather than the button itself,
+    // and the snippet in assets/README.md is exactly that.
+    if (fence) continue;
+    const m = DEPLOY_BUTTON_LINE.exec(lines[i]);
+    if (m) hits.set(i, m[1]);
+  }
+  return { lines, hits };
+}
+
+/**
+ * Every deploy button in a README, as the href each one links to. Empty when the asset is only
+ * mentioned: unlinked, indented into a code block, inside a fence, or a neighbouring filename.
+ * Used by lint.mjs so it checks the same affordance publish removes.
+ *
+ * @param {string} text  the README source
+ * @returns {string[]}   one href per button, in document order
+ */
+export function findDeployButtons(text) {
+  return [...scanDeployButtons(text).hits.values()];
+}
+
+/**
+ * Drop the "Deploy on InstaCloud" button from a README on its way to the catalog.
+ *
+ * The button is authored for GitHub, where a template directory has no deploy affordance of its
+ * own. The gallery serves this same text on the page the button now POINTS AT, whose rail already
+ * carries a Deploy Now, so republished verbatim it is both a second call to action in the middle
+ * of the prose and a link to the page you are reading. The gallery's markdown renderer also parses
+ * no raw HTML, so there is no <picture> or conditional-comment escape hatch to hide it with.
+ * Stripping at publish keeps one README serving both surfaces.
+ *
+ * @param {string} text  the README source
+ * @returns {string}     the same text with any button line, and the blank line it left behind, gone
+ */
+export function stripDeployBadge(text) {
+  const { lines, hits } = scanDeployButtons(text);
+  if (!hits.size) return text; // nothing to remove, and no rejoin that could alter the text
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!hits.has(i)) {
+      out.push(lines[i]);
+      continue;
+    }
+    // The button sits in its own paragraph, so removing the line alone would leave the blank line
+    // above AND below it: take the trailing one, and only when a blank line is already standing.
+    const nextIsBlank = lines[i + 1] !== undefined && lines[i + 1].trim() === "";
+    const prevIsBlank = out.length > 0 && out[out.length - 1].trim() === "";
+    if (nextIsBlank && prevIsBlank) i++;
+  }
+  return out.join("\n");
+}

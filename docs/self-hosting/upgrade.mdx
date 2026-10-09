@@ -1,0 +1,123 @@
+---
+title: "Upgrade and backups"
+description: "Re-run the installer to upgrade, pin or roll back a version, and back up until the backups API ships."
+---
+
+## Upgrade
+
+Re-run the one-liner. The script sees the existing `/etc/instacloud/instad.env`, keeps every
+setting in it, and recreates only what changed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh
+```
+
+Pin a version, or go back to one:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh -s -- --version v0.1.0
+```
+
+Branch containers are not part of the compose stack, so they are not recreated and keep running
+through the upgrade. The port check is skipped while the stack is up.
+
+## What a restart does to sleeping services
+
+Nothing. A sleeping service is a stopped container with its files on disk, and it stays that way
+until something asks for it. Two details:
+
+- the idle clock starts fresh, so nothing is swept for one full window after the restart
+- the create grace does not restart, because it counts from when the service row was created
+
+## Backups
+
+The backups API routes answer `501` today, with a hint that names this page, and there is no
+`insta backup` command, so this procedure is the only one there is. Follow it exactly: the parts
+that look optional are the parts that decide whether the archive is worth anything.
+
+**What holds state.** Everything is under the data directory (`/var/lib/instacloud` by default):
+
+| path | what is in it | who writes it |
+| --- | --- | --- |
+| `state.json` | every project, branch, service, secret and event | the daemon |
+| `pg/` | each Postgres service's data directory | its own container |
+| `md/` | each **redis, mysql and mongodb** service's data | its own container |
+| `vol/` | each compute group's `/data` volume | your app's container |
+| `garage/` | the object store's metadata and objects | the `io-garage` container |
+| `edge/`, `caddy/` | the internal CA and issued certificates | the `io-edge` container |
+
+`md/` is the one an earlier version of this page left out, and a backup that omits it loses every
+managed database while appearing to succeed.
+
+**The databases**, one dump per branch, which is the copy you should trust:
+
+```bash
+pg_dump "$(insta postgres url)" > main.sql
+pg_dump "$(insta postgres url --branch feat)" > feat.sql
+```
+
+**Everything else.** Stop EVERY writer first, not just the daemon: the branch containers and the
+object store keep writing to `md/`, `vol/` and `garage/` while `tar` reads them, and an archive
+taken over a running container is torn for that service even when the file list is right.
+
+```bash
+cd /etc/instacloud
+docker compose stop                                   # instad, the edge AND garage
+docker ps -q --filter 'name=^io-' | xargs -r docker stop   # every branch container
+tar -C /var/lib/instacloud -czf instacloud-data.tgz state.json pg md vol garage edge caddy
+docker compose start
+insta compute start <group>                           # per group you had running, or let traffic wake them
+```
+
+The middle line is the one people skip. Branch containers are not part of the compose stack, so
+`docker compose stop` does not touch them; the filter matches every container this daemon owns,
+because they are all named `io-<ref>-…`. Services that were asleep stay asleep and cost nothing.
+
+**What the archive is and is not.** With every writer stopped it is a consistent point-in-time
+copy of the whole box. If you cannot stop the branch containers (you have traffic to serve), the
+archive is still consistent for `state.json` and for any service that was ASLEEP at the time, and
+NOT for a service that was running: for those, use the `pg_dump` above for Postgres, and accept
+that a running Redis, MySQL or MongoDB is captured mid-write. There is no third option today.
+
+**Restore, on a clean machine:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sh            # same INSTA_OSS_DOMAIN as the old box
+cd /etc/instacloud && docker compose stop
+tar -C /var/lib/instacloud -xzf instacloud-data.tgz
+docker compose start
+psql "$(insta postgres url)" < main.sql                     # per branch, if you restored from dumps
+```
+
+Restore the archive BEFORE the first `insta` command: the daemon reads `state.json` at boot, and
+a daemon that has already written its own empty one will overwrite what you untar. Keep the
+domain the same, or every minted hostname in `state.json` points at a name that no longer
+resolves to this box.
+
+## Growing the data disk
+
+When the installer created a loop image and it is filling up:
+
+```bash
+truncate -s +20G /var/lib/instacloud.img
+losetup -c "$(findmnt -no SOURCE /var/lib/instacloud)"
+xfs_growfs /var/lib/instacloud
+```
+
+No downtime, and nothing to restart.
+
+## Local mode
+
+```bash
+git pull
+npm install
+npm run build:ui
+npm run dev
+```
+
+State stays in `~/.insta-oss`.
+
+## Events
+
+The daemon keeps the newest 5000 events and drops older ones, so treat `insta agent events` as a recent
+timeline rather than an archive. Anything you want to keep, export.

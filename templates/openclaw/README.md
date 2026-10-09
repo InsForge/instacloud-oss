@@ -2,6 +2,8 @@
 
 Self-hosted personal AI assistant, reachable from your chat apps.
 
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/openclaw)
+
 ## Overview
 
 [OpenClaw](https://github.com/openclaw/openclaw) is a personal AI assistant you run yourself.
@@ -20,7 +22,7 @@ and a manifest cannot override a container command, so a wrapper image carries t
 - An HTTPS URL for the Control UI at `/openclaw`, where you configure model providers and connect
   channels after deploy — no deploy-time keys needed.
 - A gateway auth token generated for you and stored as a managed secret.
-- A 1 GiB volume mounted at `/data` holding `openclaw.json`, auth profiles, channel and session
+- A persistent volume mounted at `/data` holding `openclaw.json`, auth profiles, channel and session
   state (`OPENCLAW_STATE_DIR=/data/.openclaw`) and the agent workspace
   (`OPENCLAW_WORKSPACE_DIR=/data/workspace`), so all of it survives restarts and redeploys.
 
@@ -43,10 +45,10 @@ outside the state dir, and must survive redeploys or credentials entered in the 
 decrypting),
 `OPENCLAW_PUBLIC_URL` resolved to the service's own HTTPS URL (the image's entrypoint appends it
 to `gateway.controlUi.allowedOrigins` before start, or the gateway would reject the Control UI's
-browser connection), and `NODE_OPTIONS=--max-old-space-size=1536` (heap capped under the 2 GB
-machine, mirroring upstream's own fly.toml).
+browser connection), and `NODE_OPTIONS=--max-old-space-size=1536` (upstream's own fly.toml value).
 
-The compute size is pinned to `2vcpu-2gb`, matching upstream's fly.toml sizing. The service is
+The template no longer pins a compute size, so a new service starts at whatever your plan gives
+one, and you can change it afterwards from the service settings. The service is
 always-on, because channel connections (for example a Telegram long-poll) live inside the process
 and an idle machine would never wake for an incoming message.
 
@@ -63,6 +65,8 @@ and an idle machine would never wake for an incoming message.
 
 ## Links
 
+- Architectures: `linux/amd64` and `linux/arm64`. Upstream publishes both and this image only
+  adds an entrypoint.
 - Upstream: <https://github.com/openclaw/openclaw>
 - License: MIT (upstream `openclaw/openclaw`; the LICENSE file is the standard MIT text, with
   third-party notices recorded separately in the repository).

@@ -1,0 +1,1010 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "InstaCloud Docs",
+  "colors": {
+    "primary": "#07C983",
+    "light": "#4ADE80",
+    "dark": "#059669"
+  },
+  "appearance": {
+    "default": "dark"
+  },
+  "styling": {
+    "eyebrows": "section"
+  },
+  "favicon": {
+    "light": "/favicon.svg",
+    "dark": "/favicon-dark.svg"
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "banner": {
+    "content": "InstaCloud docs are in early access: many pages are still being written. Missing something? [Open an issue](https://github.com/InsForge/instacloud-oss/issues).",
+    "dismissible": true
+  },
+  "seo": {
+    "metatags": {
+      "og:site_name": "InstaCloud Docs | Cloud infrastructure for the era of agents",
+      "description": "InstaCloud is the cloud infrastructure built from the ground up to serve agents: database, storage, and compute that branch per task, with credentials through one seam."
+    },
+    "indexing": "navigable"
+  },
+  "search": {
+    "prompt": "Search InstaCloud docs..."
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "cursor",
+      "vscode",
+      "mcp"
+    ]
+  },
+  "feedback": {
+    "thumbsRating": true,
+    "suggestEdit": true
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "icon": "book-open",
+        "groups": [
+          {
+            "group": "Overview",
+            "icon": "flag",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "projects/branches",
+              "multi-tenant"
+            ]
+          },
+          {
+            "group": "Database",
+            "icon": "database",
+            "pages": [
+              "postgres/overview",
+              "postgres/branching"
+            ]
+          },
+          {
+            "group": "Storage",
+            "icon": "box-archive",
+            "pages": [
+              "storage/overview"
+            ]
+          },
+          {
+            "group": "Compute",
+            "icon": "microchip",
+            "pages": [
+              "compute/overview",
+              "deploy/overview"
+            ]
+          },
+          {
+            "group": "Migrate",
+            "icon": "right-left",
+            "pages": [
+              "migrate/render",
+              "migrate/railway",
+              "migrate/fly",
+              "migrate/insforge"
+            ]
+          },
+          {
+            "group": "Agent-native",
+            "icon": "robot",
+            "pages": [
+              "agents/overview",
+              "agents/setup",
+              "agents/mcp-server",
+              "agents/skills",
+              "agents/branch-per-task"
+            ]
+          },
+          {
+            "group": "Self-hosting",
+            "icon": "server",
+            "pages": [
+              "self-hosting/overview",
+              "self-hosting/install",
+              "self-hosting/setup",
+              "self-hosting/domains",
+              "self-hosting/sleep",
+              "self-hosting/branching",
+              "self-hosting/upgrade"
+            ]
+          },
+          {
+            "group": "Limitations",
+            "icon": "triangle-exclamation",
+            "pages": [
+              "limitations/overview"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "icon": "code",
+        "groups": [
+          {
+            "group": "Reference",
+            "icon": "book",
+            "pages": [
+              "reference/cli/overview",
+              "reference/mcp-tools"
+            ]
+          },
+          {
+            "group": "API",
+            "icon": "plug",
+            "pages": [
+              "reference/api/overview",
+              {
+                "group": "Account level",
+                "openapi": {
+                  "source": "/openapi/account.json",
+                  "directory": "reference/api/account"
+                },
+                "pages": [
+                  {
+                    "group": "Account",
+                    "pages": [
+                      "GET /me",
+                      "PATCH /me",
+                      "GET /orgs",
+                      "POST /orgs",
+                      "GET /tokens",
+                      "POST /tokens",
+                      "DELETE /tokens/{tokenId}"
+                    ]
+                  },
+                  {
+                    "group": "Catalog",
+                    "pages": [
+                      "GET /regions",
+                      "GET /templates",
+                      "GET /templates/{code}"
+                    ]
+                  }
+                ]
+              },
+              {
+                "group": "Organization level",
+                "openapi": {
+                  "source": "/openapi/org.json",
+                  "directory": "reference/api/org"
+                },
+                "pages": [
+                  {
+                    "group": "Organization",
+                    "pages": [
+                      "GET /orgs/{orgId}",
+                      "PATCH /orgs/{orgId}",
+                      "GET /orgs/{orgId}/invitations",
+                      "POST /orgs/{orgId}/invitations",
+                      "DELETE /orgs/{orgId}/invitations/{invitationId}",
+                      "GET /orgs/{orgId}/members",
+                      "PUT /orgs/{orgId}/members/{userId}",
+                      "DELETE /orgs/{orgId}/members/{userId}"
+                    ]
+                  },
+                  {
+                    "group": "Projects",
+                    "pages": [
+                      "GET /orgs/{orgId}/projects",
+                      "POST /orgs/{orgId}/projects"
+                    ]
+                  },
+                  {
+                    "group": "Audit",
+                    "pages": [
+                      "GET /orgs/{orgId}/events/stream"
+                    ]
+                  },
+                  {
+                    "group": "Domains",
+                    "pages": [
+                      "GET /orgs/{orgId}/domains",
+                      "PATCH /orgs/{orgId}/domains/{domainName}",
+                      "POST /orgs/{orgId}/domains/{domainName}/auth-code",
+                      "POST /orgs/{orgId}/domains/{domainName}/delegate",
+                      "PUT /orgs/{orgId}/domains/{domainName}/nameservers",
+                      "DELETE /orgs/{orgId}/domains/{domainName}/nameservers",
+                      "GET /orgs/{orgId}/domains/{domainName}/records",
+                      "POST /orgs/{orgId}/domains/{domainName}/records",
+                      "PATCH /orgs/{orgId}/domains/{domainName}/records/{recordId}",
+                      "DELETE /orgs/{orgId}/domains/{domainName}/records/{recordId}",
+                      "GET /orgs/{orgId}/domains/orders",
+                      "POST /orgs/{orgId}/domains/orders",
+                      "POST /orgs/{orgId}/domains/orders/{orderId}/checkout",
+                      "GET /orgs/{orgId}/domains/search",
+                      "GET /orgs/{orgId}/zones",
+                      "POST /orgs/{orgId}/zones",
+                      "DELETE /orgs/{orgId}/zones/{domainName}",
+                      "GET /orgs/{orgId}/zones/{domainName}/records",
+                      "POST /orgs/{orgId}/zones/{domainName}/records"
+                    ]
+                  },
+                  {
+                    "group": "Billing",
+                    "pages": [
+                      "GET /orgs/{orgId}/billing",
+                      "POST /orgs/{orgId}/billing/checkout",
+                      "GET /orgs/{orgId}/billing/credits/transactions",
+                      "GET /orgs/{orgId}/billing/cycle",
+                      "GET /orgs/{orgId}/billing/invoices",
+                      "GET /orgs/{orgId}/billing/overview",
+                      "POST /orgs/{orgId}/billing/portal",
+                      "POST /orgs/{orgId}/billing/redeem",
+                      "GET /orgs/{orgId}/usage"
+                    ]
+                  }
+                ]
+              },
+              {
+                "group": "Project level",
+                "openapi": {
+                  "source": "/openapi/project.json",
+                  "directory": "reference/api/project"
+                },
+                "pages": [
+                  {
+                    "group": "Projects",
+                    "pages": [
+                      "GET /projects/{projectId}",
+                      "PATCH /projects/{projectId}",
+                      "DELETE /projects/{projectId}"
+                    ]
+                  },
+                  {
+                    "group": "Branches",
+                    "pages": [
+                      "GET /projects/{projectId}/branches",
+                      "POST /projects/{projectId}/branches",
+                      "POST /projects/{projectId}/branches/{branch}/merge",
+                      "PATCH /projects/{projectId}/branches/{branchId}",
+                      "DELETE /projects/{projectId}/branches/{branchId}"
+                    ]
+                  },
+                  {
+                    "group": "Services",
+                    "pages": [
+                      "GET /projects/{projectId}/runtime-health",
+                      "GET /projects/{projectId}/services",
+                      "POST /projects/{projectId}/services",
+                      "PATCH /projects/{projectId}/services/{serviceId}",
+                      "DELETE /projects/{projectId}/services/{serviceId}",
+                      "PUT /projects/{projectId}/services/{serviceId}/access",
+                      "GET /projects/{projectId}/services/{serviceId}/access/impact",
+                      "PUT /projects/{projectId}/services/{serviceId}/always-on",
+                      "GET /projects/{projectId}/services/{serviceId}/builds",
+                      "POST /projects/{projectId}/services/{serviceId}/exec",
+                      "DELETE /projects/{projectId}/services/{serviceId}/instances/{instanceId}",
+                      "GET /projects/{projectId}/services/{serviceId}/limits",
+                      "PUT /projects/{projectId}/services/{serviceId}/limits",
+                      "POST /projects/{projectId}/services/{serviceId}/rename",
+                      "POST /projects/{projectId}/services/{serviceId}/restart",
+                      "POST /projects/{projectId}/services/{serviceId}/scale",
+                      "GET /projects/{projectId}/services/{serviceId}/source",
+                      "PUT /projects/{projectId}/services/{serviceId}/source",
+                      "PATCH /projects/{projectId}/services/{serviceId}/source",
+                      "DELETE /projects/{projectId}/services/{serviceId}/source",
+                      "GET /projects/{projectId}/services/{serviceId}/source/builds",
+                      "POST /projects/{projectId}/services/{serviceId}/source/deploy",
+                      "POST /projects/{projectId}/services/{serviceId}/start",
+                      "GET /projects/{projectId}/services/{serviceId}/state",
+                      "POST /projects/{projectId}/services/{serviceId}/stop",
+                      "POST /projects/{projectId}/services/{serviceId}/suspend",
+                      "POST /projects/{projectId}/services/{serviceId}/upgrade",
+                      "GET /projects/{projectId}/services/{serviceId}/volume",
+                      "PUT /projects/{projectId}/services/{serviceId}/volume",
+                      "DELETE /projects/{projectId}/services/{serviceId}/volume"
+                    ]
+                  },
+                  {
+                    "group": "Deploy",
+                    "pages": [
+                      "POST /projects/{projectId}/deploy"
+                    ]
+                  },
+                  {
+                    "group": "Compute",
+                    "pages": [
+                      "GET /projects/{id}/builds/{source}/{buildId}/logs"
+                    ]
+                  },
+                  {
+                    "group": "Secrets",
+                    "pages": [
+                      "POST /projects/{projectId}/apply",
+                      "GET /projects/{projectId}/secret-bindings",
+                      "PUT /projects/{projectId}/secret-bindings/{name}",
+                      "DELETE /projects/{projectId}/secret-bindings/{name}",
+                      "GET /projects/{projectId}/secret-sources",
+                      "GET /projects/{projectId}/secrets",
+                      "PUT /projects/{projectId}/secrets/{name}",
+                      "DELETE /projects/{projectId}/secrets/{name}",
+                      "GET /projects/{projectId}/secrets/tree",
+                      "GET /projects/{projectId}/services/{serviceId}/credentials",
+                      "GET /projects/{projectId}/services/{serviceId}/secrets"
+                    ]
+                  },
+                  {
+                    "group": "Database",
+                    "pages": [
+                      "GET /projects/{projectId}/database/databases",
+                      "POST /projects/{projectId}/database/databases",
+                      "DELETE /projects/{projectId}/database/databases/{database}",
+                      "GET /projects/{projectId}/database/extensions",
+                      "PATCH /projects/{projectId}/database/extensions",
+                      "GET /projects/{projectId}/database/instance",
+                      "POST /projects/{projectId}/database/password",
+                      "POST /projects/{projectId}/database/query",
+                      "PATCH /projects/{projectId}/database/settings",
+                      "GET /projects/{projectId}/database/tables",
+                      "GET /projects/{projectId}/database/tables/{schema}/{table}/rows"
+                    ]
+                  },
+                  {
+                    "group": "Storage",
+                    "pages": [
+                      "GET /projects/{projectId}/services/{serviceId}/objects",
+                      "DELETE /projects/{projectId}/services/{serviceId}/objects",
+                      "POST /projects/{projectId}/services/{serviceId}/objects/delete",
+                      "GET /projects/{projectId}/services/{serviceId}/objects/download",
+                      "POST /projects/{projectId}/services/{serviceId}/objects/upload"
+                    ]
+                  },
+                  {
+                    "group": "Backups",
+                    "pages": [
+                      "GET /projects/{projectId}/backups",
+                      "POST /projects/{projectId}/backups",
+                      "DELETE /projects/{projectId}/backups/{backupId}",
+                      "POST /projects/{projectId}/backups/{backupId}/restore"
+                    ]
+                  },
+                  {
+                    "group": "Cron",
+                    "pages": [
+                      "GET /projects/{projectId}/cron-jobs",
+                      "POST /projects/{projectId}/cron-jobs",
+                      "GET /projects/{projectId}/cron-jobs/{id}",
+                      "PATCH /projects/{projectId}/cron-jobs/{id}",
+                      "DELETE /projects/{projectId}/cron-jobs/{id}",
+                      "GET /projects/{projectId}/cron-jobs/{id}/runs",
+                      "POST /projects/{projectId}/cron-jobs/{id}/runs",
+                      "GET /projects/{projectId}/cron-jobs/{id}/runs/{runId}",
+                      "POST /projects/{projectId}/cron-jobs/preview"
+                    ]
+                  },
+                  {
+                    "group": "Observability",
+                    "pages": [
+                      "GET /projects/{projectId}/database/activity",
+                      "GET /projects/{projectId}/database/insight",
+                      "GET /projects/{projectId}/database/metrics",
+                      "GET /projects/{projectId}/database/query-stats",
+                      "GET /projects/{projectId}/deploy-events",
+                      "GET /projects/{projectId}/logs",
+                      "GET /projects/{projectId}/metrics",
+                      "GET /projects/{projectId}/operations"
+                    ]
+                  },
+                  {
+                    "group": "Governance",
+                    "pages": [
+                      "GET /projects/{projectId}/agent-policy",
+                      "PUT /projects/{projectId}/agent-policy",
+                      "POST /projects/{projectId}/agent-sessions/revoke",
+                      "GET /projects/{projectId}/approvals",
+                      "POST /projects/{projectId}/approvals/{approvalId}/approve",
+                      "POST /projects/{projectId}/approvals/{approvalId}/deny"
+                    ]
+                  },
+                  {
+                    "group": "Audit",
+                    "pages": [
+                      "GET /projects/{projectId}/events",
+                      "POST /projects/{projectId}/events",
+                      "GET /projects/{projectId}/events/stream"
+                    ]
+                  },
+                  {
+                    "group": "Domains",
+                    "pages": [
+                      "POST /projects/{projectId}/domains/{domainName}/attach"
+                    ]
+                  },
+                  {
+                    "group": "Billing",
+                    "pages": [
+                      "GET /projects/{projectId}/usage",
+                      "GET /projects/{projectId}/usage/daily",
+                      "GET /projects/{projectId}/utilisation"
+                    ]
+                  },
+                  {
+                    "group": "Templates",
+                    "pages": [
+                      "POST /projects/{projectId}/template-deployments",
+                      "GET /template-deployments/{deploymentId}"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "InstaCloud (hosted)",
+          "href": "https://instacloud.com",
+          "icon": "cloud"
+        },
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/InsForge/instacloud-oss",
+          "icon": "github"
+        },
+        {
+          "anchor": "Discord",
+          "href": "https://discord.com/invite/MPxwj5xVvW",
+          "icon": "discord"
+        }
+      ]
+    }
+  },
+  "navbar": {
+    "primary": {
+      "type": "button",
+      "label": "Console",
+      "href": "https://console.instacloud.com"
+    }
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/InsForge_dev",
+      "github": "https://github.com/InsForge/instacloud-oss"
+    }
+  },
+  "redirects": [
+    {
+      "source": "/getting-started/self-host",
+      "destination": "/self-hosting/overview"
+    },
+    {
+      "source": "/getting-started/first-project",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/concepts/projects-and-branches",
+      "destination": "/projects/branches"
+    },
+    {
+      "source": "/concepts/governance",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/governance/overview",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/reference/gated-actions",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/concepts/secrets",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/reference/architecture",
+      "destination": "/self-hosting/overview"
+    },
+    {
+      "source": "/reference/compatibility",
+      "destination": "/self-hosting/overview"
+    },
+    {
+      "source": "/reference/cli",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/the-basics",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/for-agents",
+      "destination": "/agents/overview"
+    },
+    {
+      "source": "/best-practices",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/production-checklist",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/agents/claude-code",
+      "destination": "/agents/setup"
+    },
+    {
+      "source": "/agents/codex",
+      "destination": "/agents/setup"
+    },
+    {
+      "source": "/agents/cursor",
+      "destination": "/agents/setup"
+    },
+    {
+      "source": "/agents/human-in-the-loop",
+      "destination": "/agents/overview"
+    },
+    {
+      "source": "/agents/observe",
+      "destination": "/agents/overview"
+    },
+    {
+      "source": "/agents/other-agents",
+      "destination": "/agents/setup"
+    },
+    {
+      "source": "/compute/limits-and-scaling",
+      "destination": "/compute/overview"
+    },
+    {
+      "source": "/compute/sleep-and-wake",
+      "destination": "/compute/overview"
+    },
+    {
+      "source": "/compute/workers",
+      "destination": "/compute/overview"
+    },
+    {
+      "source": "/deploy/builds/detection",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/builds/dockerfile",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/builds/images",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/builds/monorepo",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/deployments/deploy-events",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/deployments/ports",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/deployments/regions",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/deployments/secrets",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/deployments/websockets",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/github/overview",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/github/pull-request-environments",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/services",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/troubleshooting/build-failures",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/troubleshooting/failed-to-respond",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/deploy/troubleshooting/no-start-command",
+      "destination": "/deploy/overview"
+    },
+    {
+      "source": "/frameworks/astro",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/deno",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/django",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/elixir",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/express",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/fastapi",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/flask",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/go",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/java",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/nextjs",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/nuxt",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/overview",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/php",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/rails",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/remix",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/rust",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/frameworks/vite",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/governance/api-tokens",
+      "destination": "/agents/mcp-server"
+    },
+    {
+      "source": "/governance/approvals",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/governance/login",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/governance/organizations",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/guides/ci",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/guides/lock-down-production",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/guides/parallel-agents",
+      "destination": "/agents/branch-per-task"
+    },
+    {
+      "source": "/guides/rotate-credentials",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/networking/custom-domains",
+      "destination": "/compute/overview"
+    },
+    {
+      "source": "/networking/overview",
+      "destination": "/compute/overview"
+    },
+    {
+      "source": "/networking/troubleshooting/ssl",
+      "destination": "/compute/overview"
+    },
+    {
+      "source": "/observability/events",
+      "destination": "/compute/overview"
+    },
+    {
+      "source": "/observability/logs",
+      "destination": "/compute/overview"
+    },
+    {
+      "source": "/observability/metrics",
+      "destination": "/compute/overview"
+    },
+    {
+      "source": "/platform/compare/fly",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/platform/compare/railway",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/platform/how-it-works",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/platform/migrate/fly",
+      "destination": "/migrate/fly"
+    },
+    {
+      "source": "/platform/migrate/railway",
+      "destination": "/migrate/railway"
+    },
+    {
+      "source": "/postgres/backups",
+      "destination": "/postgres/overview"
+    },
+    {
+      "source": "/postgres/connect",
+      "destination": "/postgres/overview"
+    },
+    {
+      "source": "/postgres/databases-and-roles",
+      "destination": "/postgres/overview"
+    },
+    {
+      "source": "/postgres/extensions",
+      "destination": "/postgres/overview"
+    },
+    {
+      "source": "/postgres/observability",
+      "destination": "/postgres/overview"
+    },
+    {
+      "source": "/postgres/scale-to-zero",
+      "destination": "/postgres/overview"
+    },
+    {
+      "source": "/postgres/sizing",
+      "destination": "/postgres/overview"
+    },
+    {
+      "source": "/pricing/cost-control",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/pricing/faq",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/pricing/plans",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/pricing/understanding-your-bill",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/projects/environments",
+      "destination": "/projects/branches"
+    },
+    {
+      "source": "/projects/manifest",
+      "destination": "/projects/branches"
+    },
+    {
+      "source": "/projects/overview",
+      "destination": "/projects/branches"
+    },
+    {
+      "source": "/reference/cli/approvals",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/autoupdate",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/billing",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/branch",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/build",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/compute",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/db",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/deploy",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/env",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/events",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/feedback",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/login",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/logout",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/logs",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/manifest",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/mcp",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/metrics",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/observe",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/org",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/policy",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/project",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/regions",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/run",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/secrets",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/services",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/setup",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/status",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/storage",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/template",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/upgrade",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/cli/usage",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/environment-variables",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/errors",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/faq",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/reference/limits",
+      "destination": "/reference/cli/overview"
+    },
+    {
+      "source": "/self-hosting/adapters",
+      "destination": "/self-hosting/overview"
+    },
+    {
+      "source": "/self-hosting/configuration",
+      "destination": "/self-hosting/overview"
+    },
+    {
+      "source": "/self-hosting/managed-databases",
+      "destination": "/self-hosting/overview"
+    },
+    {
+      "source": "/storage/access",
+      "destination": "/storage/overview"
+    },
+    {
+      "source": "/storage/objects",
+      "destination": "/storage/overview"
+    },
+    {
+      "source": "/storage/volumes",
+      "destination": "/storage/overview"
+    },
+    {
+      "source": "/self-hosting/architecture",
+      "destination": "/self-hosting/overview"
+    },
+    {
+      "source": "/self-hosting/compatibility",
+      "destination": "/self-hosting/overview"
+    }
+  ]
+}

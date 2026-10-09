@@ -1,0 +1,17 @@
+# Build context for the Dockerfile: source, templates and the ui sources only.
+node_modules
+ui/node_modules
+ui/dist
+templates/node_modules
+templates/package-lock.json
+templates/scripts/*.test.mjs
+.git
+.github
+.claude
+docs
+plans
+assets
+test
+e2e
+*.md
+!templates/**/README.md

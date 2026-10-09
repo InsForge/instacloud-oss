@@ -1,42 +1,68 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
+import type { RunMode } from '../config'
 import { docker } from '../docker'
+import { bucketName, GARAGE_CONTAINER } from '../manageddb'
 import { signRequest, presignGet, presignPost, parseListObjects, parseDeleteResult, escapeXml, type S3Creds } from '../s3'
 import type { StorageAdapter, ObjectListing } from '../types'
 
-// One SHARED Garage server (io-garage) serves every project; each branch gets its own bucket
-// AND its own access key scoped to exactly that bucket — a leaked branch credential can touch
+// One SHARED Garage server (io-garage) serves every project; each storage service on a branch gets
+// its own bucket AND its own access key scoped to exactly that bucket: a leaked credential can touch
 // nothing else (verified: foreign buckets 403). S3-compatible, objects on a local docker volume.
 // The container is attached to each branch network on provision so apps reach it at
-// http://io-garage:3900 — mirroring how the cloud injects an S3 endpoint. Clone = bucket copy
-// (rclone sync). Public access = Garage's web endpoint (:3902, vhost per bucket).
-const GARAGE = 'io-garage'
+// http://io-garage:3900, mirroring how the cloud injects an S3 endpoint. Clone = bucket copy
+// (rclone sync). Public access = Garage's web endpoint (:3902, vhost per bucket). Handles are the
+// bucket names the engine passes in (`io-<ref>-<name>`; legacy rows still carry `io-<ref>`); the
+// access key is named after its bucket so destroy(bucket) finds it.
+// Run modes differ in exactly two places (decision 20): the toml's root_domain (`.s3.<domain>` on
+// a server, `.s3.garage.localhost` / `.web.garage.localhost` locally) and the AWS_ENDPOINT_URL_S3 a
+// service is handed (`https://s3.<domain>` on a server, the branch-network name locally).
+const GARAGE = GARAGE_CONTAINER
 const IMAGE = 'dxflrs/garage:v2.3.0'
 const RCLONE = 'rclone/rclone'
 const S3_PORT = 3900
 const WEB_PORT = 3902
 const ADMIN_KEY = 'io-insta-admin' // internal key for clone/teardown; granted rw per bucket
-const bucketOf = (ref: string): string => `io-${ref}`
-const keyNameOf = (ref: string): string => `io-${ref}`
+/** A node row of `garage status`: the ID column is a long hex string, which the header line and
+ *  every banner are not. One of these is the only proof that the status was read at all. */
+const NODE_ROW = /^[0-9a-f]{8,}\b/i
 
-const configPath = (): string =>
-  process.env.INSTA_OSS_GARAGE_CONFIG ?? join(homedir(), '.insta-oss', 'garage.toml')
+export interface GarageOptions {
+  configPath: string    // cfg.garageConfigPath
+  hostEndpoint: string  // cfg.s3HostEndpoint (the daemon's own S3 calls and every URL it signs)
+  mode: RunMode         // WP5: server mode never starts the container (compose manages it)
+  domain: string        // WP5: root_domain of the toml in server mode
+}
 
 export class LocalGarage implements StorageAdapter {
   private ensured = false
   private adminCreds: { id: string; secret: string } | null = null
 
+  constructor(private readonly opts: GarageOptions) {}
+
   private garage(args: string[]): Promise<Buffer> {
     return docker(['exec', GARAGE, '/garage', ...args])
   }
 
-  /** Write the single-node config once (rpc secret persisted inside it). */
+  /** Write the single-node config once (rpc secret persisted inside it).
+   *
+   *  The two root_domains are the whole run-mode difference (decision 20). Local mode keeps
+   *  today's `.s3.garage.localhost` / `.web.garage.localhost`, so public reads stay at
+   *  `http://<bucket>.web.garage.localhost:3902` and the router serves no bucket vhost. Server mode
+   *  writes install.sh's toml: BOTH endpoints answer on `.s3.<domain>`, because
+   *  `<bucket>.s3.<domain>` is one hostname whose upstream the router picks per request (a signed
+   *  or non-GET request goes to the S3 API, an anonymous GET/HEAD to the web endpoint). Normally
+   *  install.sh has already written this file and mounted it into the compose container; writing it
+   *  here keeps a hand-assembled server install self-consistent instead of silently serving
+   *  localhost vhosts. */
   private ensureConfig(): string {
-    const p = configPath()
+    const p = this.opts.configPath
     if (!existsSync(p)) {
+      const server = this.opts.mode === 'server'
       mkdirSync(dirname(p), { recursive: true })
+      // 0600: the file carries `rpc_secret`. Both garage images run as root, so the container
+      // still reads it through the read-only bind (install.sh writes the same file the same way).
       writeFileSync(p, [
         'metadata_dir = "/var/lib/garage/meta"',
         'data_dir = "/var/lib/garage/data"',
@@ -47,13 +73,13 @@ export class LocalGarage implements StorageAdapter {
         '[s3_api]',
         's3_region = "garage"',
         `api_bind_addr = "[::]:${S3_PORT}"`,
-        'root_domain = ".s3.garage.localhost"',
+        `root_domain = "${server ? `.s3.${this.opts.domain}` : '.s3.garage.localhost'}"`,
         '[s3_web]',
         `bind_addr = "[::]:${WEB_PORT}"`,
-        'root_domain = ".web.garage.localhost"',
+        `root_domain = "${server ? `.s3.${this.opts.domain}` : '.web.garage.localhost'}"`,
         'index = "index.html"',
         '',
-      ].join('\n'))
+      ].join('\n'), { mode: 0o600 })
     }
     return p
   }
@@ -65,6 +91,11 @@ export class LocalGarage implements StorageAdapter {
     const out = await docker(['ps', '-aq', '--filter', `name=^${GARAGE}$`])
     if (out.toString().trim()) {
       await docker(['start', GARAGE]).catch(() => { /* already running */ })
+    } else if (this.opts.mode === 'server') {
+      // WP6 (packaging): on a VPS the compose stack owns io-garage (container_name in compose.yml,
+      // bind dirs under <dataDir>/garage written by install.sh); the daemon only initialises the
+      // layout. Starting it here would race compose and mount named volumes the installer never sees.
+      throw new Error('io-garage is managed by compose in server mode: run docker compose up -d in /etc/instacloud')
     } else {
       const base = ['run', '-d', '--restart', 'unless-stopped', '--name', GARAGE,
         '-v', `${cfg}:/etc/garage.toml:ro`,
@@ -89,13 +120,23 @@ export class LocalGarage implements StorageAdapter {
     throw new Error('shared Garage server never became ready')
   }
 
-  /** Single-node layout: assign this node a role once; later calls see a role and skip. */
+  /** Single-node layout: assign this node a role once; later calls see a role and skip.
+   *
+   *  The skip is decided on POSITIVE evidence now. `if (!status.includes('NO ROLE ASSIGNED'))
+   *  return` read every output this parser does not understand -- a changed format, a partially
+   *  written capture, an empty buffer -- as "the node already has a role", and the layout was
+   *  then never initialised, on a store the daemon reports as ready. The node rows are what says
+   *  anything at all: no rows means the status could not be read, and that raises rather than
+   *  skipping. */
   private async initLayout(): Promise<void> {
     const status = (await this.garage(['status'])).toString()
-    if (!status.includes('NO ROLE ASSIGNED')) return
-    const line = status.split('\n').find((l) => l.includes('NO ROLE ASSIGNED'))
-    const nodeId = line?.trim().split(/\s+/)[0]
-    if (!nodeId) throw new Error('could not determine Garage node id from status output')
+    const rows = status.split('\n').map((l) => l.trim()).filter((l) => NODE_ROW.test(l))
+    if (!rows.length) {
+      throw new Error(`could not read the Garage node list from \`garage status\` (got ${JSON.stringify(status.slice(0, 200))}); refusing to assume this node already has a layout role`)
+    }
+    const unassigned = rows.find((l) => l.includes('NO ROLE ASSIGNED'))
+    if (!unassigned) return
+    const nodeId = unassigned.split(/\s+/)[0]
     await this.garage(['layout', 'assign', '-z', 'dc1', '-c', '100G', nodeId])
     await this.garage(['layout', 'apply', '--version', '1']).catch(() => { /* concurrent init won */ })
   }
@@ -145,14 +186,14 @@ export class LocalGarage implements StorageAdapter {
       RCLONE, ...args], { input })
   }
 
-  async provision(ref: string, network: string): Promise<{ bucket: string; env: Record<string, string> }> {
+  async provision(ref: string, network: string, name: string): Promise<{ bucket: string; env: Record<string, string> }> {
     await this.ensure()
     // attach the shared Garage to this branch's network so the app (and rclone) can reach it
     await docker(['network', 'connect', network, GARAGE]).catch(() => { /* already attached */ })
-    const bucket = bucketOf(ref)
+    const bucket = bucketName(ref, name)
     await this.garage(['bucket', 'create', bucket]).catch(() => { /* exists */ })
-    // grants go by key ID — names aren't unique in Garage, so a name here would break on dupes
-    const creds = await this.keyCreds(keyNameOf(ref))
+    // grants go by key ID (names aren't unique in Garage, so a name here would break on dupes)
+    const creds = await this.keyCreds(bucket)
     await this.garage(['bucket', 'allow', '--read', '--write', bucket, '--key', creds.id])
     // the internal admin key gets rw too — clone and teardown run under it
     const admin = await this.admin()
@@ -162,44 +203,83 @@ export class LocalGarage implements StorageAdapter {
       env: {
         AWS_ACCESS_KEY_ID: creds.id,
         AWS_SECRET_ACCESS_KEY: creds.secret,
-        AWS_ENDPOINT_URL_S3: `http://${GARAGE}:${S3_PORT}`,
+        // Server mode: ONE string that works on the host and inside a container (decision 20) —
+        // `s3.<domain>` routes to Garage, and the deploy aliases pin it to the box, so an SDK's
+        // default virtual-hosted addressing (`<bucket>.s3.<domain>`) works too. Local mode keeps
+        // the branch-network name; `containerize()` owns the host-facing rewrite there.
+        AWS_ENDPOINT_URL_S3: this.opts.mode === 'server' ? this.opts.hostEndpoint : `http://${GARAGE}:${S3_PORT}`,
         AWS_REGION: 'garage',
         BUCKET_NAME: bucket,
       },
     }
   }
 
-  /** Branch clone: copy every object from the source bucket into the destination's. */
-  async cloneInto(srcRef: string, dstRef: string, network: string): Promise<void> {
-    await this.rclone(network, await this.admin(), ['sync', `g:${bucketOf(srcRef)}`, `g:${bucketOf(dstRef)}`])
+  /** Branch clone: copy every object from the source bucket into the destination bucket. */
+  async cloneInto(srcBucket: string, dstBucket: string, network: string): Promise<void> {
+    await this.rclone(network, await this.admin(), ['sync', `g:${srcBucket}`, `g:${dstBucket}`])
   }
 
   /** Bucket access mode: anonymous public-read via Garage's web endpoint (vhost per bucket,
    *  http://<bucket>.web.garage.localhost:3902 from the host) vs private. */
-  async setAccess(ref: string, _network: string, isPublic: boolean): Promise<void> {
-    await this.garage(['bucket', 'website', isPublic ? '--allow' : '--deny', bucketOf(ref)])
+  async setAccess(bucket: string, _network: string, isPublic: boolean): Promise<void> {
+    await this.garage(['bucket', 'website', isPublic ? '--allow' : '--deny', bucket])
   }
 
-  async destroy(ref: string, network: string): Promise<void> {
-    try { await this.rclone(network, await this.admin(), ['purge', `g:${bucketOf(ref)}`]) } catch { /* empty / gone */ }
-    await this.garage(['bucket', 'delete', '--yes', bucketOf(ref)]).catch(() => { /* gone */ })
-    for (const id of await this.keyIds(keyNameOf(ref)).catch(() => [] as string[])) {
+  /** Purge the objects, delete the bucket, drop its keys.
+   *
+   *  A failure here used to be indistinguishable from an empty bucket, and the caller unregisters
+   *  the service on the strength of this returning: a bucket that is still there then has no row
+   *  naming it and nobody will ever come back for it. So absence is ESTABLISHED before this
+   *  reports success -- garage's own bucket list is asked afterwards, and a bucket still in it
+   *  raises. The object purge stays best effort on its own (an empty or already-gone bucket makes
+   *  rclone complain and that is not a failure), because the bucket delete below is the step that
+   *  actually decides, and garage refuses to delete a bucket that still holds objects. */
+  async destroy(bucket: string, network: string): Promise<void> {
+    try { await this.rclone(network, await this.admin(), ['purge', `g:${bucket}`]) } catch { /* empty / gone */ }
+    let failure: string | undefined
+    try {
+      await this.garage(['bucket', 'delete', '--yes', bucket])
+    } catch (e) {
+      failure = e instanceof Error ? e.message : String(e)
+    }
+    if (failure !== undefined && await this.bucketExists(bucket)) {
+      throw new Error(`could not delete bucket ${bucket}: ${failure}`)
+    }
+    for (const id of await this.keyIds(bucket).catch(() => [] as string[])) {
       await this.garage(['key', 'delete', '--yes', id]).catch(() => { /* gone */ })
     }
+  }
+
+  /** Is the bucket still there? A LIST that cannot answer is not evidence of absence, so it
+   *  answers "still there" and the caller keeps its row. */
+  private async bucketExists(bucket: string): Promise<boolean> {
+    try {
+      const out = (await this.garage(['bucket', 'list'])).toString()
+      return out.split('\n').some((l) => l.split(/\s+/).includes(bucket))
+    } catch {
+      return true
+    }
+  }
+
+  /** Detach the shared Garage from a branch network. This belongs to the BRANCH, not to a bucket:
+   *  every storage service on a branch shares one network, so disconnecting when a single bucket is
+   *  destroyed would cut S3 for the others (and would strand the rclone purge of the next bucket in
+   *  a teardown). Callers detach once, after the last bucket on that network is gone. */
+  async detachFrom(network: string): Promise<void> {
     await docker(['network', 'disconnect', network, GARAGE]).catch(() => { /* not attached */ })
   }
 
   // ---- object operations (platform parity: `insta storage` + the console's file browser) ----
-  // The daemon runs on the HOST, and so do the CLI/browser that consume presigned URLs — so both
-  // the daemon's own S3 calls and every URL it signs go through Garage's host-published port
-  // (127.0.0.1:3900, best-effort at server start), NOT the branch-network name io-garage. SigV4
-  // signs the Host header, so the two are not interchangeable.
+  // The daemon runs on the HOST, and so do the CLI/browser that consume presigned URLs, so both
+  // the daemon's own S3 calls and every URL it signs go through Garage's host endpoint
+  // (cfg.s3HostEndpoint: 127.0.0.1:3900, published best-effort at server start), NOT the
+  // branch-network name io-garage. SigV4 signs the Host header, so the two are not interchangeable.
   private hostCreds(env: Record<string, string>): S3Creds {
     return {
       accessKeyId: env.AWS_ACCESS_KEY_ID,
       secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
       region: env.AWS_REGION ?? 'garage',
-      endpoint: process.env.INSTA_OSS_S3_HOST_ENDPOINT ?? `http://127.0.0.1:${S3_PORT}`,
+      endpoint: this.opts.hostEndpoint,
     }
   }
 
@@ -207,8 +287,7 @@ export class LocalGarage implements StorageAdapter {
     let res: Response
     try { res = await fetch(req.url, { method, headers: req.headers, body: body as BodyInit | undefined }) }
     catch {
-      const endpoint = process.env.INSTA_OSS_S3_HOST_ENDPOINT ?? `http://127.0.0.1:${S3_PORT}`
-      throw new Error(`could not reach Garage on its host port (${endpoint}) — it is published best-effort at daemon start; free the port and restart, or set INSTA_OSS_S3_HOST_ENDPOINT`)
+      throw new Error(`could not reach Garage on its host port (${this.opts.hostEndpoint}) — it is published best-effort at daemon start; free the port and restart, or set INSTA_OSS_S3_HOST_ENDPOINT`)
     }
     const text = await res.text()
     if (!res.ok) throw new Error(`Garage answered ${res.status}: ${/<Message>([^<]*)<\/Message>/.exec(text)?.[1] ?? text.slice(0, 200)}`)
@@ -245,14 +324,14 @@ export class LocalGarage implements StorageAdapter {
     return parseDeleteResult(await this.s3Fetch(req, 'POST', body))
   }
 
-  // Test helpers (also handy for debugging): put/get/list objects via rclone.
-  putObject(network: string, ref: string, key: string, body: string): Promise<Buffer> {
-    return this.admin().then((c) => this.rclone(network, c, ['rcat', `g:${bucketOf(ref)}/${key}`], Buffer.from(body)))
+  // Test helpers (also handy for debugging): put/get/list objects via rclone, by bucket handle.
+  putObject(network: string, bucket: string, key: string, body: string): Promise<Buffer> {
+    return this.admin().then((c) => this.rclone(network, c, ['rcat', `g:${bucket}/${key}`], Buffer.from(body)))
   }
-  async getObject(network: string, ref: string, key: string): Promise<string> {
-    return (await this.rclone(network, await this.admin(), ['cat', `g:${bucketOf(ref)}/${key}`])).toString()
+  async getObject(network: string, bucket: string, key: string): Promise<string> {
+    return (await this.rclone(network, await this.admin(), ['cat', `g:${bucket}/${key}`])).toString()
   }
-  async listObjects(network: string, ref: string): Promise<string> {
-    return (await this.rclone(network, await this.admin(), ['ls', `g:${bucketOf(ref)}`])).toString()
+  async listObjects(network: string, bucket: string): Promise<string> {
+    return (await this.rclone(network, await this.admin(), ['ls', `g:${bucket}`])).toString()
   }
 }

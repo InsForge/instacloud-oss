@@ -2,6 +2,7 @@ import { useParams } from 'react-router-dom'
 import { cn } from '@insforge/ui'
 import { api, relTime } from '../api'
 import { usePoll } from '../hooks'
+import { ConsolePage } from '../components/console/ConsolePage'
 
 function StatusBadge({ status }: { status: string }) {
   const s = status.toLowerCase()
@@ -18,14 +19,8 @@ export function Operations() {
   const { data: operations, error } = usePoll(() => api.operations(projectId), [projectId], 10000)
 
   return (
-    <div className="mx-auto flex w-full max-w-[64rem] flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-[32px] leading-12 font-bold">Operations</h1>
-        <p className="text-sm text-muted-foreground">
-          Control-plane operations across all environments — provisioning, deploys, and lifecycle
-          changes, newest first.
-        </p>
-      </div>
+    <ConsolePage title="Operations"
+      subtitle="Control-plane operations across all branches — provisioning, deploys, and lifecycle changes, newest first">
 
       {error && (
         <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-destructive">{error.message}</div>
@@ -61,6 +56,6 @@ export function Operations() {
           </tbody>
         </table>
       </div>
-    </div>
+    </ConsolePage>
   )
 }

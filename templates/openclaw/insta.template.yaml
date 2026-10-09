@@ -1,5 +1,5 @@
 code: openclaw
-version: 0.1.1
+version: 0.3.2
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -16,15 +16,12 @@ generated:
 services:
   openclaw:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/openclaw:0.1.1   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/openclaw:0.3.2   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
     healthcheck: /startupz
-    # Mirrors upstream's fly.toml sizing: 2 vCPU / 2 GB with the node heap capped below the ceiling.
-    spec: 2vcpu-2gb
     # Channel connections (Telegram, Discord, ...) run inside the process; an idle machine never wakes for them.
     alwaysOn: true
-    volume:
-      size: 1
+    volume: true
     env:
       fixed:
         OPENCLAW_STATE_DIR: /data/.openclaw
@@ -43,6 +40,10 @@ meta:
   tagline: Self-hosted personal AI assistant, reachable from your chat apps
   category: ai-agent
   tags: [ai-agent, ai]
+  # Architectures the published image carries. A box on anything else is told at deploy time
+  # rather than left to fail on the pull: upstream publishes both and this image only adds an
+  # entrypoint.
+  architectures: [amd64, arm64]
   logo: ./logo.svg
   links:
     upstream: https://github.com/openclaw/openclaw

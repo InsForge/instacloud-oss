@@ -1,114 +1,262 @@
-import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { Button, Input } from '@insforge/ui'
-import { GitBranch, Plus, X } from 'lucide-react'
-import { api } from '../api'
-import { usePoll } from '../hooks'
-import { Chip, ErrorNote, Modal } from '../components/ui'
-import { ApprovalPrompt, type PendingApproval } from '../components/ApprovalPrompt'
+// The console's Branches page (insta-frontend branches/branches-view.tsx, branch-actions-menu.tsx): a
+// title band with Add Branch, then a table of Branch, Status, Service (type icons), Created. The default
+// branch has no menu (it cannot be renamed or deleted); other rows get Rename Branch / Delete Branch.
+// Self-host divergences: no GitHub deployments panel, and no Agent Governance column (the daemon's
+// governance policy is project-wide, so there is no per-branch protection to show).
 
-function NewEnvironmentDialog({ projectId, from, onClose, onDone }: {
-  projectId: string; from: string[]; onClose: () => void; onDone: (name: string) => void
+import { useMemo, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import {
+  Button, ConfirmDialog, cn, Dialog, DialogBody, DialogClose, DialogContent, DialogFooter, DialogHeader,
+  DialogTitle, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input,
+} from '@insforge/ui'
+import { CircleAlert, EllipsisVertical, Plus } from 'lucide-react'
+import { api, type BranchInfo } from '../api'
+import { usePoll } from '../hooks'
+import { envBadge } from '../lib/envSwitch'
+import { BRANCH_NAME_RE, LOWER_KEBAB_BRANCH_ERROR } from '../lib/serviceNames'
+import { ApprovalPrompt, type PendingApproval } from '../components/ApprovalPrompt'
+import { CreateEnvironmentDialog } from '../components/console/CreateEnvironmentDialog'
+import { EnvStatusBadge } from '../components/console/EnvSwitcher'
+import { ServiceTypeIcon } from '../components/console/ServiceIcon'
+import { formatDateTime } from '../lib/format'
+import { ErrorNote } from '../components/ui'
+
+function Th({ children }: { children?: string }) {
+  return <th className="px-4 py-3 text-left text-[13px] font-normal text-muted-foreground">{children}</th>
+}
+
+/** One icon per service type the branch carries.
+ *
+ *  The types come from the ONE `GET /projects/:id` the page already makes, exactly as the console
+ *  builds this table (it derives a branch's services by matching `resource.branchId`). This used to be
+ *  a `GET /services` poll per row, so opening a project with N branches fired N requests of
+ *  Docker-backed work, repeatedly, just to draw icons. */
+function ServiceIcons({ types }: { types: string[] }) {
+  if (types.length === 0) return <span className="text-sm text-muted-foreground">—</span>
+  return (
+    <div className="flex items-center gap-2">
+      {types.map((type) => (
+        <span key={type} className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-semantic-1">
+          <ServiceTypeIcon type={type} className="size-5" />
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/** The console's Rename Branch dialog. Metadata only on the daemon too: the branch keeps its
+ *  frozen ref, hostnames and containers, so this is safe on a running branch. */
+function RenameBranchDialog({ projectId, env, open, onOpenChange, onRenamed, onApproval }: {
+  projectId: string; env: BranchInfo; open: boolean
+  onOpenChange: (open: boolean) => void; onRenamed: (name: string) => void
+  onApproval: (p: NonNullable<PendingApproval>) => void
 }) {
-  const [name, setName] = useState('')
-  const [source, setSource] = useState(from[0] ?? 'main')
+  const [name, setName] = useState(env.name)
+  const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string>()
-  const submit = async () => {
-    if (!name.trim()) return setError('name required')
+
+  const rename = async (next: string) => {
     setBusy(true)
-    const r = await api.createBranch(projectId, name.trim(), source)
+    const r = await api.renameBranch(projectId, env.id, next)
     setBusy(false)
-    if (r.kind === 'error') return setError(r.error)
-    if (r.kind === 'approval') return setError('environment creation gated — approve it from the Approvals page')
-    onClose(); onDone(name.trim())
+    if (r.kind === 'error') return setError(r.status === 409 ? `A branch named ${next} already exists.` : r.error)
+    // Close only on success, like the service rename: rename is ungated today, but a governed
+    // daemon may still answer 202.
+    if (r.kind === 'approval') return onApproval({ ...r, retry: () => { void rename(next) } })
+    onOpenChange(false)
+    onRenamed(next)
+  }
+
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault()
+    setError(null)
+    const next = name.trim()
+    if (next === env.name) return onOpenChange(false)
+    if (!BRANCH_NAME_RE.test(next)) return setError(LOWER_KEBAB_BRANCH_ERROR)
+    void rename(next)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Rename Branch</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit}>
+          <DialogBody className="flex flex-col gap-2">
+            <div className="flex items-center gap-6">
+              <label htmlFor="branch-rename" className="w-32 shrink-0 text-sm">Branch Name</label>
+              <Input id="branch-rename" name="name" required autoFocus value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </DialogBody>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="secondary">Cancel</Button>
+            </DialogClose>
+            <Button type="submit" variant="primary" disabled={!name.trim() || busy}>Save</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function BranchActionsMenu({ projectId, env, onDeleted, onRenamed, onError, onApproval }: {
+  projectId: string; env: BranchInfo; onDeleted: () => void; onRenamed: (name: string) => void
+  onError: (m: string) => void; onApproval: (p: NonNullable<PendingApproval>) => void
+}) {
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const remove = async () => {
+    setBusy(true)
+    const r = await api.deleteBranch(projectId, env.id)
+    setBusy(false)
+    setDeleteOpen(false)
+    if (r.kind === 'error') return onError(r.error)
+    if (r.kind === 'approval') return onApproval({ ...r, retry: () => { void remove() } })
+    onDeleted()
   }
   return (
-    <Modal
-      title="New environment"
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={submit} disabled={busy}>{busy ? 'Cloning…' : 'Create environment'}</Button>
-        </>
-      }
-    >
-      <label className="text-xs font-medium text-muted-foreground">Name</label>
-      <Input
-        autoFocus value={name} onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && submit()}
-        placeholder="feature-x" className="mt-1"
-      />
-      <label className="mt-3 block text-xs font-medium text-muted-foreground">Clone from</label>
-      <select value={source} onChange={(e) => setSource(e.target.value)}
-        className="mt-1 w-full rounded-md border border-border bg-card px-3 py-2 text-sm">
-        {from.map((b) => <option key={b}>{b}</option>)}
-      </select>
-      <p className="mt-3 text-xs text-muted-foreground">
-        An environment is a full isolated clone: its own Postgres (data copied), its own bucket (objects copied),
-        and a redeploy of every app — nothing it does touches the source environment
-        (<code className="font-mono">insta branch create</code> on the CLI).
-      </p>
-      <ErrorNote error={error} />
-    </Modal>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${env.name}`}>
+            <EllipsisVertical className="size-4 text-muted-foreground" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => setRenameOpen(true)}>Rename Branch</DropdownMenuItem>
+          <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setDeleteOpen(true)}>
+            Delete Branch
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {/* Remount per open, so a cancelled edit does not survive into the next one. */}
+      {renameOpen && (
+        <RenameBranchDialog projectId={projectId} env={env} open onOpenChange={setRenameOpen} onRenamed={onRenamed}
+          onApproval={onApproval} />
+      )}
+      <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete Branch"
+        description={
+          <span>
+            This permanently deletes <span className="font-medium">{env.name}</span> and tears down its database branch,
+            storage fork, and compute. This action cannot be undone.
+          </span>
+        }
+        confirmText="Delete" cancelText="Cancel" destructive isLoading={busy} onConfirm={() => { void remove() }} />
+    </>
   )
 }
 
 export function Environments() {
-  const { projectId } = useParams() as { projectId: string }
+  const { projectId, branch } = useParams() as { projectId: string; branch: string }
   const nav = useNavigate()
-  const { data: branches, reload } = usePoll(() => api.branches(projectId), [projectId])
-  const [creating, setCreating] = useState(false)
+  // One call for the branches AND what each carries, like the console's Branches table.
+  const { data: detail, reload } = usePoll(() => api.projectDetail(projectId), [projectId])
+  const envs = detail?.branches
+  const typesByBranch = useMemo(() => {
+    const m = new Map<string, string[]>()
+    for (const r of detail?.resources ?? []) {
+      const seen = m.get(r.branchId) ?? []
+      if (!seen.includes(r.kind)) m.set(r.branchId, [...seen, r.kind])
+    }
+    return m
+  }, [detail])
+  const [createOpen, setCreateOpen] = useState(false)
   const [approval, setApproval] = useState<PendingApproval>(null)
   const [error, setError] = useState<string>()
-
-  const del = async (branchId: string) => {
-    setError(undefined)
-    const r = await api.deleteBranch(projectId, branchId)
-    if (r.kind === 'error') return setError(r.error)
-    if (r.kind === 'approval') return setApproval({ ...r, retry: () => del(branchId) })
-    reload()
-  }
+  const all = envs ?? []
+  const defaultEnv = all.find((e) => e.is_default)?.name ?? 'main'
 
   return (
-    <div className="mx-auto flex w-full max-w-[64rem] flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-[32px] leading-12 font-bold">Environments</h1>
-        <Button variant="primary" className="gap-1.5" onClick={() => setCreating(true)}>
-          <Plus className="size-4" />
-          Add Environment
-        </Button>
+    <div className="-mx-8 -mt-8 flex w-auto flex-col gap-4">
+      <div className="px-6">
+        <div className="flex items-center justify-between gap-3 py-4.5">
+          <h1 className="text-[32px] leading-12 font-semibold">Branches</h1>
+          <Button variant="primary" className="h-9 gap-1.5" onClick={() => setCreateOpen(true)}>
+            <Plus className="size-4" />
+            Add Branch
+          </Button>
+        </div>
       </div>
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
-        {(branches ?? []).map((b) => (
-          <div key={b.id} className="group flex items-center border-b border-border px-4 py-3 last:border-b-0">
-            <button onClick={() => nav(`/p/${projectId}/${b.name}/services`)}
-              className="flex items-center gap-2 text-sm font-medium hover:underline">
-              <GitBranch className="size-4 text-muted-foreground" />
-              {b.name}
-            </button>
-            <span className="ml-3">{b.is_default && <Chip>Prod</Chip>}</span>
-            <span className="ml-auto mr-4 text-xs text-muted-foreground">{b.status}</span>
-            {!b.is_default && (
-              <Button variant="ghost" size="icon-sm" onClick={() => del(b.id)}
-                title="delete environment (full teardown of its containers)"
-                className="invisible group-hover:visible">
-                <X className="size-4 text-muted-foreground hover:text-destructive" />
-              </Button>
-            )}
-          </div>
-        ))}
+
+      <div className="flex flex-col gap-4 px-6">
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-border">
+                <Th>Branch</Th>
+                <Th>Status</Th>
+                <Th>Service</Th>
+                <Th>Created</Th>
+                <th className="w-12" aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {all.map((env) => {
+                // A branch whose teardown failed keeps its row so the delete can be retried; nothing
+                // inside it works, so it does not open, but it keeps its menu.
+                const failed = envBadge(env).label === 'Failed'
+                return (
+                  <tr key={env.id} onClick={failed ? undefined : () => nav(`/p/${projectId}/${encodeURIComponent(env.name)}/services`)}
+                    className={cn('border-b border-border transition-colors last:border-b-0',
+                      failed ? 'opacity-60' : 'cursor-pointer hover:bg-alpha-4')}>
+                    {/* The row click is a convenience; this link is what keyboard and screen-reader
+                        users navigate with, since a tr onClick reaches neither. */}
+                    <td className="px-4 py-3 text-sm">
+                      {failed ? env.name : (
+                        <Link to={`/p/${projectId}/${encodeURIComponent(env.name)}/services`}
+                          className="hover:underline" onClick={(e) => e.stopPropagation()}>
+                          {env.name}
+                        </Link>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {failed ? (
+                        <span className="flex items-center gap-2 text-sm text-destructive"
+                          title="This branch could not be torn down. Delete it again to retry.">
+                          <CircleAlert className="size-4" />
+                          Failed
+                        </span>
+                      ) : (
+                        <EnvStatusBadge env={env} />
+                      )}
+                    </td>
+                    <td className="px-4 py-3"><ServiceIcons types={typesByBranch.get(env.id) ?? []} /></td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTime(env.created_at)}</td>
+                    {env.is_default ? (
+                      <td className="w-12" />
+                    ) : (
+                      <td className="px-2 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                        <BranchActionsMenu projectId={projectId} env={env} onError={setError} onApproval={setApproval}
+                          onDeleted={() => {
+                            reload()
+                            // The branch you were standing on is gone: land on the default one.
+                            if (env.name === branch) nav(`/p/${projectId}/${defaultEnv}/branches`, { replace: true })
+                          }}
+                          onRenamed={(next) => {
+                            reload()
+                            // The URL carries the branch NAME; a rename of the branch you are
+                            // standing on would leave every link on the page pointing at a name
+                            // that no longer answers.
+                            if (env.name === branch) nav(`/p/${projectId}/${encodeURIComponent(next)}/branches`, { replace: true })
+                          }} />
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <ErrorNote error={error} />
       </div>
-      <p className="text-xs text-muted-foreground">
-        Environments never merge — promote by merging code in git, running migration files against the target
-        environment, and redeploying it (see the insta skill's branching guide).
-      </p>
-      <ErrorNote error={error} />
-      {creating && (
-        <NewEnvironmentDialog projectId={projectId} from={(branches ?? []).map((b) => b.name)}
-          onClose={() => setCreating(false)} onDone={(name) => nav(`/p/${projectId}/${name}/services`)} />
-      )}
+
+      <CreateEnvironmentDialog projectId={projectId} environments={all} open={createOpen} onOpenChange={setCreateOpen}
+        onCreated={(name) => { reload(); nav(`/p/${projectId}/${name}/services`) }} onApproval={setApproval} />
       <ApprovalPrompt projectId={projectId} pending={approval} onClose={() => setApproval(null)} />
     </div>
   )

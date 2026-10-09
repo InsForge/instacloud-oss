@@ -2,6 +2,8 @@
 
 Visual workflow automation with 400+ integrations.
 
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/n8n)
+
 ## Overview
 
 [n8n](https://github.com/n8n-io/n8n) is a workflow automation tool: you build flows on a canvas,
@@ -15,7 +17,7 @@ database a local `npm install n8n` would use, and it asks you for nothing at dep
 ## What you get by hosting it
 
 - An HTTPS URL for the n8n editor, with no port forwarding or tunnel to manage.
-- A 1 GiB volume mounted at `/data`, with `N8N_USER_FOLDER` pointed at it, so the SQLite database
+- A persistent volume mounted at `/data`, with `N8N_USER_FOLDER` pointed at it, so the SQLite database
   lives on the volume and survives restarts and redeploys along with your settings file and any
   community nodes you install. This pairing is the whole persistence story: without it, a redeploy
   would take your workflows with it.
@@ -42,8 +44,10 @@ Set by the template, not by you: `N8N_USER_FOLDER=/data` (database and settings 
 `N8N_PORT=5678`, `N8N_LISTEN_ADDRESS=0.0.0.0`, `N8N_PROXY_HOPS=1`, and `N8N_WEBHOOK_URL` /
 `N8N_EDITOR_BASE_URL` resolved to the service's own HTTPS URL.
 
-The compute size is pinned to `2vcpu-2gb`: n8n sits at roughly 557 MB resident while idle, so the
-512 MB and 1 GB sizes leave no room for a workflow run. The service is always-on, because schedule
+The template no longer pins a compute size, so a new service starts at whatever your plan gives
+one, and you can change it afterwards from the service settings. The number that mattered when it
+did pin one still holds as a floor: n8n sits at roughly 557 MB resident while idle, so anything
+around 512 MB leaves no room for a workflow run. The service is always-on, because schedule
 and polling triggers fire from inside the process and an idle machine is only ever woken by an
 inbound request.
 
@@ -55,7 +59,7 @@ this template does not use: n8n reads its database as five separate `DB_POSTGRES
 and no connection string, so a managed database cannot be wired to it from a manifest today.
 
 **The volume is the only copy.** Workflows, encrypted credentials and execution history all live on
-that one 1 GiB volume, and nothing here snapshots or replicates it. Export anything you would mind
+that one volume, and nothing here snapshots or replicates it. Export anything you would mind
 losing — n8n's own **Download** on a workflow, or the whole set from the workflow list — and keep a
 copy of `N8N_ENCRYPTION_KEY`, since exported credentials are unreadable without it.
 
@@ -83,6 +87,7 @@ fair-code upstreams. Read the upstream license before using it commercially.
 
 ## Links
 
+- Architectures: `linux/amd64` and `linux/arm64`, as published by the official image.
 - Documentation: <https://docs.n8n.io>
 - Upstream: <https://github.com/n8n-io/n8n>
 - Image: `docker.io/n8nio/n8n`, pinned to `2.36.5`

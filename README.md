@@ -1,164 +1,314 @@
-# insta-oss
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/dark.svg">
+    <img alt="InstaCloud OSS" src="docs/logo/light.svg" width="340">
+  </picture>
+</p>
 
-An open-source, self-hostable platform for your database, object storage, and any compute
-container. Branchable end to end: the most agent-native way to develop.
+<h1 align="center">InstaCloud OSS</h1>
+
+<p align="center">
+  <b>The open-source, self-hostable PaaS: your own serverless cloud on a single box.</b>
+</p>
+
+<p align="center">
+  A self-hosted alternative to Railway, Render, Fly and AWS. One daemon over your Docker gives every
+  app a managed Postgres and S3 bucket, git push-to-deploy, disposable branch environments that fork
+  all three, and scale-to-zero, with the same <code>insta</code> CLI, MCP server and agent skills as
+  the hosted platform.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache 2.0"></a>
+  <a href="https://github.com/InsForge/instacloud-oss/releases"><img src="https://img.shields.io/github/v/release/InsForge/instacloud-oss?color=blue&label=release" alt="Latest release"></a>
+  <a href="https://github.com/InsForge/instacloud-oss/actions/workflows/ci.yml"><img src="https://github.com/InsForge/instacloud-oss/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://discord.com/invite/MPxwj5xVvW"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> &middot;
+  <a href="#install-on-a-vps">Install on a VPS</a> &middot;
+  <a href="#run-on-your-laptop">Run on your laptop</a> &middot;
+  <a href="https://github.com/InsForge/instacloud-cli">insta CLI</a> &middot;
+  <a href="https://instacloud.com">Hosted InstaCloud</a> &middot;
+  <a href="https://discord.com/invite/MPxwj5xVvW">Discord</a>
+</p>
+
+<p align="center">
+  <img alt="The InstaCloud OSS dashboard, showing a live project" src="docs/img/dashboard-services.png" width="820">
+</p>
 
 ```
 project = a Postgres database + an S3 bucket + your app containers
 branch  = a disposable, fully isolated clone of all three
 ```
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+## Quick start
 
-[Quick start](#quick-start) · [insta CLI](https://github.com/InsForge/insta-cli) ·
-[Hosted InstaCloud](https://instacloud.com) · [Discord](https://discord.com/invite/MPxwj5xVvW)
+On a fresh Ubuntu or Debian VPS (2 vCPU, 2 GiB RAM, 15 GiB free disk, with inbound 80 and 443
+open), one command brings up the whole platform, TLS included:
 
-## Overview
+```bash
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh
+```
 
-insta-oss is a single daemon on your own Docker: single-tenant, no accounts, no billing. A
-project provisions real resources, and everything it creates is plain Docker (a standard
-Postgres container, an S3-compatible bucket, your own app images). There is nothing
-proprietary to migrate out of.
-
-[InstaCloud](https://instacloud.com) is the corresponding hosted service from InsForge: the
-same `insta` CLI, MCP server, and agent skills drive both, so workflows move between them
-unchanged.
-
-## What makes it different
-
-**A branch is a whole environment, cloned.** `insta branch create` copies the database (with
-data), copies the bucket, and redeploys every app container, each branch on its own URL,
-ready in seconds. Break it, throw it away; the source is never touched. One task, one branch,
-many in parallel.
-
-**Governance at the credential boundary.** The daemon is the only thing holding credentials,
-and every sensitive action passes an allow / deny / approve gate before it touches a resource.
-Agents propose, humans approve: a gated action parks until someone runs
-`insta approvals approve`; an agent that ignores its instructions still cannot get past it.
-Every action lands in the `insta events` audit timeline.
+About a minute later you have a live URL and an admin setup page that mints your first CLI token.
+Prefer to read the script first? Download it with `-o install.sh` and page through it before running,
+rather than piping straight to `sudo sh`. No lock-in: it is plain Docker underneath, so your
+containers keep running even if you stop using InstaCloud. Full walkthrough and your own domain are
+in [Install on a VPS](#install-on-a-vps); running with no cloud account is in
+[Run on your laptop](#run-on-your-laptop).
 
 ## Features
 
-- **Deploys**: `insta deploy --image you/app` or `insta deploy ./dir` (built locally);
-  redeploy = replace, credentials injected.
-- **Secrets**: one seam of standard `DATABASE_URL` / `AWS_*` env vars, scoped
-  project → branch → service; apps need no insta-specific code.
-- **Managed databases**: private Redis / MySQL / MongoDB containers per branch.
-- **Observability**: `insta logs` / `insta metrics` per container, plus live Postgres
-  insight (connections, cache-hit, running queries, top statements).
-- **Audit timeline**: every resource and governance action in `insta events`.
-- **Dashboard**: a web UI served by the daemon itself, approvals inbox included.
-- **Agent-native**: `project create` installs the agent skills into your repo; insta-mcp
-  works against the daemon.
+- **Branches are forks of the disk.** `insta branch create` reflink-copies the Postgres data directory and every compute volume, copies the bucket, and redeploys the apps on their own URLs. A sleeping database on a reflink-capable filesystem forks in about a second; an awake or non-reflink source is streamed with `pg_basebackup` and scales with its size.
+- **Serverless on a single machine.** Services scale to zero and wake on the first request in about two seconds; `main` stays always-on by default, other branches opt in.
+- **The same command and API surface as the cloud.** One daemon answers the hosted platform's API, so the `insta` CLI, agent skills and dashboard work the same way when self-hosted. Cloud-only operations (billing, scaling, domain purchase) answer `501` with guidance.
+- **A project is Postgres + S3 + your containers.** The daemon provisions the database, an object-storage bucket and your app containers, and wires their credentials into your environment.
+- **Git push-to-deploy.** Bind a compute service to a GitHub repo, and each push to the tracked branch builds the pushed commit with BuildKit (through an HMAC-verified webhook) and redeploys on the existing port ([usage below](#deploy-from-github)). Self-hosted only: the cloud's GitHub-App connect needs a multi-tenant app, so it stays `501`.
+- **Built for coding agents.** Per-branch sandboxes, opt-in approval gates on sensitive actions, and a full audit trail (`insta agent events`): an agent deploys and verifies on its own branch, and you keep the veto.
+- **One-command templates.** Deploy an app from the bundled catalog with `insta template deploy <code>`, served from this box with no internet access.
 
-## Quick start
+## Install on a VPS
 
-Prerequisites: Docker (running) and Node ≥ 22. Nothing else: no cloud account, no API keys.
+A fresh Ubuntu 22.04+ or Debian 12+ box with 2 vCPU, 2 GiB RAM and 15 GiB free disk, and inbound
+TCP 80 and 443 allowed in its cloud firewall or security group (add 5432 to reach Postgres from
+outside). On the box, as a user with sudo:
 
 ```bash
-git clone https://github.com/InsForge/insta-oss.git && cd insta-oss
-npm install
-npm run build:ui        # optional: the web dashboard, served by the daemon itself
-npm run dev             # the daemon, on http://127.0.0.1:8080  (INSTA_OSS_PORT to change)
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh
 ```
 
-First run pulls `postgres:16-alpine`, `dxflrs/garage`, and `rclone/rclone`; give it a minute.
-State lives in `~/.insta-oss/`.
+The installer checks the box first (free ports, memory, disk) and stops before changing anything if
+one falls short. Then it installs Docker if it is missing, prepares a reflink-capable data
+directory, pulls `ghcr.io/insforge/instacloud` (linux/amd64 and linux/arm64), starts the daemon,
+the TLS edge and the object store, and waits for a certificate. On a 2 vCPU, 2 GiB cloud VM that
+takes about a minute and ends like this:
+
+```
+InstaCloud is running.
+  Setup:    https://console.203-0-113-10.sslip.io/setup
+  API:      https://api.203-0-113-10.sslip.io
+  Note:     203.0.113.10 is this cloud VM's public address, mapped by the provider: make sure its security group or firewall allows 80 and 443 (and the database lanes you use).
+  CLI:      insta login --api-key <token from the setup page> --api-url https://api.203-0-113-10.sslip.io
+  Config /etc/instacloud   Data /var/lib/instacloud   Reflinks: loop image (10 GiB)
+```
+
+If a `Note:` line appears, act on it before you go on: the certificate and your URLs need 80 and
+443 open. `curl -s https://api.<domain>/healthz` answers `{"ok":true}` once the daemon is up.
+
+Then, from your own machine:
+
+1. Open the Setup URL, create the admin account, and create a CLI token on the next screen.
+2. Install the CLI (Node 18+) and log in with that token:
+
+   ```bash
+   npm install -g insta
+   insta login --api-key insta_… --api-url https://api.203-0-113-10.sslip.io
+   ```
+
+3. Deploy something:
+
+   ```bash
+   mkdir my-app && cd my-app          # the CLI links the project to this directory
+   insta project create demo
+   insta services add postgres db
+   insta deploy --image nginx:alpine --port 80 --group web
+   # deployed nginx:alpine -> https://web-demo-main.203-0-113-10.sslip.io (branch main, group web)
+   ```
+
+   Or start from a template: `insta template deploy hermes` asks for the dashboard's username and
+   password.
+
+The installer installs the newest release. Re-run the same command to upgrade, or pin a release
+with `curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh -s -- --version v0.2.0`.
+
+With no `--domain` the installer uses the public IP of the box as an sslip.io name, so URLs work
+immediately. Apps land on `https://<group>-<project>-<branch>.<domain>` and databases on
+`pg-<name>-<project>-<branch>.<domain>:5432`.
+
+Full details, including firewalls, reflinks and your own domain:
+[docs.instacloud.com/self-hosting](https://docs.instacloud.com/self-hosting/overview).
+
+## Deploy from GitHub
+
+Server-mode boxes can auto-deploy on `git push`. Deploy a compute service once, bind it to a repo,
+add the webhook the daemon returns, and every push to the tracked branch rebuilds and redeploys that
+service. The daemon builds the pushed commit itself with BuildKit (no remote build gateway), so the
+repo must carry a `Dockerfile` at its root (a custom Dockerfile path and build args are not exposed
+yet). A public repo needs no credentials; a private one needs a GitHub Personal Access Token with
+`contents: read` scope (fine-grained) or `repo` (classic). Wired via the API today:
+
+```bash
+# read the tokens interactively so they never land in shell history; they are then fed to curl OFF
+# its command line below (auth header via a process-substitution fd, body via stdin), so neither
+# reaches argv / a process listing either. (Get the API token from the console: Account > API Tokens.)
+read -rs -p 'InstaCloud API token: ' INSTA_API_TOKEN; echo; export INSTA_API_TOKEN
+read -rs -p 'GitHub PAT (blank for a public repo): ' GITHUB_PAT; echo; export GITHUB_PAT
+
+# 1. deploy the service once to create the compute group. Set --port to the port your repo's app
+#    listens on: push-to-deploy reuses whatever port the group is currently configured with (a later
+#    `insta deploy` on the group with no --port resets it to 8080). The image is a throwaway
+#    placeholder; the first build from your repo replaces it.
+insta deploy --image nginx:alpine --port 3000 --group web   # 3000 is an example; use your app's port
+
+# 2. bind it to a repo. The response carries a webhook URL and its SECRET (needed in step 3).
+#    The auth header is read from a process-substitution file and the body (with the PAT) from
+#    stdin, so neither secret is passed as a command-line argument.
+curl -sX POST https://api.<domain>/projects/<project-id>/services/cp-web/git \
+  -H @<(printf 'authorization: Bearer %s' "$INSTA_API_TOKEN") \
+  -H 'content-type: application/json' --data @- <<JSON
+{"repo":"owner/repo","ref":"main","token":"$GITHUB_PAT"}
+JSON
+
+# 3. add that webhook to the repo: Settings > Webhooks > Add webhook:
+#    Payload URL = the returned webhook URL, Content type = application/json,
+#    Secret = the returned webhook secret (REQUIRED: without it GitHub sends no signature and the
+#    daemon rejects the push 401). Then just push:
+git push        # the daemon checks out the pushed commit, builds it, and redeploys the service
+```
+
+The webhook is HMAC-verified over the raw body, the build is pinned to the pushed commit SHA, and the
+redeploy reuses the service's port. Push-to-deploy honours the project's `deploy` governance policy:
+it auto-deploys only when that policy is `allow`. `GET`/`DELETE` on the same path show or remove the
+binding. See [COMPATIBILITY.md](COMPATIBILITY.md) for the full behaviour.
+
+## Run on your laptop
+
+Prerequisites: Docker (running) and Node 22 or newer. No cloud account, no API keys, no auth.
+
+```bash
+git clone https://github.com/InsForge/instacloud-oss.git && cd instacloud-oss
+npm install
+npm run build:ui        # optional: the dashboard, served by the daemon itself
+npm run dev             # the daemon on http://127.0.0.1:8080  (INSTA_OSS_PORT to change)
+```
+
+First run pulls `postgres:16-alpine`, `dxflrs/garage` and `rclone/rclone`; give it a minute. State
+lives in `~/.insta-oss/`.
 
 In another terminal, install the CLI and point it at the daemon:
 
 ```bash
-curl -fsSL agents.instacloud.com | sh          # CLI + agent skills (or: npm install -g insta)
-export INSTA_API_URL=http://127.0.0.1:8080     # the CLI defaults to the cloud
+npm install -g insta
+export INSTA_API_URL=http://127.0.0.1:8080      # the CLI defaults to the cloud
 ```
 
-No `insta login`: the daemon trusts localhost.
+No `insta login`: the daemon trusts loopback. Skip `insta agent setup`, which registers the cloud's
+MCP server; the dashboard's Quick Start page prints this box's own setup steps. App URLs are
+`http://<group>-<project>-<branch>.localhost:8080`.
 
 ## What it looks like
+
+A session against a server-mode box on `example.com`. On a laptop the same commands print
+`http://web-demo-main.localhost:8080` for the app and a `127.0.0.1:<port>` DSN, because local mode
+has no domain and no TLS.
 
 ```bash
 $ cd ~/my-app                       # the CLI links the project to your cwd
 $ insta project create demo
 created project 4496c3e1-… (demo)
-  resources: postgres, storage, compute
+  resources:
+  linked ./.insta/project.json (branch main)
 
-$ insta secrets --print             # the only way credentials leave the daemon
-DATABASE_URL="postgres://postgres:insta@io-demo-main-pg:5432/app"
-AWS_ACCESS_KEY_ID="GK…"  AWS_SECRET_ACCESS_KEY="…"  AWS_ENDPOINT_URL_S3="http://io-garage:3900"
-BUCKET_NAME="io-demo-main"
+$ insta services add postgres db
+$ insta services add storage store
+$ insta secrets --print             # the branch's credentials (gated: secrets.read)
+DATABASE_URL="postgres://postgres:…@pg-db-demo-main.example.com:5432/app?sslmode=require"
+AWS_ACCESS_KEY_ID="GK…"  AWS_SECRET_ACCESS_KEY="…"  AWS_ENDPOINT_URL_S3="https://s3.example.com"
+BUCKET_NAME="io-demo-main-store"
 
-$ insta deploy --image nginx:alpine --port 80
-deployed nginx:alpine -> http://localhost:80 (branch main, group default)
+$ insta deploy --image nginx:alpine --port 80 --group web
+deployed nginx:alpine -> https://web-demo-main.example.com (branch main, group web)
 
-$ insta branch create feat          # copies the db + bucket, redeploys the app
-created branch feat                 # feat's app: http://localhost:1080 (host port +1000)
+$ insta branch create feat          # forks the db files and the volumes
+created branch feat (…)             # a sleeping database forks in about a second
 
-$ insta policy set deploy approve   # gate deploys behind a human
-$ insta deploy --image nginx:alpine --port 80
-approval required for deploy — run: insta approvals approve 7c3c9b68-…
+$ insta compute always-on off web   # main is always-on by default; opt this one into scale-to-zero
+$ insta compute status web          # five idle minutes, and at least ten after creating it
+web  desired=running  live=suspended
+
+$ curl -s https://web-demo-main.example.com/ | head -1   # a request wakes it in ~2s
+<!DOCTYPE html>
 
 $ insta branch delete feat          # done with the task: throw the clone away
 ```
 
-`insta manifest` shows each branch's db / storage / compute and their URLs.
+`insta agent manifest` shows each branch's db, storage and compute with their URLs.
+
+## What makes it different
+
+**A branch is a fork of the disk.** `insta branch create` reflink-copies the Postgres data
+directory and every compute volume, copies the bucket, and redeploys the apps on their own URLs.
+A sleeping database (a branch's parent usually is) forks in about a second whether it holds 100 MB
+or 100 GB. An awake one is streamed with `pg_basebackup`: correct, but proportional to its size.
+The source is never touched. One task, one branch, many in parallel.
+
+**Serverless on one node.** On your default branch, apps and managed databases (Redis, MySQL,
+MongoDB) stay always-on, like the hosted platform. Postgres and everything on a branch clone scale
+to zero: idle services stop, freeing your RAM, and the next request restarts them in a second or
+two. That is what lets one box hold dozens of branches. Switch any of them per service:
+`insta compute always-on off web`.
+
+**Governance at the credential boundary.** The daemon is the only thing holding credentials, and
+every sensitive action passes an allow, deny or approve gate before it touches a resource. Agents
+propose, humans approve: a gated action parks until someone runs `insta agent approvals approve`, so
+an agent that ignores its instructions still cannot get past it. Every action lands in the
+`insta agent events` audit timeline.
 
 ## How it works
 
-Every request flows CLI/MCP/dashboard → HTTP server (routes + govern gate) → engine → an
-adapter → Docker:
+Every request flows CLI/MCP/dashboard, then the HTTP server (routes plus the govern gate), then
+the engine, then an adapter, then Docker:
 
-- **engine** (`src/engine.ts`): project and branch lifecycle, from provision through clone
-  (`pg_dump` → restore, `rclone sync`, app redeploys) to teardown with compensation on
-  failure.
-- **govern** (`src/govern.ts`): the policy engine, with 12 gated actions, allow/deny/approve
-  per project, one-shot grants, and an HTTP 202 approval flow.
-- **adapters** (`src/adapters/`): swappable providers behind small contracts. `LocalPostgres`
-  (a container per branch), `LocalGarage` (one shared S3 server; a bucket + bucket-scoped key
-  per branch), `DockerCompute` (your image per compute group), `LocalManagedDb` (private
-  Redis/MySQL/MongoDB containers per branch). `RailwayCompute`
-  (`INSTA_OSS_COMPUTE=railway`) runs compute on Railway instead; proof the seam holds.
-- **state** (`src/state.ts`): a single JSON file, `~/.insta-oss/state.json`.
+- **router** (`src/router/`): one process listening for everything. HTTP by `Host`, Postgres,
+  Redis and MongoDB by the name in the TLS handshake, MySQL on a port per service. It holds the
+  connection while a sleeping service wakes.
+- **scheduler** (`src/scheduler.ts`): the sleep and wake state machine, the idle sweep, the memory
+  pressure pass, and one operation lock per service.
+- **engine** (`src/engine.ts`): project and branch lifecycle, from provision through the fork to
+  teardown with compensation on failure.
+- **govern** (`src/govern.ts`): the policy engine, with gated actions, allow/deny/approve per
+  project, one-shot grants, and an HTTP 202 approval flow.
+- **adapters** (`src/adapters/`): swappable providers behind small contracts. `LocalPostgres` (a
+  container and a data directory per branch), `LocalGarage` (a bucket per storage service),
+  `DockerCompute` (your image per compute group), `LocalManagedDb` (private Redis, MySQL and
+  MongoDB containers per branch).
+- **data dir** (`src/datadir.ts`): where every byte lives, `pg/`, `vol/`, `md/`, `garage/`, keyed
+  by immutable ids.
+- **state** (`src/state.ts`): a single JSON file with a process lock beside it.
 
-Command-by-command CLI and MCP compatibility tables: [docs/compatibility.md](docs/compatibility.md).
+Command-by-command CLI and MCP compatibility: [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Dashboard
 
-The daemon serves a web UI at its own URL: one process, same origin, no login. Services,
-environments, logs, secrets, database insight, operations, usage, an approvals inbox, and the
-governance policy matrix; gated actions from the UI go through the same 202 → approve flow as
-the CLI.
+The daemon serves a web UI at its own URL: one process, same origin. On a server it starts at
+`/setup` (one admin account), signs in at `/login`, and mints API tokens under the avatar menu's API Tokens. On a
+laptop there is no login at all.
 
-![The Services page, showing a live project](docs/img/dashboard-services.png)
+It matches the hosted InstaCloud console: a Service canvas (or list) with status and a Wake button,
+plus Observability, Secrets, Branches, Quick Start and Settings, an Activities side panel for
+notifications, and each service's detail as an overlay (Metrics, Variables, Runtime Logs, Settings).
+Postgres adds a Database tab that offers Wake and browse while the database sleeps, rather than
+waking it on sight; apps add a Volume tab; every database has Connect, with its connection string, a
+client command and the `insta` line. Add Service covers a Docker image, an empty service, Postgres,
+Redis, MySQL, MongoDB, object storage and View Templates. Variables lists the names a service
+receives, never the values: read those with `insta secrets --print`, or a database's through
+Connect. An empty project shows the connect-agent panel with this box's CLI setup. Gated actions
+from the UI use the same 202-and-approve flow as the CLI.
 
-`npm run build:ui` once, then open http://127.0.0.1:8080. UI development: `cd ui && npm run dev`
-(Vite on :5173, proxying API calls to the daemon).
+Locally: `npm run build:ui` once, then open http://127.0.0.1:8080. UI development:
+`cd ui && npm run dev` (Vite on :5173, proxying API calls to the daemon).
 
 ## Using it with agents
 
-`insta project create` (or `link`) installs the insta agent skills into your project
-(gitignored; `.claude/skills/` for Claude Code, `.agents/skills/` for Codex), so a coding
-agent opened in the repo already knows the workflow: one task → one branch → deploy → verify →
-delete. You keep the approval power (`insta policy set <action> approve`) and the audit trail
-(`insta events`). The insta-mcp server is a thin client over the same endpoints; point it at
-the daemon with `PLATFORM_API_URL=http://127.0.0.1:8080`.
-
-## Tests
-
-```bash
-npm test    # API-contract tests (fake adapters, no Docker) + real-Docker isolation tests
-```
-
-The isolation tests prove clone independence for real: writes to a branch's database and
-bucket never reach the source.
-
-## Cleanup
-
-```bash
-insta project delete                                   # per project (approval-gated)
-docker ps -aq --filter name=io- | xargs docker rm -f   # every insta-oss container
-docker volume rm io-garage-meta io-garage-data         # the shared storage server's data
-rm -rf ~/.insta-oss                                    # daemon state
-```
+`insta project create` (or `link`) installs the insta agent skills into your project (gitignored;
+`.claude/skills/` for Claude Code, `.agents/skills/` for Codex), so a coding agent opened in the
+repo already knows the workflow: one task, one branch, deploy, verify, delete. You keep the approval
+power: set an action to `approve` under Settings > Agent Governance in the dashboard (or
+`PUT /projects/:id/policy/:action`), backed by the audit trail (`insta agent events`). The insta-mcp
+server is a thin client over the same endpoints; point it at the daemon with
+`PLATFORM_API_URL=https://api.<domain>` and an `insta_` token.
 
 ## Templates
 
@@ -166,8 +316,69 @@ A template is one folder in [`templates/`](templates/) describing an app someone
 single command: a manifest pinning the image and declaring its variables, plus a README and a logo.
 The published ones show up in the [gallery](https://instacloud.com/templates).
 
+The daemon serves that directory through the same `/templates` routes the hosted platform uses, so
+`insta template list` and `insta template deploy <code>` work with no internet access.
+
 Adding one is a single pull request here. [templates/README.md](templates/README.md) has the
 layout, and [templates/AGENTS.md](templates/AGENTS.md) has the rules CI enforces.
+
+The **Deploy on InstaCloud** button those READMEs carry is in [assets/](assets/README.md), free
+for any repository to use: one SVG that covers light and dark, sized to sit in a row of deploy
+buttons, plus the snippet to paste and the script that regenerates it.
+
+## Compatibility
+
+[COMPATIBILITY.md](COMPATIBILITY.md) is the command-by-command table: what works, what differs by
+run mode, and what answers 501 with guidance instead of pretending.
+
+## Tests
+
+`npm test` needs no Docker. It does use the `openssl` CLI for the TLS cases (Node can parse an
+X.509 certificate but not issue one, and these cases mint pairs with particular SANs and
+validity windows); where openssl is absent those cases are skipped by name and the rest of the
+suite runs.
+
+```bash
+npm test                                       # contract tests, fake adapters, no Docker
+RUN_DOCKER_TESTS=1 npx vitest run test/clone-isolation.int.test.ts   # one Docker file at a time
+sh e2e/local-smoke.sh                          # the whole public surface, real CLI, real Docker
+```
+
+The isolation tests prove clone independence for real: writes to a branch's database and bucket
+never reach the source. [e2e/README.md](e2e/README.md) covers the end-to-end scripts and what they
+deliberately do not cover.
+
+## Cleanup
+
+On a laptop:
+
+```bash
+insta project delete                                        # per project (approval is opt-in: set project.delete to approve in the dashboard)
+docker ps -aq --filter name=io- | xargs docker rm -f        # every InstaCloud OSS container
+docker volume rm io-garage-meta io-garage-data              # the shared object store data
+rm -rf ~/.insta-oss                                         # daemon state
+```
+
+On a server, stop the stack instead and keep the data:
+
+```bash
+cd /etc/instacloud && docker compose down
+```
+
+Removing the install completely, data and mounts included, is
+[Uninstall](docs/self-hosting/install.mdx#uninstall).
+
+To remove only the project containers there, filter by project so the stack itself survives:
+
+```bash
+docker ps -aq --filter name=io-<project>- | xargs docker rm -f
+```
+
+## Security
+
+Please do not open a public issue for a security vulnerability. Report it privately by email to
+[info@insforge.dev](mailto:info@insforge.dev) and we will respond as quickly as we can.
+[SECURITY.md](SECURITY.md) has the details and what to include.
 
 ## Contributing
 

@@ -1,0 +1,44 @@
+---
+title: "Introduction"
+description: "InstaCloud is the cloud infrastructure built from the ground up to serve agents."
+---
+
+Traditional devtools were built by humans to serve humans. When a swarm of agents operates the infrastructure, that model has to change: environments must clone fast and be disposable, credentials can't live in prompts, and every operation has to be legible to agents, not a dashboard.
+
+InstaCloud provides the three basic primitives, rebuilt on those terms: **database** (real Postgres), **storage** (S3-compatible buckets), and **compute** (containers, run in microVMs on the hosted platform). Serverless, branchable, and built for your agent to do everything on top.
+
+## Start here
+
+<Steps>
+  <Step title="Install the CLI">
+    <CodeGroup>
+
+    ```bash npx
+    npx insta@latest agent setup
+    ```
+
+    ```bash npm
+    npm install -g insta
+    ```
+
+    ```bash title="Shell installer (macOS/Linux)"
+    curl -fsSL https://agents.instacloud.com | sh
+    ```
+
+    </CodeGroup>
+
+    The npx path also wires up any coding agents on your machine; npm installs just the CLI.
+  </Step>
+  <Step title="Deploy your app">
+    Open your coding agent (Claude Code, Cursor, Codex, or any agent the setup wired) in a directory with a Dockerfile and tell it:
+
+    ```text title="Your prompt"
+    Deploy this app on InstaCloud with a Postgres database wired in.
+    ```
+
+    You complete the one-time login; the agent drives the rest. The result is a running app on its own URL, with its database connection injected. Under the hood the agent runs the [insta CLI](/reference/cli/overview), which you can also drive by hand.
+  </Step>
+  <Step title="Keep going">
+    The [quickstart](/quickstart) walks through each step, including your first branch; [agent setup](/agents/setup) covers what the agent wiring installs. From there, the primitives: [Postgres](/postgres/overview), [storage](/storage/overview), and [compute](/compute/overview).
+  </Step>
+</Steps>

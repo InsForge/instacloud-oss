@@ -1,5 +1,5 @@
 code: pi
-version: 0.6.1
+version: 0.9.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -14,14 +14,12 @@ services:
   # the same branch, the second overwriting the first (QA.md finding 1).
   pi:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/pi:0.6.1   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/pi:0.9.0   # built from ./Dockerfile by templates-build-images.yml
     port: 7681
     healthcheck: /
-    spec: 1vcpu-1gb              # created at 1GB (QA.md: "512 MB is not enough for an agent CLI")
-    # A volume makes scale-to-zero a cold boot, not a resume (24.5s measured).
-    alwaysOn: true
-    volume:
-      size: 1
+    # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works (hermes and n8n
+    # cannot). Costs a ~25s cold boot, and an agent left running with no browser is stopped.
+    volume: true
     env:
       fixed:
         HOME: /data/home
@@ -51,6 +49,10 @@ meta:
   tagline: Coding agent CLI with session history and a browser terminal
   category: ai-agent
   tags: [ai-agent, ai]
+  # Architectures the published image carries. A box on anything else is told at deploy time
+  # rather than left to fail on the pull: the node base and the ttyd asset both carry aarch64, and
+  # both arches build and start.
+  architectures: [amd64, arm64]
   logo: ./logo.svg              # pi.dev's own mark; adapts to dark mode via prefers-color-scheme
   links:
     upstream: https://github.com/earendil-works/pi

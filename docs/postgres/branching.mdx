@@ -1,0 +1,55 @@
+---
+title: "Postgres branching"
+description: "Branch your database the way you branch your code: copy-on-write, with the parent's data."
+---
+
+Branch your database the way you branch your code. A database branch is a copy-on-write clone: it opens with all of the parent's data, at its own connection string, isolated from the parent, so changes on either side never touch the other.
+
+## What a branch gets
+
+```bash
+insta branch create staging
+```
+
+Branching happens at the environment level: one command clones the whole stack, and Postgres is the part that carries your data:
+
+| Piece | On the new branch |
+| --- | --- |
+| Postgres | Copy-on-write clone with the parent's data, own connection string |
+| Storage | Copy-on-write fork of the bucket's objects |
+| Compute | A clone of each app at its own URL, running the parent's image |
+| Secrets | Copied, with service bindings remapped to the branch's services |
+| Managed databases (`redis`/`mysql`/`mongodb`) | A fresh, empty instance, with no data cloned from the parent |
+| Compute `/data` volume | Same size, empty (self-hosted InstaCloud OSS forks the volume files instead) |
+
+The branch's connection string reaches your code the same way as any credential: `insta postgres url` prints it, `insta secrets bind` wires it into a compute service. After `insta branch switch`, both target the branch automatically. On self-hosted InstaCloud OSS, `secrets bind` answers `501`: every compute container already receives each service's credentials under their own names (`insta secrets list` names them).
+
+## Workflows
+
+**A development environment with real data.** Branch from `main`, develop and run migrations against production-shaped data, throw the branch away when you're done. Nothing you do on the branch can corrupt the parent.
+
+**One branch per agent task.** Give each coding-agent task its own branch and the agent tests against real data without being anywhere near production. See [branch-per-task](/agents/branch-per-task).
+
+**A branch per pull request.** Create a branch when a PR opens, run CI against it, delete it on merge, so every PR gets a database with realistic data instead of an empty fixture.
+
+## Promote changes to main
+
+There is no promote button, by design: data promotion is a migration, not a copy.
+
+1. Merge the code branch in git.
+2. Run your migration files against `main`'s database.
+3. `insta deploy .` to ship the code that expects the new schema.
+4. Validate, then `insta branch delete <name>`.
+
+`insta branch merge <source> --into main` handles the structural half: services the source has that the target lacks are created there, empty, so deploy to them afterwards. It never moves data. (On self-hosted InstaCloud OSS, a merged compute group is created and deployed with the source branch's image against the target's own database and bucket.)
+
+## Limits
+
+- 10 branches per project.
+- The parent defaults to your current branch; choose it explicitly with `insta branch create <name> --from <branch>`.
+- Branch names: lowercase letters, digits, and dashes, up to 39 characters, starting with a letter or digit.
+- `insta branch create` does not switch you. `insta branch switch <name>` relinks the directory, then rerun `insta secrets` to refresh `.env`.
+
+<Note>
+On self-hosted InstaCloud OSS, a branch is a fork on disk: the Postgres data directory and every compute volume are reflink-copied, so `branch create` returns in about a second whatever a sleeping database weighs, and the bucket objects are synced. A source that is awake, or a filesystem without reflink support, streams `pg_basebackup` instead, which is correct but proportional to size. The command-by-command list is in [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md).
+</Note>

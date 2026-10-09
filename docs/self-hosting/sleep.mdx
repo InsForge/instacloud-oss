@@ -1,0 +1,246 @@
+---
+title: "Sleep and wake"
+description: "Idle services stop, traffic starts them again, and one box holds far more projects than it has memory for."
+---
+
+A self-hosted box follows the hosted platform's defaults. Compute on a project's default branch is
+always-on, so production never waits for a cold start, and managed Redis, MySQL and MongoDB follow
+the same default. Postgres, and every service on the other branches, scale to zero. Compute,
+Postgres and managed databases can each be switched either way: compute and Postgres from the CLI,
+and any compute or managed database from the console or the API. Storage has no such setting; a
+bucket is always available.
+
+A service that scales to zero is stopped, not paused, when it goes idle: it holds no memory and no
+CPU, its disk is untouched, and the next request starts it again in a second or two. That is what
+lets one machine hold dozens of branches. The disk is the only thing every branch keeps.
+
+## What counts as activity
+
+Only real traffic:
+
+- an HTTP request, stamped when it arrives and again every 5 seconds while it is still open, so a
+  long download or a websocket stays active for its whole life
+- any byte read on a database lane, in either direction
+- coming up after a deploy or a wake
+
+Nothing else. Health probes do not count, `metrics` and `logs` polling (`insta compute metrics`,
+`insta compute logs`, and their `postgres`/`redis`/`mysql`/`mongodb` equivalents) do not count, and the
+dashboard polling its own pages does not count. If it did, an open browser tab would keep an entire
+box awake.
+
+## When a service sleeps
+
+The sweeper looks at every service every 30 seconds and sleeps one when all of these hold:
+
+- the container is running
+- the service is not always-on
+- its desired state is running (something you stopped by hand stays stopped)
+- the last activity is at least the idle window ago, which is 5 minutes for compute and 10 minutes
+  for databases
+- the row was created at least the create grace ago, 10 minutes by default
+- no deploy, wake or other operation is in flight for it
+
+Because the sweep runs on a 30 second cadence, an idle app stops between 5 and 5.5 minutes after
+its last request. The create grace counts from when the service was created, not from the last
+daemon restart, so restarting the daemon does not hand every old service another 10 minutes of
+protection.
+
+## Memory pressure
+
+Sleeping on idle is not always fast enough, so the sweeper also watches free memory. While
+available memory is below 15 percent of the total, it sleeps the least recently active running
+service, one at a time, until it is back above the floor.
+
+Never evicted: an always-on service, a service that woke inside the wake-protection window (60
+seconds by default), and a service answering a request right now.
+
+A wake asks for room BEFORE it starts anything. It works out what the waking service needs, sleeps
+the least recently active candidates until that much is free above the floor, and starts the
+container only then, so the victim's memory is released before the new one claims any. When there
+is already room this costs nothing, because the check returns before it reads or stops anything.
+When there is not, the wake pays one stop grace PER SERVICE it has to sleep, because it evicts in
+a loop until there is room, and that is the moment that price is worth paying: a slow wake beats
+a box in swap-free reclaim.
+
+Two outcomes here are not the same, and it matters which one you are looking at:
+
+- **Nothing left to evict.** Every other service is always-on, answering a request right now, or
+  inside its wake-protection window. The scheduler logs that once and the wake PROCEEDS,
+  deliberately: refusing would make a service permanently unreachable on a box that is merely
+  full, and the kernel is the better last resort than a daemon that will not start anything.
+  This is what you will see on a small box whose services genuinely do not fit together.
+- **Eviction itself failed.** A stop that errors, not an empty pool. That is a fault in making
+  room rather than an absence of room, so the wake fails with `could not make room to wake
+  <container>` instead of starting into a floor it could not clear.
+
+What the wake path cannot do is see a service that grows AFTER it starts, and that is the limit
+worth planning around. The sweeper's own pass is every 30 seconds, so a service that balloons
+between sweeps is answered late. On a 2 GiB box, two of the heavy agent templates running at once
+put the machine into swap-free reclaim faster than a 30 second sweep could answer, and it stayed
+unreachable, accepting connections but finishing nothing, until it was rebooted out of band. Two
+rules keep you out of that: give a box enough memory that its largest image is a small share of
+the total, and keep the heavy always-on services on a box sized for all of them at once rather
+than relying on eviction to referee.
+
+On Linux the total is the machine's, read from `/proc/meminfo`, or the daemon's own cgroup ceiling
+when it runs in a container that has one, whichever is smaller. A ceiling matters because
+`/proc/meminfo` describes the machine even from inside a container, so a memory-limited daemon
+would otherwise believe it had the whole box and evict nothing.
+
+On ZFS the reading adds back the reclaimable part of the ARC. The ARC is not page cache, so the
+kernel's `MemAvailable` leaves it out even though it is handed back under pressure, and a host
+with a warm ARC would otherwise read as permanently under the floor and evict on every sweep. See
+[ZFS](/self-hosting/install#zfs).
+
+On macOS the reading Docker reports is not the host memory, so pressure eviction is off unless you
+set `INSTA_OSS_MEM_BUDGET_MB` to the budget you want the daemon to assume.
+
+## What sleep does to your process
+
+Sleep is `docker stop`, which sends the stop signal the image declares: `SIGTERM` for apps and for
+managed databases, `SIGINT` for the official Postgres image, which is its fast shutdown. Compute
+containers run with `--init`, so the signal reaches your process even when the entrypoint is a
+shell script.
+
+The daemon then waits 10 seconds, or 30 for a database, before `SIGKILL`. Handle the signal if you
+have work to flush.
+
+## What wakes it
+
+- **A request on any lane.** HTTP, Postgres, Redis, MongoDB or MySQL. The connection is held while
+  the container starts, for up to 60 seconds, plus up to 30 seconds of readiness retries after
+  that. You see a slow first request, not an error.
+
+  Readiness here means the port accepts a connection. That is the whole test for an HTTP service,
+  and it is not the same thing as the app being ready to answer: an app that binds its port early
+  and mounts its routes later will take the forwarded request and answer it out of its own
+  half-built stack, so the first page after a wake can come back 404 or 502 from the app rather
+  than slow. The declared template healthcheck gates a deploy, not a wake, and for a slow app it
+  would not close the window anyway: the measured case answered its own healthcheck several
+  seconds before it would serve a page. Always-on is the answer, which is why the bundled
+  templates that boot slowly declare it. Databases are probed on the wire instead, so they do not
+  have this window.
+- **`insta compute start`**, and any management call that needs the service up.
+- **A deploy**, which starts the replacement container.
+
+Wake takes 1 to 3 seconds for a small app and a little longer for Postgres. Measured on a 2 vCPU,
+2 GiB box: a static web image woke in 0.5 to 1.3 seconds and Postgres in 1.2 to 2.2 seconds, both
+as documented. A large image is a different number entirely, because the wake is a cold process
+start and the work is the app's own boot: the automation and agent-gateway templates on that same
+box woke in 14 to 28 seconds, and one cold wake under memory pressure took 164 seconds. Size the
+expectation to the image, and keep anything that has to answer a browser promptly always-on.
+
+`insta compute stop` is different: it is a durable intent, and traffic never wakes a service you
+stopped. Requests answer 503 until you run `insta compute start`.
+
+## Always-on
+
+For anything that has to keep running with no inbound traffic, a queue worker or a scheduler:
+
+```bash
+insta compute always-on on web
+insta services add compute worker --always-on
+insta postgres always-on on
+```
+
+Templates can declare it themselves, and the bundled hermes, n8n and openclaw manifests do.
+
+Memory limits work the same way, on the same grid the hosted platform uses:
+
+```bash
+insta compute limits web --memory 512mb
+```
+
+<Note>
+The defaults match the hosted platform: compute on the default branch is always-on and
+scale-to-zero is opt-in, managed Redis, MySQL and MongoDB follow the same default, and Postgres
+scales to zero. The one addition for a single box is that branch clones scale to zero unless a
+service is explicitly always-on, so forking a project does not start every app it has. Switch a
+service off with `insta compute always-on off web`; send `{"enabled": null}` to
+`PUT /projects/<id>/services/<sid>/always-on` to put it back on the default; or set
+`INSTA_OSS_ALWAYS_ON_DEFAULT=0` to make default-branch services scale to zero too. A service
+that becomes always-on while it is asleep, and was not stopped by hand, is woken by the next sweep
+(every 30 seconds by default, `INSTA_OSS_SWEEP_SEC`); with the sweeper off
+(`INSTA_OSS_SCHEDULER=0`) it stays asleep until its next request.
+</Note>
+
+## Tuning
+
+Set these in `/etc/instacloud/instad.env`, then `cd /etc/instacloud && docker compose up -d`.
+
+| Variable | Default | What |
+| --- | --- | --- |
+| `INSTA_OSS_IDLE_COMPUTE_SEC` | 300 | idle window for compute |
+| `INSTA_OSS_IDLE_DB_SEC` | 600 | idle window for databases |
+| `INSTA_OSS_SWEEP_SEC` | 30 | how often the sweeper looks |
+| `INSTA_OSS_CREATE_GRACE_SEC` | 600 | protection for a newly created service |
+| `INSTA_OSS_STOP_GRACE_SEC` | 10 | seconds before SIGKILL for compute |
+| `INSTA_OSS_STOP_GRACE_DB_SEC` | 30 | seconds before SIGKILL for a database |
+| `INSTA_OSS_WAKE_TIMEOUT_SEC` | 60 | how long a request is held for a wake. A client that gives up and retries starts a fresh hold, so a slow image can cost several of these before it answers |
+| `INSTA_OSS_READY_WINDOW_MS` | 30000 | retry window for a just woken upstream |
+| `INSTA_OSS_RAM_FLOOR_PCT` | 15 | free-memory floor for pressure eviction, 0 disables it |
+| `INSTA_OSS_MEM_BUDGET_MB` | unset | assumed total memory, needed for eviction on macOS |
+| `INSTA_OSS_WAKE_PROTECT_SEC` | 60 | how long after a wake a service cannot be evicted |
+| `INSTA_OSS_ALWAYS_ON_DEFAULT` | 1 | compute and managed Redis, MySQL and MongoDB on the default branch are always-on unless switched off; set to 0 to make them scale to zero too. Branch clones and Postgres scale to zero either way. An upgraded box keeps the value its `instad.env` already has, and every installer before this default wrote 0, so set it to 1 there yourself |
+| `INSTA_OSS_SCHEDULER` | 1 | set to 0 to turn the sweeper off, so nothing sleeps on a timer |
+
+An idle window of 0 turns sleeping off for that kind of service without turning off the sweeper.
+
+## How it reads
+
+```bash
+insta services list          # runtime column shows asleep
+insta compute status web     # desired=running live=suspended
+insta agent events                 # service.sleep and service.wake entries
+```
+
+The dashboard shows the same thing as **Sleeping**, with a Wake button.
+
+## Why a public app keeps waking up
+
+On a box with a public domain this is the first thing that looks like a bug, and it is not one.
+
+Unless you supplied a wildcard (`--tls custom`, in the fixes below), the edge issues a
+certificate the first time somebody asks for a hostname over HTTPS. Every
+certificate a public authority issues is published to the certificate transparency logs, and those
+logs are read continuously by scanners. Within minutes of that first request, more requests start
+arriving from hosts nobody invited. They are ordinary HTTP requests, so they count as activity, so
+they wake the service, and an operator watching `docker ps` sees containers coming back on their
+own and concludes scale to zero is broken.
+
+We measured it on a public box, and the numbers say more than the mechanism does. A freshly
+issued service hostname drew 141 requests from one credential scanner probing `/.env`,
+`/.env.local`, `/config.js` and `/settings.js` within about 15 minutes, and the requests kept
+arriving every 1 to 3 minutes, with the largest gap being 3 minutes. The compute idle window is
+300 seconds and any request resets it. So this is not an occasional extra wake: **on a
+per-hostname certificate, a public compute service never sleeps at all.** A control service whose
+hostname never received a public certificate slept on schedule twice in a row. Databases keep
+sleeping either way, because their lanes are not discoverable from a transparency log.
+
+The fix is the certificate, not the timer, and it is the same thing the managed cloud does: serve
+ONE wildcard certificate for `*.<domain>` so that deploying a service publishes nothing.
+
+- **Supply a wildcard.** `--tls custom` with a certificate for `*.<domain>` and `*.s3.<domain>`
+  (buckets are addressed `<bucket>.s3.<domain>`, and a wildcard covers one label) issues nothing
+  per hostname, so no name is published, nothing arrives to find it, and the idle timer runs to
+  the end. See [TLS and what your domain costs you](/self-hosting/install#tls-and-what-your-domain-costs-you),
+  which also covers what you take on: renewal is yours.
+- **Or keep the box off public certificates.** `--tls internal` uses Caddy's own CA, which
+  publishes nothing; no browser trusts it without installing the root, which is fine for a box
+  you reach yourself.
+- **The auto sslip.io domain is the case that bites.** It exists to let you try the product in one
+  command, and it puts every hostname you deploy into a public log. Do not size a box, or judge
+  scale-to-zero, on that configuration.
+- To see what woke something, read `insta agent events --json`. Every `service.wake` carries the door it
+  came in on, `traffic`, `api` or `deploy`, so a run of `traffic` wakes with no deploy near them is
+  the scanners. The event does not record who sent the request; `insta compute logs` on the service does.
+
+## The edge to know about
+
+Activity means traffic. A container that is busy with a long computation and receives nothing from
+outside looks idle, and it will be stopped when its window runs out. Turn always-on on for that
+service:
+
+```bash
+insta compute always-on on batch
+```

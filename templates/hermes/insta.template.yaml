@@ -1,12 +1,12 @@
 code: hermes
-version: 1.2.1
+version: 2.3.2
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
 upstream:
   repo: NousResearch/hermes-agent
   image: docker.io/nousresearch/hermes-agent
-  pinned: v2026.8.16
+  pinned: v2026.8.27
   license: MIT
 
 # Declare once, reference many: one generated value can be reused across services and vars
@@ -16,15 +16,13 @@ generated:
 services:
   hermes:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/hermes:1.2.1   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/hermes:2.3.2   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
     healthcheck: /api/status
-    # Headroom, not a crash fix: 331 MB of 459 MB and pressure "elevated" while idle at 512 MB.
-    spec: 2vcpu-2gb
-    # Telegram arrives on an OUTBOUND long poll, so an idle machine stops and nothing can wake it.
+    # Channels arrive on OUTBOUND connections (Telegram long poll, Slack Socket Mode, ...),
+    # so an idle machine stops and nothing can wake it.
     alwaysOn: true
-    volume:
-      size: 1
+    volume: true
     env:
       fixed:
         HERMES_HOME: /data/.hermes
@@ -32,26 +30,52 @@ services:
       generated:
         HERMES_GATEWAY_TOKEN: ${gateway_token}
       required:
-        ACCESS_PASSWORD:
-          description: "Password for the web dashboard (username: admin). Generated if left blank"
-          generate: secret:16
-          editable: true
+        # Neither a `default:` nor a `generate:`, matching the other agent UIs: the operator types
+        # both or does not deploy. A generated password would be one NOBODY can read back, since a
+        # template variable is stored write-only, and a cleared field silently mints another.
+        ADMIN_USERNAME:
+          description: "Username for the dashboard sign-in. Pick your own; it may not contain a colon or start with a dash"
+        ADMIN_PASSWORD:
+          description: "Password for the dashboard sign-in. Pick a strong one: it is all that stands between the URL and an agent holding your API keys"
+      # Everything else is optional and dashboard-configurable after deploy: provider keys live on
+      # the API Keys page, and the Channels page configures any of the ~17 supported messaging
+      # platforms, with a restart button that applies them. The variables declared here are a
+      # deploy-form convenience for people who already hold the value.
+      optional:
         OPENROUTER_API_KEY:
-          description: "OpenRouter API key the agent uses for model calls (openrouter.ai/keys)"
+          description: "OpenRouter API key the agent uses for model calls (openrouter.ai/keys). Leave blank to add it later on the dashboard's API Keys page; chat starts answering once a provider key is set"
         TELEGRAM_BOT_TOKEN:
-          description: "Telegram bot token, created with @BotFather"
+          description: "Telegram bot token, created with @BotFather. Leave blank to connect channels later from the dashboard's Channels page"
         TELEGRAM_ALLOWED_USERS:
           # The adapter compares user ids and never reads usernames; the old wording silently locked owners out.
           description: "Comma-separated numeric Telegram user IDs allowed to use the bot (not @usernames; get yours from @userinfobot)"
+        DISCORD_BOT_TOKEN:
+          description: "Discord bot token from the Discord Developer Portal. Leave blank to connect channels later from the dashboard"
+        DISCORD_ALLOWED_USERS:
+          description: "Comma-separated numeric Discord user IDs allowed to use the bot"
+        SLACK_BOT_TOKEN:
+          description: "Slack bot token (xoxb-...). Slack needs SLACK_APP_TOKEN too; both can also be set later from the dashboard"
+        SLACK_APP_TOKEN:
+          description: "Slack app-level token (xapp-...) for Socket Mode; pairs with SLACK_BOT_TOKEN"
+        SLACK_ALLOWED_USERS:
+          description: "Comma-separated Slack member IDs allowed to use the bot (e.g. U01ABC2DEF3)"
 
-# No provider oneOf: OPENROUTER_API_KEY is simply required. Upstream DOES document ~30 provider env
-# names (this note used to claim otherwise); pinning a model needs `hermes config set model.default`.
+# No provider oneOf: every provider key is optional, the dashboard's API Keys page sets any of
+# them after deploy. Upstream DOES document ~30 provider env names (this note used to claim
+# otherwise); pinning a model needs `hermes config set model.default`.
+# No channel oneOf either, deliberately: with zero channels the gateway idles (verified on
+# v2026.8.16 and v2026.8.27: it logs "No messaging platforms enabled." and keeps running) and the
+# dashboard's browser chat is a full channel on its own, so an empty deploy is usable, not broken.
 
 meta:
   name: Hermes Agent
-  tagline: Autonomous AI agent from Nous Research, driven from Telegram
+  tagline: Autonomous AI agent from Nous Research with multi-channel messaging
   category: ai-agent
   tags: [ai-agent, ai]
+  # Architectures the published image carries. A box on anything else is told at deploy time
+  # rather than left to fail on the pull: upstream publishes both and this image only adds an
+  # entrypoint.
+  architectures: [amd64, arm64]
   logo: ./logo.png              # 512x512, real transparency; see the attribution table in ../README.md
   links:
     upstream: https://github.com/NousResearch/hermes-agent

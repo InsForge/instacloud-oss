@@ -1,0 +1,39 @@
+---
+title: "MCP server"
+description: "Connect any MCP client to InstaCloud."
+---
+
+The MCP server exposes the platform to agents that speak MCP rather than a shell: every operation — projects, services, branches, deploys, secrets, logs — as an `insta_*` tool, hitting the same API as the CLI.
+
+## Endpoint
+
+```
+https://mcp.instacloud.com/mcp
+```
+
+Streamable HTTP; there is no stdio server to run locally. Register it with your agent in one command:
+
+```bash
+insta config install-mcp                # Claude Code + all detected agents
+insta config install-mcp --agent cursor # one agent
+```
+
+Supported agents: `claude-code`, `cursor`, `codex`, `opencode`, `copilot`, `factory-droid`. [`insta agent setup`](/agents/setup) does this as part of full setup.
+
+## Authentication
+
+Two options, both a Bearer credential the server forwards to the platform — it stores nothing itself:
+
+- **OAuth** (default) — the agent runs the OAuth 2.1 + PKCE flow, discovered via the standard protected-resource metadata. No credential is written to disk.
+- **API token** — a durable `insta_` token, for headless machines and CI. `insta config install-mcp --mcp-token` mints one and embeds it (Claude Code only); other agents use OAuth.
+
+## Tools overview
+
+The [MCP tools reference](/reference/mcp-tools) tables the tools by area. Two things to know up front:
+
+- Project-scoped tools take an explicit `projectId`, branch-scoped tools take `branch` too — the CLI's linked directory does not carry over. Discover IDs with `insta_list_orgs` → `insta_list_projects`.
+- `insta_get_agent_manifest` returns the agent-legible view of a project: branches, services with bound secret names, and URLs.
+
+## Staging server
+
+The staging deployment has its own server at `https://mcp.staging.instacloud.com/mcp`, registered as `insta-cloud-staging` when you run setup with `--env staging`. Accounts and sessions never cross between the two.

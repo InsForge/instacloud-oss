@@ -28,6 +28,7 @@ jobs:
       contents: read
     outputs:
       templates: ${{ steps.pick.outputs.templates }}
+      targets: ${{ steps.targets.outputs.targets }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -65,24 +66,49 @@ jobs:
           json=$(printf '%s\n' "$codes" | awk 'NF' | jq -R . | jq -sc .)
           echo "templates=$json" >> "$GITHUB_OUTPUT"
           echo "building: $json"
+      # The matrix carries the version tag and the buildx platform list alongside the code, both
+      # read out of the manifest here so the build job parses no YAML and every template's answer
+      # comes from one place. `meta.architectures` is what a user is shown before deploying, so
+      # publishing anything else would make the catalog lie. A template missing the field stops
+      # the run rather than getting a guessed platform list.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: templates/package-lock.json
+      - run: npm ci
+        working-directory: templates
+      - id: targets
+        env:
+          CODES: ${{ steps.pick.outputs.templates }}
+        run: |
+          set -euo pipefail
+          targets=$(node templates/scripts/build-targets.mjs "$CODES")
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          echo "targets: $targets"
 
   build:
     needs: discover
     if: needs.discover.outputs.templates != '[]'
     runs-on: ubuntu-latest
     strategy:
+      # One job per discovered template, each carrying its own code, version and platforms.
       matrix:
-        template: ${{ fromJson(needs.discover.outputs.templates) }}
+        include: ${{ fromJson(needs.discover.outputs.targets) }}
     steps:
       - uses: actions/checkout@v4
+      # QEMU because this runner is amd64 and most templates also publish arm64: install.sh
+      # accepts aarch64 and the docs promise it, so an amd64-only workspace image makes
+      # `insta template deploy` fail on an arm64 box with "no matching manifest for
+      # linux/arm64/v8" while the rest of the box works. The emulated leg is the slow one; a
+      # native arm runner is the upgrade if it ever stops fitting in the job budget.
+      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - id: version
-        run: echo "version=$(grep '^version:' templates/${{ matrix.template }}/insta.template.yaml | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       # Canonical version tags (the ones manifests reference) publish ONLY from main. A branch
       # must never overwrite the artifact a published template pulls, so branch builds get sha-
       # and branch-scoped tags instead, which is enough to test a manifest before it merges.
@@ -90,16 +116,42 @@ jobs:
       # could not push a package anyway.
       - id: tags
         env:
-          IMAGE: ghcr.io/insforge/insta-oss/templates/${{ matrix.template }}
+          IMAGE: ghcr.io/insforge/insta-oss/templates/${{ matrix.code }}
         run: |
           if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "tags=$IMAGE:${{ steps.version.outputs.version }},$IMAGE:sha-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "tags=$IMAGE:${{ matrix.version }},$IMAGE:sha-${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
             echo "tags=$IMAGE:sha-${{ github.sha }},$IMAGE:branch-$(echo '${{ github.ref_name }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
           fi
       - uses: docker/build-push-action@v6
         with:
-          context: templates/${{ matrix.template }}
+          context: templates/${{ matrix.code }}
           push: true
           tags: ${{ steps.tags.outputs.tags }}
-          platforms: linux/amd64
+          platforms: ${{ matrix.platforms }}
+      # What was pushed, checked against what the manifest claims. This is the step that would
+      # have caught the state this replaced: every template's canonical tag was an amd64-only
+      # index while the workflow's own `platforms:` line asked for two, so the catalog promised
+      # an architecture the registry did not hold and the failure surfaced on a user's box.
+      # `--raw` plus jq rather than a Go template, because `.Manifest.Manifests` is a type error
+      # on a reference that is a plain manifest instead of an index; the fallback reads that case.
+      - name: The pushed image carries every declared architecture
+        env:
+          REF: ghcr.io/insforge/insta-oss/templates/${{ matrix.code }}:sha-${{ github.sha }}
+          PLATFORMS: ${{ matrix.platforms }}
+        run: |
+          set -euo pipefail
+          have=$(docker buildx imagetools inspect --raw "$REF" \
+            | jq -r 'if .manifests then ([.manifests[] | select(.platform.architecture != "unknown") | .platform.os + "/" + .platform.architecture] | sort | join(" ")) else "" end')
+          if [ -z "$have" ]; then
+            have=$(docker buildx imagetools inspect "$REF" --format '{{.Image.Platform.OS}}/{{.Image.Platform.Architecture}}')
+          fi
+          echo "$REF carries: $have"
+          missing=
+          for want in $(echo "$PLATFORMS" | tr ',' ' '); do
+            case " $have " in *" $want "*) ;; *) missing="$missing $want" ;; esac
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::${{ matrix.code }} declares $PLATFORMS but the pushed image is missing:$missing (it carries: $have)" >&2
+            exit 1
+          fi

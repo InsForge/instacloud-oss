@@ -1,6 +1,11 @@
 // HITL circuit breaker — same semantics as the platform: gate sensitive actions at the
 // credential boundary. decision ∈ allow|deny|approve; grants are one-shot (consumed per gate);
-// `approve --always` flips the project policy to allow. Defaults: project.delete → approve.
+// `approve --always` flips the project policy to allow. Defaults: every action → allow, which is
+// the cloud's posture since platform #267 (project.delete, service.remove and db.restore were all
+// flipped from approve): governance is opt-in per project, from the dashboard's policy matrix or
+// `PUT /projects/:id/policy/:action` (the CLI retired its `policy` command, here and on the cloud).
+// A default of approve here made a plain `insta project delete` stop at "approval required" on
+// this daemon while the same command simply worked on the cloud.
 import { randomUUID } from 'node:crypto'
 import { mutate, loadState } from './state'
 import type { Approval, Decision, GatedAction } from './types'
@@ -14,13 +19,19 @@ const DEFAULTS: Record<GatedAction, Decision> = {
   'storage.read': 'allow',
   'storage.write': 'allow',
   'storage.delete': 'allow',
+  // The data browsers: reads of user data (the redis key browser) and the SQL editor's arbitrary
+  // statements. Separate actions so a project can gate the editor while keeping reads open.
+  'db.read': 'allow',
+  'db.query': 'allow',
   deploy: 'allow',
-  'project.delete': 'approve',
+  'project.delete': 'allow',
   'branch.delete': 'allow',
   'service.add': 'allow',
   'service.remove': 'allow',
   'service.setAccess': 'allow',
   'service.rename': 'allow',
+  // Cloud gates PUT limits (and a template deploy that declares a volume) on it; WP3 adds the routes.
+  'service.upgrade': 'allow',
 }
 
 export type GateResult =

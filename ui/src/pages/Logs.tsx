@@ -1,44 +1,114 @@
-import { useEffect, useRef, useState } from 'react'
+// The Logs page and a service's Runtime Logs tab (insta-frontend logs/runtime-logs-tab.tsx): the console's filter bar
+// (Search logs, Severity, Copy Logs) and time range picker over a Time / Severity / Logs table.
+//
+// Self-host divergences: the daemon answers the recent tail of `docker logs` whatever the range (no from/to), so the
+// range can only narrow that tail here. It starts at the widest preset, as the console starts any view over an
+// endpoint that takes no range, and the page says how many loaded lines the range hides, with Show all lines to
+// lift it: a sleeping service's last lines, or ones older than any preset, stay one click away. The picker offers
+// the metrics presets (widest: 7 day; the console's own widest is 30); there is no histogram yet; and the
+// tail refreshes every 5s instead of on range change.
+
+import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { EmptyState, Tab, Tabs, cn } from '@insforge/ui'
-import { ScrollText } from 'lucide-react'
-import { api, type LogLine } from '../api'
+import { Button, Skeleton, Tab, Tabs } from '@insforge/ui'
+import { Moon } from 'lucide-react'
+import { api, obsComponentFor, type ObsComponent } from '../api'
 import { usePoll } from '../hooks'
+import { healthFor } from '../lib/status'
+import { filterLogs, formatLogTime, mapLogLines, oldestInstant, windowCoverage, type SeverityFilter } from '../lib/logEntries'
+import { activeRange, PRESET_KEYS, tickedRange, type ActiveRange } from '../lib/metricRanges'
+import { ConsolePage } from '../components/console/ConsolePage'
+import { LogFilterBar, LogsTable } from '../components/console/LogParts'
+import { TimeRangePicker } from '../components/metrics/TimeRangePicker'
 
-type Component = 'compute' | 'db'
+type Component = ObsComponent
 
-/** "io-demo-main-app-worker" → "worker"; the pg container → "postgres". */
-function instanceLabel(instance?: string): string {
-  if (!instance) return ''
-  if (instance.endsWith('-pg')) return 'postgres'
-  const m = /-app-(.+)$/.exec(instance)
-  return m ? m[1] : instance
-}
+/** The daemon's cap on one read: the most the range can narrow. */
+const TAIL_LINES = 1000
+/** The widest preset: a view over an endpoint that takes no range starts here, or the default hides what it carries. */
+const WIDEST_RANGE = PRESET_KEYS[PRESET_KEYS.length - 1]!
 
-function LogRows({ lines }: { lines: LogLine[] }) {
-  const bottom = useRef<HTMLDivElement>(null)
-  const count = useRef(0)
-  useEffect(() => {
-    if (lines.length !== count.current) {
-      count.current = lines.length
-      bottom.current?.scrollIntoView({ block: 'nearest' })
-    }
-  }, [lines])
-  const instances = new Set(lines.map((l) => l.instance))
+/** The live container tail, for the Logs page and a service's Runtime Logs tab. `service` narrows
+ *  it to one service's container. Reading logs never wakes anything. */
+export function LogsPanel({ projectId, branch, component, service }: {
+  projectId: string; branch: string; component: Component; service?: { name: string; type: string }
+}) {
+  // Ask the daemon for THIS service's container rather than filtering the component stream here:
+  // it truncates the merged stream to the limit before returning it, so a noisy sibling could use
+  // up the whole window and leave the selected service reading "No logs yet."
+  const { data, error } = usePoll(
+    () => api.logs(projectId, component, branch, TAIL_LINES, service?.name),
+    [projectId, branch, component, service?.name],
+  )
+  const { data: services } = usePoll(() => api.services(projectId, branch), [projectId, branch], 15000)
+  const { data: health } = usePoll(() => api.runtimeHealth(projectId, branch), [projectId, branch], 15000)
+  const [range, setRange] = useState<ActiveRange>(() => activeRange(WIDEST_RANGE, Date.now()))
+  // Show all lines: the range stays picked but is not applied, until another range is picked.
+  const [showAll, setShowAll] = useState(false)
+  const [query, setQuery] = useState('')
+  const [severity, setSeverity] = useState<SeverityFilter>('all')
+
+  // Name alone is not a key: a compute service and a database can share one, and then the sleeping
+  // banner was decided by both. The selected service is identified by name AND type; the whole-page
+  // view takes every service the requested component observes.
+  const wanted = (services ?? []).filter((s) => service
+    ? s.name === service.name && s.type === service.type
+    : obsComponentFor(s.type) === component)
+  const standby = wanted.length > 0 && wanted.every((s) => healthFor(health, s.id)?.status === 'standby')
+
+  const loaded = useMemo(() => mapLogLines(data?.lines ?? []), [data])
+  // A preset rolls forward with every poll, so a line that just arrived is inside "last hour"; a custom range stays put.
+  const { filtered, hidden } = useMemo(() => {
+    const state = { query, severity, window: showAll ? undefined : tickedRange(range, Date.now()).window }
+    return { filtered: filterLogs(loaded, state), hidden: windowCoverage(loaded, state).hidden }
+  }, [loaded, range, showAll, query, severity])
+  const oldest = oldestInstant(loaded)
+  const capped = (data?.lines.length ?? 0) >= TAIL_LINES
+
+  if (!data && !error) return <Skeleton className="h-96 rounded-lg" />
   return (
-    <div className="max-h-[32rem] overflow-auto font-mono text-[13px] leading-6">
-      {lines.map((l, i) => (
-        <div key={i} className="flex gap-3 px-4 whitespace-pre-wrap hover:bg-alpha-4">
-          <span className="shrink-0 text-muted-foreground tabular-nums">
-            {l.ts ? l.ts.slice(0, 19).replace('T', ' ') : '—'}
-          </span>
-          {instances.size > 1 && (
-            <span className="shrink-0 text-info">{instanceLabel(l.instance)}</span>
+    <div className="flex flex-col gap-3">
+      {standby && (
+        <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Moon className="size-3.5" /> Sleeping; showing the last lines before it went to sleep.
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <LogFilterBar query={query} onQuery={setQuery} severity={severity} onSeverity={setSeverity} filtered={filtered}
+          className="min-w-0 flex-1" />
+        <TimeRangePicker value={range} onChange={(next) => { setRange(next); setShowAll(false) }} align="end" />
+      </div>
+      {/* Beside the table, not instead of it: one failed 5s poll must not blank lines that are still good. */}
+      {error && (
+        <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-destructive">{error.message}</div>
+      )}
+      {(hidden > 0 || showAll) && (
+        <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+          {showAll ? (
+            <>
+              <span>Showing every loaded line, whatever the range.</span>
+              <Button variant="secondary" size="sm" className="h-7" onClick={() => setShowAll(false)}>Apply range</Button>
+            </>
+          ) : (
+            <>
+              <span>{hidden === 1 ? '1 loaded line is' : `${hidden} loaded lines are`} outside the selected range.</span>
+              <Button variant="secondary" size="sm" className="h-7" onClick={() => setShowAll(true)}>Show all lines</Button>
+            </>
           )}
-          <span className="min-w-0 break-all">{l.message}</span>
         </div>
-      ))}
-      <div ref={bottom} />
+      )}
+      {data && (
+        <LogsTable logs={filtered}
+          emptyMessage={loaded.length === 0
+            ? component === 'compute'
+              ? 'No logs yet. Deploy an app to this branch and its container output lands here.'
+              : 'No logs yet. The database has not written any log lines.'
+            : hidden > 0 ? 'No logs in the selected range.' : 'No logs match your filters or range.'} />
+      )}
+      <p className="text-xs text-muted-foreground">
+        Tailed live from this branch&apos;s containers ({data?.source ?? 'docker-logs'}); refreshes every 5s.
+        {capped && oldest !== undefined && ` Loaded lines start ${formatLogTime(new Date(oldest * 1000))}; older ones aren't fetched.`}
+      </p>
     </div>
   )
 }
@@ -46,53 +116,15 @@ function LogRows({ lines }: { lines: LogLine[] }) {
 export function Logs() {
   const { projectId, branch } = useParams() as { projectId: string; branch: string }
   const [component, setComponent] = useState<Component>('compute')
-  const { data, error } = usePoll(() => api.logs(projectId, component, branch), [projectId, branch, component])
-
   return (
-    <div className="mx-auto flex w-full max-w-[64rem] flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-[32px] leading-12 font-bold">Logs</h1>
+    <ConsolePage title="Logs"
+      action={
         <Tabs value={component} onValueChange={setComponent}>
           <Tab value="compute">App</Tab>
           <Tab value="db">Database</Tab>
         </Tabs>
-      </div>
-
-      {!data && !error && (
-        <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className={cn('h-4 animate-pulse rounded-md bg-alpha-8', i % 2 ? 'w-3/4' : 'w-full')} />
-          ))}
-        </div>
-      )}
-
-      {error && (
-        <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-destructive">
-          {error.message}
-        </div>
-      )}
-
-      {data && data.lines.length === 0 && (
-        <div className="rounded-lg border border-border bg-card py-12">
-          <EmptyState
-            icon={ScrollText}
-            title="No logs yet."
-            description={component === 'compute'
-              ? 'Deploy an app to this environment and its container output lands here.'
-              : 'The database has not written any log lines yet.'}
-          />
-        </div>
-      )}
-
-      {data && data.lines.length > 0 && (
-        <div className="rounded-lg border border-border bg-card py-2">
-          <LogRows lines={data.lines} />
-        </div>
-      )}
-
-      <p className="text-xs text-muted-foreground">
-        Tailed live from this environment&apos;s containers ({data?.source ?? 'docker-logs'}); refreshes every 5s.
-      </p>
-    </div>
+      }>
+      <LogsPanel projectId={projectId} branch={branch} component={component} />
+    </ConsolePage>
   )
 }

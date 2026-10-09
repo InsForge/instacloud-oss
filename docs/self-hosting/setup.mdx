@@ -1,0 +1,134 @@
+---
+title: "Set up access"
+description: "Create the admin, mint an API token, point the CLI, MCP and agents at your box."
+---
+
+Server mode has exactly one admin account and any number of `insta_` API tokens. Local mode has
+neither: the daemon reports `user: local` and every route is open on loopback.
+
+## Create the admin
+
+Open the URL the installer printed:
+
+```
+https://console.<domain>/setup
+```
+
+Enter an email and a password. The form requires at least 8 characters with an uppercase letter,
+a number and a special character; the daemon itself refuses anything under 8. The password is
+hashed with scrypt and stored in the daemon's state file. You are signed in immediately, and the
+sign-up is closed from then on: a second one answers `422 USER_ALREADY_EXISTS`.
+
+The next screen, **Create a CLI token**, is optional. Create one there and it prints the
+`insta login` line for this box, or skip it and create tokens later.
+
+Later sign-ins are at `https://console.<domain>/login`. Ten failed attempts from one IP address in
+15 minutes answer `429`.
+
+## Mint a token for the CLI and agents
+
+In the dashboard, open the avatar menu at the top right and choose **API Tokens**
+(`/account/tokens`), create one, and copy it. Tokens are shown once. Then, on the machine you work
+from, install the CLI (Node 18+) and log in:
+
+```bash
+npm install -g insta
+insta login --api-key insta_xxxxxxxx --api-url https://api.<domain>
+```
+
+The CLI verifies the key against `GET /me` before saving it, so a bad key fails right there with a
+`rejected` message rather than on your next command. It prints the admin email on success.
+
+`--api-url` is remembered. If you would rather not store it, export it per shell instead:
+
+```bash
+export INSTA_API_URL=https://api.<domain>
+```
+
+To go back to the hosted platform, run `insta env use prod`, or unset `INSTA_API_URL`.
+
+<Note>
+`insta tokens create <name> --account` mints a token from a logged-in CLI. `--account` is required: the daemon is single-tenant and answers 400 to the organization binding the CLI applies by default. Tokens are also created in the dashboard, or with `POST /tokens`.
+</Note>
+
+### Tokens are not scoped
+
+`POST /tokens` accepts a `scopes` array and returns it on the token record, and so does the hosted
+platform. Neither enforces it. A token is a label on a full-power credential: every valid `insta_`
+key acts as the single admin, on every route. Treat `scopes` as a note to yourself about what you
+made the token for, not as a permission boundary.
+
+Two things follow. Give each agent, box, or CI job its own token, so revoking one does not disturb
+the others. And to take access away, revoke the token: `DELETE /tokens/<id>`, or **API Tokens**
+under the dashboard's avatar menu. Revocation is immediate, and it is the only lever a token has.
+
+## MCP and agent skills
+
+The MCP server is a thin client over the same API, so the same bearer works:
+
+```bash
+PLATFORM_API_URL=https://api.<domain>
+PLATFORM_API_KEY=insta_xxxxxxxx
+```
+
+Agent skills installed by `insta project create` need nothing extra: they shell out to the CLI you
+just logged in.
+
+## Headless setup
+
+Useful in CI, or on a box with no browser. Three calls, sharing one cookie jar:
+
+```bash
+curl -sS -c jar.txt -X POST https://api.example.com/api/auth/sign-up/email \
+  -H 'content-type: application/json' \
+  -d '{"name":"admin","email":"admin@example.com","password":"a-long-random-password"}'
+
+curl -sS -b jar.txt -X POST https://api.example.com/tokens \
+  -H 'content-type: application/json' -d '{"name":"ci"}'
+# 201 with a token that starts with insta_
+
+insta login --api-key insta_... --api-url https://api.example.com
+```
+
+The jar carries the session from the first call into the second, and no `Origin` header is needed.
+Sign-up is refused once an admin exists, which makes the first call safe to leave in a provisioning
+script: it either creates the admin or fails loudly.
+
+With `INSTA_OSS_TLS=internal`, copy the root off the box first (for example
+`ssh ubuntu@<box> sudo cat /var/lib/instacloud/edge/ca.pem > ./instacloud-ca.pem`, since root SSH is
+usually off and the data directory is root-only), then add
+`--cacert ./instacloud-ca.pem` to the curls and `NODE_EXTRA_CA_CERTS=$PWD/instacloud-ca.pem` to the
+CLI: the path on the box does not exist on the machine you run them from. See
+[domains and TLS](/self-hosting/domains).
+
+## What requires authentication
+
+Everything, except:
+
+- `GET /healthz`
+- `/api/auth/*` and `/auth/*` (the sign-in and sign-up endpoints themselves)
+- `GET /templates` and `GET /templates/:code`
+- the dashboard static files and its pages, including `/setup` and `/login`
+
+Every other route answers `401 {"error":"unauthorized"}` with a `WWW-Authenticate: Bearer` header
+when the bearer or cookie is missing. Local mode keeps no guard at all and `GET /me` returns
+`user: local`.
+
+## A lost password
+
+There is no password-reset email. Reset the admin from the box:
+
+```bash
+cd /etc/instacloud
+docker compose stop instad
+docker compose run --rm instad node node_modules/tsx/dist/cli.mjs src/main.ts --reset-admin
+docker compose start instad
+```
+
+The image has no entrypoint, so the whole command is spelled out: `docker compose run` replaces it
+rather than appending to it.
+
+The flag refuses to run while the daemon is up, because it takes the same data-directory lock a
+boot takes and both processes would write the same state file. It removes the admin record and
+every session, so `/setup` accepts a new one. Existing `insta_` tokens are kept, and they work
+again as soon as the new admin exists.

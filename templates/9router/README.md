@@ -2,6 +2,8 @@
 
 Self-hosted LLM router with fallback across 40+ providers.
 
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/9router)
+
 ## Overview
 
 [9Router](https://github.com/decolua/9router) is a self-hosted gateway that sits between your
@@ -34,7 +36,7 @@ internally, and without that step nothing it writes lands on the volume.
 | `INITIAL_PASSWORD` | yes | Dashboard login password. The app refuses its built-in default password on remote logins, and this platform offers no local shell to change it from, so the password must be set here. |
 
 The service listens on port 20128, is health-checked on `/api/health`, and stores its state
-(provider keys, accounts, `jwt-secret`) under `/data` on a 1 GB volume.
+(provider keys, accounts, `jwt-secret`) under `/data` on a persistent volume.
 
 ## After deploy
 
@@ -46,6 +48,8 @@ The service listens on port 20128, is health-checked on `/api/health`, and store
 
 ## Links
 
+- Architectures: `linux/amd64` and `linux/arm64`. Upstream publishes both, and this image pins
+  the multi-arch index rather than one platform's manifest.
 - Upstream: <https://github.com/decolua/9router>
 - Image: `docker.io/decolua/9router`, pinned to `0.5.55` (by digest, via `./Dockerfile`)
 - License: MIT (upstream `decolua/9router`).

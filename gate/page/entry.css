@@ -1,0 +1,5 @@
+/* The console theme, exactly as the self-hosted dashboard ships it: the @insforge/ui kit's tokens plus
+ * the console's InstaCloud overrides (emerald filled buttons, the squared radius scale). Nothing is
+ * restated here. build.mjs runs Tailwind with its working directory on the rendered page, so the
+ * utilities generated are the page's and the kit's own. */
+@import "../../ui/src/styles.css";

@@ -50,6 +50,16 @@ services:
         # Used for the absolute links the app generates (OAuth redirect URIs, share links, the
         # webhook payloads). Empty by default, which leaves those links relative.
         WEBUI_URL: ${services.open-webui.url}
+        # Scopes CORS to this instance's own origin. The image leaves this unset, which means `*`,
+        # and because the app adds CORSMiddleware with `allow_credentials=True` a wildcard is not
+        # served as `*`: every requesting origin is echoed back instead. Measured on a deployed
+        # instance, `curl -H 'Origin: https://evil.example' .../api/config` answered
+        # `access-control-allow-origin: https://evil.example` with `allow-credentials: true`, and
+        # with this set the same request comes back with no such header. The app's own frontend is
+        # served from this origin, so nothing it does is cross-origin. Read from env at import
+        # time and not a PersistentConfig: a malformed value raises in config.py before uvicorn
+        # binds, so change it by editing this variable and only to a scheme + host.
+        CORS_ALLOW_ORIGIN: ${services.open-webui.url}
         # No Ollama is deployed alongside this, and the image's default OLLAMA_BASE_URL of
         # `/ollama` would have the server retrying a host that is not there on every model list.
         # This is one of Open WebUI's PersistentConfig values, so it seeds the first boot only:

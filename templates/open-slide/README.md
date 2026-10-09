@@ -14,33 +14,29 @@ handles scaling, navigation, hot reload, present mode and export. It ships to np
 one.
 
 The image is built from the Dockerfile in this directory: `node:24-bookworm-slim` pinned by
-digest, `nginx-light` from Debian, and a workspace scaffolded by running upstream's own
-`npx @open-slide/cli init`, with `@open-slide/core` then pinned to an exact version. What deploys
-is the same workspace `init` creates on a laptop, served over HTTPS. Nothing floats on `latest`,
-so a restart gives you the same environment.
+digest, and a workspace scaffolded by running upstream's own `npx @open-slide/cli init`, with
+`@open-slide/core` then pinned to an exact version. What deploys is the same workspace `init`
+creates on a laptop, served over HTTPS. In front of it sits the InstaCloud sign-in page,
+`insta-gate` from this repository's `gate/`, verified against a pinned SHA-256. Nothing floats on
+`latest`, so a restart gives you the same environment.
 
 **What runs is upstream's dev server, not an app this repository wrote.** `open-slide dev` is a
 Vite dev server, and in open-slide that is the product surface: the deck browser, the slide
 viewer, present mode, the element inspector, the assets manager and the theme gallery are all
 served by it, and its API writes your edits back into the deck's source files.
 
-**Why there is an nginx in front.** The dev server has no authentication of any kind, and its API
-writes files: `/__edit` rewrites a slide's source, `/__slides` duplicates and deletes decks,
-`/__assets` accepts uploads, and `/__update-package` runs a package install. Upstream's assumption
-is a port on your own machine. So the dev server listens on `127.0.0.1:5173` and an nginx in the
-same container is the only process on the public port, requiring HTTP basic auth on every request.
-It passes `Host` and `Origin` through untouched, because the dev server compares those two itself
-and refuses a cross-site write, which is the only CSRF defence those endpoints have.
+**Why there is a sign-in page in front.** The dev server has no authentication of any kind, and
+its API writes files: `/__edit` rewrites a slide's source, `/__slides` duplicates and deletes
+decks, `/__assets` accepts uploads, and `/__update-package` runs a package install. Upstream's
+assumption is a port on your own machine. So the dev server listens on `127.0.0.1:5173` and the
+sign-in gate in the same container is the only process on the public port. It passes `Host` and
+`Origin` through untouched, because the dev server compares those two itself and refuses a
+cross-site write, which is the only CSRF defence those endpoints have.
 
-**Why the gate hands out a cookie.** The editor receives every change over Vite's HMR WebSocket,
-and `new WebSocket()` takes no headers, so a browser can only authenticate that handshake with
-credentials its own network stack attaches. Chromium and Firefox attach cached basic credentials
-there; WebKit does not (measured for the `dsh` template in this registry). Without it the page
-stays on the old render while edits land on disk. So the gate mints an `HttpOnly`,
-`SameSite=Strict` cookie on authenticated responses and accepts it in place of the password on a
-WebSocket handshake and nowhere else. Its value is a digest of the admin credentials, so rotating
-either one invalidates every cookie issued under the old pair, and a handshake whose `Origin` is
-not this deployment's own is refused outright.
+Signing in sets a session cookie, which the browser also sends on the editor's HMR WebSocket, so
+edits show up live in every browser. The gate refuses a WebSocket, or a write, that another page
+sends with that cookie, including another deployment's page on the same parent domain. Rotating
+either credential signs every browser out.
 
 **What this template does not include is an agent.** open-slide's authoring story is that a coding
 agent writes the React: the scaffolded workspace ships `/create-slide`, `/slide-authoring` and
@@ -54,8 +50,8 @@ source waiting for one.
 
 ## What you get by hosting it
 
-- An HTTPS URL for the open-slide editor and present mode, gated by HTTP basic auth, with no port
-  forwarding or tunnel.
+- An HTTPS URL for the open-slide editor and present mode, behind an InstaCloud sign-in page, with
+  no port forwarding or tunnel.
 - A persistent volume mounted at `/data`. `slides/`, `themes/` and `assets/` live there, so your
   decks, your uploads and your themes survive restarts, redeploys and version upgrades. The
   workspace itself, its `node_modules` and the pinned runtime stay in the image, with
@@ -81,18 +77,19 @@ That is all. Everything else is configured in the app after deploy.
 
 | Variable | Required | What it does |
 |---|---|---|
-| `ADMIN_USERNAME` | yes | HTTP basic-auth username for the editor. You pick it at deploy; it may not contain a colon. |
-| `ADMIN_PASSWORD` | yes | HTTP basic-auth password for the editor. You pick it at deploy; nothing is generated for you, because this credential fronts an editor that writes files to the volume. |
+| `ADMIN_USERNAME` | yes | Username for the InstaCloud sign-in page in front of the editor. You pick it at deploy. |
+| `ADMIN_PASSWORD` | yes | Password for the InstaCloud sign-in page in front of the editor. You pick it at deploy. Nothing is generated for you, because this credential fronts an editor that writes files to the volume. |
 
 Set by the image, not by you: the three content directories point at `/data` through
-`open-slide.config.ts`, the dev server binds `127.0.0.1:5173` behind nginx, and
+`open-slide.config.ts`, the dev server binds `127.0.0.1:5173` behind the sign-in gate, and
 `OPEN_SLIDE_SKIP_SKILLS_CHECK=1` silences the start-up comparison between the workspace's copy of
 the built-in agent skills and the runtime's, which the image pins together anyway.
 
 ## After deploy
 
-1. Open the service URL. The browser asks for HTTP basic auth: the `ADMIN_USERNAME` and
-   `ADMIN_PASSWORD` you chose at deploy.
+1. Open the service URL. An InstaCloud sign-in page asks for the `ADMIN_USERNAME` and
+   `ADMIN_PASSWORD` you chose at deploy. The session lasts 30 days, and changing either variable
+   signs every browser out.
 2. You land on the deck browser with the `getting-started` deck on it. Open it to get the viewer,
    and press the present control for fullscreen playback; `/presenter` gives you the presenter
    view with the next slide, speaker notes and a timer.
@@ -108,11 +105,11 @@ the built-in agent skills and the runtime's, which the image pins together anywa
    skills it needs are in the image at `/opt/open-slide/.claude/skills`. Anything written outside
    `/data` is lost when the container is replaced.
 
-Two things to expect on a cold start. The service scales to zero, so the first request after an
-idle period wakes the machine; nginx takes the public port only once the dev server is listening
-behind it, so that request waits rather than failing. And the first deck you open after a boot
-takes a few seconds while Vite prebundles its dependencies, reloading the page itself once when it
-finishes. Later loads are immediate.
+Two things to expect on a cold start. The service scales to zero, so the first request after an idle
+period wakes the machine, and the sign-in gate takes the public port only once the dev server is
+listening behind it, so that request waits rather than failing. And the first deck you open after a
+boot takes a few seconds while Vite prebundles its dependencies, reloading the page itself once when
+it finishes. Later loads are immediate.
 
 The editor's "update open-slide" action installs a newer runtime into the container's own
 filesystem, not the volume, so it is undone by the next restart. Treat the pinned image as the
@@ -127,5 +124,5 @@ version you are running, and a template version bump as how it moves.
 - Site and docs: <https://open-slide.dev>
 - Packages: [`@open-slide/core`](https://www.npmjs.com/package/@open-slide/core),
   [`@open-slide/cli`](https://www.npmjs.com/package/@open-slide/cli)
-- License: open-slide is MIT. The Dockerfile, nginx config, workspace config and manifest in this
+- License: open-slide is MIT. The Dockerfile, entrypoint, workspace config and manifest in this
   directory are part of this repository.

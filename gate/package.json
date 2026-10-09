@@ -1,0 +1,13 @@
+{
+  "name": "@insforge/insta-gate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The InstaCloud sign-in page in front of the browser terminal templates. Released as gate-v<version>; see gate/README.md.",
+  "type": "module",
+  "scripts": {
+    "build": "node page/build.mjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.2"
+  }
+}

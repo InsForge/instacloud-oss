@@ -30,7 +30,13 @@ services:
     type: postgres
 
   # Chat attachments, generated images and knowledge-base files. LobeHub speaks plain S3 and has no
-  # local-disk storage mode, so without a bucket every upload fails.
+  # local-disk storage mode, so there is nowhere else for them to go.
+  #
+  # Verified wired up and NOT verified end to end: LobeHub uploads from the browser to a presigned
+  # URL, and the managed bucket answers a preflight with no Access-Control-Allow-Origin, so the
+  # browser refuses to send the PUT. The same presigned URL succeeds from curl, so the credentials,
+  # the signature and the addressing below are right and the gap is the bucket's CORS policy, which
+  # no manifest field and no CLI command reaches today. See the PR.
   files:
     type: storage
 
@@ -82,7 +88,7 @@ services:
         # checks it on user creation (src/libs/better-auth/plugins/email-whitelist.ts), so an
         # address that is not on the list cannot register at all.
         AUTH_ALLOWED_EMAILS:
-          description: "The email address allowed to create an account here, e.g. `you@example.com`. Sign up with it after deploy and everyone else is refused. A bare domain (`example.com`) lets anyone at that domain in, and a comma-separated list lets several addresses in. Your own address; LobeHub sends no invitation and has no admin account to hand one out"
+          description: "The email address allowed to create an account here, e.g. `you@example.com`. Sign up with it after deploy and everyone else is refused. A bare domain (`example.com`) lets anyone at that domain in, and a comma-separated list lets several addresses in. Your own address; LobeHub sends no invitation, has no admin account to hand one out, and no password reset without SMTP"
       optional:
         OPENAI_API_KEY: "OpenAI API key, from platform.openai.com. Setting it here gives every account on this deployment a working OpenAI provider; leave it empty and each user pastes their own key into LobeHub's settings instead, where it is stored encrypted"
         OPENAI_PROXY_URL: "Base URL for OpenAI-compatible requests, e.g. `https://my-gateway.example.com/v1`. Defaults to `https://api.openai.com/v1`"

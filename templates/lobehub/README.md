@@ -34,15 +34,16 @@ three steps in front of it are:
   characters, not a key pair.
 
 Accounts, conversations, agents and memories are rows in the managed Postgres the template
-provisions. Uploads and generated images are objects in the managed bucket beside it. The volume
+provisions. Uploads and generated images are meant for the managed bucket beside it, but
+**uploading from the browser does not work yet**: see [File uploads](#file-uploads). The volume
 holds only the key set.
 
 ## What you get by hosting it
 
 - An HTTPS URL for the whole of LobeHub: the chat workspace, the agent builder, the settings pages
   and the API routes under `/api` and `/webapi`.
-- A managed Postgres database and a managed S3 bucket, provisioned and wired in by the template.
-  The migrations run on every boot, so updating this template migrates the schema on the way up.
+- A managed Postgres database, provisioned and wired in by the template. The migrations run on
+  every boot, so updating this template migrates the schema on the way up.
 - Conversations and the API keys behind them on infrastructure you control, which is the usual
   reason to run this rather than use someone's hosted chat.
 - Sign-up closed to a single address from the first boot, because `AUTH_ALLOWED_EMAILS` is a
@@ -81,15 +82,31 @@ sign-in request's origin against.
 
 1. Open the service URL. You land on LobeHub's sign-in page.
 2. Click through to **Sign up** and register with the address you put in `AUTH_ALLOWED_EMAILS`.
-   The password has to be at least 8 characters. Signing up signs you straight in; there is no
-   confirmation email, and no SMTP server is configured.
-3. You land in the workspace. Open **Settings → AI Service Provider**, pick a provider, and paste
+   The password has to be at least 8 characters and carry both letters and digits. Signing up
+   signs you straight in; there is no confirmation email, and no SMTP server is configured.
+3. Walk through onboarding: telemetry, response language, your name, your interests. The last
+   step offers a starter set of agents and says *Failed to load templates*, because that picker
+   is served by LobeHub's hosted marketplace and a self-hosted deployment has no credentials for
+   it. Click **Skip for now**; nothing else in the product depends on it.
+4. You land in the workspace. Open **Settings → AI Service Provider**, pick a provider, and paste
    an API key, unless you set one of the key variables at deploy.
-4. Start a chat and send a message. The reply streams back from whichever provider you configured.
-5. Close the door behind you, optionally: set `AUTH_DISABLE_EMAIL_PASSWORD` to `1` so the sign-up
+5. Start a chat and send a message. The reply streams back from whichever provider you configured.
+6. Close the door behind you, optionally: set `AUTH_DISABLE_EMAIL_PASSWORD` to `1` so the sign-up
    form stops accepting anything at all.
 
 `/api/version` answers `{"version":"..."}` without a session and is what the health gate reads.
+
+## File uploads
+
+They do not work yet, and nothing in this template can fix it. LobeHub asks its server for a
+presigned S3 URL and then PUTs the file to it **from the browser**. The managed bucket answers the
+preflight with 200 and no `Access-Control-Allow-Origin`, so the browser refuses to send the PUT and
+LobeHub calls its own abort route. The same presigned URL, replayed with `curl`, returns 200: the
+credentials, the signature and the virtual-host addressing are all correct, and what is missing is
+a CORS rule on the bucket, which is neither a manifest field nor an `insta storage` command today.
+
+Everything that does not touch a file works: chat, agents, agent groups, memory and settings.
+Attachments, image generation and the knowledge base need the upload leg.
 
 ## Full-text search
 

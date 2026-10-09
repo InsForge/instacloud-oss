@@ -1,0 +1,105 @@
+code: lobehub
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# Upstream's own release image with one file added on top (see ./Dockerfile): a launcher. Nothing
+# LobeHub ships is rebuilt or edited in the image. The two migration files the managed Postgres
+# cannot run are rewritten by that launcher inside the running container, at every boot, so the
+# image this template publishes carries upstream's bytes unchanged.
+upstream:
+  repo: lobehub/lobehub
+  image: docker.io/lobehub/lobehub
+  pinned: "2.2.19"
+  # Not an OSS license: Apache-2.0 plus two conditions, one of which reserves derivative works to
+  # a commercial license. See the PR and the README note.
+  license: LicenseRef-LobeHub-Community
+
+generated:
+  # Signs better-auth sessions. Generated rather than required: nobody needs to read it back, and
+  # rotating it only signs everyone out.
+  auth_secret: secret:64
+  # Seed for KEY_VAULTS_SECRET, which encrypts the provider API keys users paste into LobeHub's own
+  # settings. The entrypoint hashes this into the 32 raw bytes LobeHub's AES-256-GCM wants, because
+  # the generator mints base64url characters and LobeHub measures the value after base64-decoding
+  # it. Rotating it makes every stored key unreadable, so it is minted once and left alone.
+  key_vaults_seed: secret:64
+
+services:
+  db:
+    type: postgres
+
+  # Chat attachments, generated images and knowledge-base files. LobeHub speaks plain S3 and has no
+  # local-disk storage mode, so without a bucket every upload fails.
+  files:
+    type: storage
+
+  app:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/lobehub:1.0.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 3210
+    # Upstream's version route, and the only cheap 2xx on the service. It is deliberately outside
+    # the auth middleware's matcher (src/proxy.ts), so it answers 200 with `{"version":"2.2.19"}`
+    # signed out. `/` is inside that matcher and answers a redirect to the sign-in page, which the
+    # gate reads as a failure.
+    healthcheck: /api/version
+    # Chat, agent runs and uploads are all driven by an inbound request, so an idle machine is woken
+    # by the thing that needs it. LobeHub's scheduled agent runs are the exception; see the PR.
+    alwaysOn: false
+    # The RS256 key set the entrypoint mints on first boot, at /data/jwks.json. Nothing else lives
+    # here: conversations are rows in the managed Postgres and files are objects in the bucket.
+    volume: true
+    env:
+      fixed:
+        PORT: "3210"
+        # What LobeHub writes into better-auth's baseURL and its trusted-origin list. Wrong here and
+        # sign-in is refused as a cross-origin request.
+        APP_URL: ${services.app.url}
+        # The address the server calls itself on, for the work it dispatches to its own API rather
+        # than out through the edge.
+        INTERNAL_APP_URL: http://127.0.0.1:3210
+        # Upstream's extension-free search provider. The default, `pg_search`, is ParadeDB BM25, and
+        # the managed Postgres ships pgvector but not pg_search. This is upstream's own documented
+        # alternative, not a fallback this template invented.
+        FTS_SEARCH_PROVIDER: pg_like
+        # The bucket answers on `<bucket>.t3.storage.dev`, so virtual-host addressing, and it takes
+        # no per-object ACL.
+        S3_ENABLE_PATH_STYLE: "0"
+        S3_SET_ACL: "0"
+      platform:
+        DATABASE_URL: ${{services.db.DATABASE_URL}}
+        S3_ENDPOINT: ${{services.files.AWS_ENDPOINT_URL_S3}}
+        S3_BUCKET: ${{services.files.BUCKET_NAME}}
+        S3_REGION: ${{services.files.AWS_REGION}}
+        S3_ACCESS_KEY_ID: ${{services.files.AWS_ACCESS_KEY_ID}}
+        S3_SECRET_ACCESS_KEY: ${{services.files.AWS_SECRET_ACCESS_KEY}}
+      generated:
+        AUTH_SECRET: ${auth_secret}
+        LOBE_KEY_VAULTS_SEED: ${key_vaults_seed}
+      required:
+        # LobeHub has no admin account and no invite step: the sign-up form creates an account for
+        # whoever fills it in, and the URL is public. This is the one thing that closes it. Upstream
+        # checks it on user creation (src/libs/better-auth/plugins/email-whitelist.ts), so an
+        # address that is not on the list cannot register at all.
+        AUTH_ALLOWED_EMAILS:
+          description: "The email address allowed to create an account here, e.g. `you@example.com`. Sign up with it after deploy and everyone else is refused. A bare domain (`example.com`) lets anyone at that domain in, and a comma-separated list lets several addresses in. Your own address; LobeHub sends no invitation and has no admin account to hand one out"
+      optional:
+        OPENAI_API_KEY: "OpenAI API key, from platform.openai.com. Setting it here gives every account on this deployment a working OpenAI provider; leave it empty and each user pastes their own key into LobeHub's settings instead, where it is stored encrypted"
+        OPENAI_PROXY_URL: "Base URL for OpenAI-compatible requests, e.g. `https://my-gateway.example.com/v1`. Defaults to `https://api.openai.com/v1`"
+        ANTHROPIC_API_KEY: "Anthropic API key, from console.anthropic.com. Same trade-off as OPENAI_API_KEY"
+        GOOGLE_API_KEY: "Google Gemini API key, from aistudio.google.com. Same trade-off as OPENAI_API_KEY"
+        OPENROUTER_API_KEY: "OpenRouter API key, from openrouter.ai. One key for many model vendors, which is the shortest route to a working deployment"
+        AUTH_DISABLE_EMAIL_PASSWORD: "Set to `1` once your account exists to close the sign-up form outright. AUTH_ALLOWED_EMAILS already limits who can register, so this is belt and braces"
+
+meta:
+  name: LobeHub
+  tagline: Self-hosted chat workspace for agents across many model vendors
+  category: ai-agent
+  tags: [chat, agents, llm]
+  # Upstream publishes 2.2.19 for both, and the overlay adds two files and runs nothing at build time.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  draft: false
+  links:
+    upstream: https://github.com/lobehub/lobehub
+    documentation: https://lobehub.com/docs/self-hosting

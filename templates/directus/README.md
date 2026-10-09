@@ -56,9 +56,9 @@ when it is unset, which would log every user out on every restart.
 
 The database is **SQLite on the service's volume**, which is the image's own default client with
 the file moved: `DB_CLIENT=sqlite3` and `DB_FILENAME=/data/database.sqlite`. The file sits at the
-volume root rather than in a subdirectory because knex does not create a missing parent directory,
-and upstream's Dockerfile pre-creates `/directus/database` for that reason, which a template
-pointing somewhere else does not inherit. Uploads go to `/data/uploads` and Marketplace extensions
+volume root rather than in a subdirectory because nothing in Directus creates one: upstream's
+Dockerfile pre-creates `/directus/database` at build time, and a fresh volume mounted over a
+different path would arrive without it. Uploads go to `/data/uploads` and Marketplace extensions
 to `/data/extensions`, both on the same volume.
 
 `PUBLIC_URL` is set to the service's own URL. It is what the app puts in password-reset and

@@ -55,9 +55,9 @@ services:
         # email-verification mail, the OAuth/SSO redirect targets, and the MCP resource URLs.
         PUBLIC_URL: ${services.directus.url}
         # The image's own default client, with the file moved onto the volume. It sits at the
-        # volume root on purpose: knex does not create a missing parent directory, and upstream's
-        # Dockerfile pre-creates `/directus/database` for exactly that reason, which a template
-        # pointing somewhere else does not get.
+        # volume root rather than in a subdirectory because nothing in Directus creates one:
+        # upstream's Dockerfile pre-creates `/directus/database` at build time, and a fresh volume
+        # mounted over a different path would arrive without it.
         DB_CLIENT: sqlite3
         DB_FILENAME: /data/database.sqlite
         # Uploaded files, and Marketplace installs. Neither directory exists on a fresh volume and

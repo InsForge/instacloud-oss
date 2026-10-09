@@ -188,16 +188,16 @@ the catalog holds only a reference, and it is served from a CDN pinned to the pu
   the app's data directory there with its own env var (`HERMES_HOME`, `N8N_USER_FOLDER`, `HOME`).
 - Fair-code upstreams such as n8n: reference the official image, and never rebuild or rebrand it.
 - A template that exposes a terminal MUST require an access credential (for ttyd, the `-c` flag).
-- `meta.category` is one of the platform's categories, and the platform is the only place that list
-  lives: `curl https://api.instacloud.com/template-categories` gives the slugs, their labels and the
-  order every gallery shows them in. The console and the marketing gallery read it from there, and
-  `npm run check-categories` fails on a manifest whose category it does not list. The lines worth
-  stating are the ones that decide several templates. `backend` is database, auth, storage and
-  functions shipped as one, such as Supabase. `database` is a single datastore, such as ClickHouse,
-  and `analytics` is a tool that queries one someone else runs, such as Superset or Umami.
-  `authentication` is an identity service on its own, such as Keycloak, while auth inside a backend
-  stays `backend`. `dev-tools` is what a developer runs to do the work, such as a Git host or a
-  hosted editor.
+- `meta.category` is one of the platform's categories, and the platform owns that list (the UI
+  snapshot below is a copy of it): `curl https://api.instacloud.com/template-categories` gives the
+  slugs, their labels and the order every gallery shows them in. The console and the marketing
+  gallery read it from there, and `npm run check-categories` fails on a manifest whose category it
+  does not list. The lines worth stating are the ones that decide several templates. `backend` is
+  database, auth, storage and functions shipped as one, such as Supabase. `database` is a single
+  datastore, such as ClickHouse, and `analytics` is a tool that queries one someone else runs, such
+  as Superset or Umami. `authentication` is an identity service on its own, such as Keycloak, while
+  auth inside a backend stays `backend`. `dev-tools` is what a developer runs to do the work, such
+  as a Git host or a hosted editor.
 - `other` is for community templates, which authors publish from the console with no review. An
   official template does not use it, and lint refuses it: propose a new category instead, with at
   least two templates that want it. A category with one member is a rail entry with one card, and

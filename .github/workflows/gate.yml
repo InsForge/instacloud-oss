@@ -1,0 +1,77 @@
+name: gate
+
+# The InstaCloud sign-in page in front of the browser terminal templates (gate/, spec in
+# plans/2026-10-08-ttyd-login-gate-spec.md). A pull request builds it and runs the gate's tests
+# against the built file. A gate-v<version> tag publishes that file and its SHA-256 as a release,
+# which the templates download by version and checksum the way they download ttyd. release-image.yml
+# listens on v* tags, which gate-v* does not match.
+on:
+  pull_request:
+    paths:
+      - "gate/**"
+      - "ui/src/styles.css"
+      - "ui/package-lock.json"
+      - ".github/workflows/gate.yml"
+  push:
+    tags: ["gate-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ui/package-lock.json
+            gate/package-lock.json
+      - run: npm ci
+      # The page is rendered from ui/'s pinned @insforge/ui, React and console theme.
+      - run: npm ci --prefix ui
+      - run: npm ci --prefix gate
+      - run: npm --prefix gate run build
+      - name: The built file passes the gate's tests
+        run: npx vitest run gate/
+        env:
+          INSTA_GATE_FILE: gate/dist/insta-gate.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: insta-gate
+          path: gate/dist/insta-gate.mjs
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/gate-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag equals gate-v<gate/package.json version>
+        run: |
+          want="gate-v$(node -p "require('./gate/package.json').version")"
+          [ "$GITHUB_REF_NAME" = "$want" ] || { echo "tag $GITHUB_REF_NAME is not $want" >&2; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          name: insta-gate
+          path: out
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: out
+        run: |
+          sha256sum insta-gate.mjs > insta-gate.mjs.sha256
+          # Not marked latest: the runtime's v* releases keep that spot.
+          gh release create "$GITHUB_REF_NAME" insta-gate.mjs insta-gate.mjs.sha256 \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "insta-gate ${GITHUB_REF_NAME#gate-v}" \
+            --notes "The InstaCloud sign-in page in front of the browser terminal templates. SHA-256 of insta-gate.mjs: $(cut -d' ' -f1 insta-gate.mjs.sha256)" \
+            --latest=false

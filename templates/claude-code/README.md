@@ -12,14 +12,15 @@ get a `bash` shell, inside tmux, with the `claude` CLI already installed: no loc
 laptop left running. Claude Code reads and edits files in the workspace, runs commands, and works through
 multi-step tasks in the same session.
 
-The image is built from the Dockerfile in this directory: `node:24-bookworm-slim` (pinned by
-digest) plus [ttyd](https://github.com/tsl0922/ttyd) 1.7.7 (verified against a pinned SHA-256) and
+The image is built from the Dockerfile in this directory: `node:24-bookworm-slim` (pinned by digest)
+plus [ttyd](https://github.com/tsl0922/ttyd) 1.7.7 (verified against a pinned SHA-256) and
 `@anthropic-ai/claude-code` pinned to an exact version, plus tmux and the Debian packages an agent
-reaches for first. Nothing floats on `latest`, so a restart
-gives you the same environment. ttyd carries one patch: its startup log prints `credential: **`
-instead of your sign-in encoded in base64, so reading the service's logs does not reveal the
-terminal password. Versions before 0.8.3 logged it on every start, and upgrading does not remove
-those lines from the log history: if you ran one, set a new `ADMIN_PASSWORD` before you upgrade.
+reaches for first. Nothing floats on `latest`, so a restart gives you the same environment. In front
+of ttyd sits the InstaCloud sign-in page, `insta-gate` from this repository's `gate/`, also verified
+against a pinned SHA-256. ttyd listens only inside the container and never receives your
+credentials. Versions before 0.8.3 logged the credential on every start, and upgrading does not
+remove those lines from the log history: if you ran one, set a new `ADMIN_PASSWORD` before you
+upgrade.
 
 ## What you get by hosting it
 
@@ -61,8 +62,8 @@ those lines from the log history: if you ran one, set a new `ADMIN_PASSWORD` bef
 
 | Variable | Required | What it does |
 |---|---|---|
-| `ADMIN_USERNAME` | yes | HTTP basic-auth username for the terminal. You choose it. |
-| `ADMIN_PASSWORD` | yes | HTTP basic-auth password for the terminal. You choose it. |
+| `ADMIN_USERNAME` | yes | Username for the InstaCloud sign-in page in front of the terminal. You choose it. |
+| `ADMIN_PASSWORD` | yes | Password for the InstaCloud sign-in page in front of the terminal. You choose it. |
 | `ANTHROPIC_API_KEY` | no | Authenticates the CLI without an interactive login. Leave blank to run `claude login` in the terminal instead. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | no | Signs the CLI in to your Claude subscription. Print one by running `claude setup-token` on your own computer: it lasts a year and works on every box you deploy. It only makes model requests, so it cannot start Remote Control. Leave blank if you want that, and run `claude login` instead. |
 | `GH_TOKEN` | no | Authenticates `gh`, for example with the output of `gh auth token`. Run `gh auth setup-git` once to use it for git over HTTPS too. Leave blank to run `gh auth login` in the terminal instead. |
@@ -70,9 +71,7 @@ those lines from the log history: if you ran one, set a new `ADMIN_PASSWORD` bef
 When both `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` are set, the CLI uses the API key.
 
 Both credentials are required and neither has a default, so the deploy form starts empty and refuses
-to submit until you supply them. Together they must stay under 186 bytes (`username:password`):
-past that, ttyd 1.7.7 starts normally and then answers 401 to everyone including you, so the
-entrypoint stops the container instead of leaving you with an unreachable terminal.
+to submit until you supply them.
 
 Set by the template, not by you: `HOME=/data/home` (puts your home directory on the volume), and a
 `PATH` that starts with `~/.local/bin`, so tools you install there are found and survive restarts.
@@ -83,8 +82,9 @@ has all of that. Both fields can be changed later from the service's variables.
 
 ## After deploy
 
-1. Open the service URL. The browser asks for HTTP basic auth: the `ADMIN_USERNAME` and
-   `ADMIN_PASSWORD` you deployed with.
+1. Open the service URL. An InstaCloud sign-in page asks for the `ADMIN_USERNAME` and
+   `ADMIN_PASSWORD` you deployed with. The session lasts 30 days, and changing either variable signs
+   every browser out.
 2. You land in a `bash` shell in `/data/home`, inside the tmux session `main`. The mouse wheel
    scrolls back through the output. Hold Shift (Option on a Mac) while dragging to select text.
 3. Run `claude`. If you set neither `ANTHROPIC_API_KEY` nor `CLAUDE_CODE_OAUTH_TOKEN`, run

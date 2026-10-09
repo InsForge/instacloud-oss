@@ -189,6 +189,18 @@ export function createGate({
     return req.headers['sec-fetch-site'] === 'same-origin'
   }
 
+  // A browser attaches the session cookie to requests from any page on the same SITE, and every
+  // *.compute.instacloud-edge.com service is one site: the domain is not on the Public Suffix List.
+  // So another tenant's page could open this terminal's WebSocket, or post to this app, as the
+  // signed-in visitor. Those are refused when the browser says they came from another page. A
+  // request with no Origin and no Sec-Fetch-Site is not a browser's, and still needs the cookie.
+  const fromAnotherPage = (req) => {
+    if (req.headers.origin !== undefined) return !sameOrigin(req)
+    const site = req.headers['sec-fetch-site']
+    return site !== undefined && site !== 'same-origin' && site !== 'none'
+  }
+  const CHANGES_STATE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
   const signIn = (req, res) => {
     if (!sameOrigin(req)) {
       res.writeHead(403, { 'cache-control': 'no-store' }).end()
@@ -249,7 +261,14 @@ export function createGate({
       res.writeHead(303, { location: '/', 'set-cookie': cookieHeader(req, '', 0), 'cache-control': 'no-store' }).end()
       return
     }
-    if (signedIn(req)) return proxy(req, res)
+    if (signedIn(req)) {
+      // Reads stay open: the browser does not let another page see the response.
+      if (CHANGES_STATE.has(req.method) && fromAnotherPage(req)) {
+        res.writeHead(403, { 'cache-control': 'no-store', 'content-length': 0 }).end()
+        return
+      }
+      return proxy(req, res)
+    }
     const wantsPage = (req.method === 'GET' || req.method === 'HEAD') && /text\/html/.test(req.headers.accept ?? '')
     if (wantsPage) return sendPage(res, 200, safeNext(req.url), false)
     res.writeHead(401, { 'cache-control': 'no-store', 'content-length': 0 }).end()
@@ -258,6 +277,11 @@ export function createGate({
   const upgrade = (req, socket, head) => {
     if (!signedIn(req)) {
       socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+      return
+    }
+    // The terminal is a WebSocket, and the browser sends the cookie on it from any same-site page.
+    if (fromAnotherPage(req)) {
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
       return
     }
     const up = connect(upstreamPort, upstreamHost, () => {

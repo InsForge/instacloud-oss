@@ -70,10 +70,11 @@ const signIn = (port, fields, headers = {}) =>
   })
 const sessionCookie = (res) => String(res.headers['set-cookie']?.[0] ?? '').split(';')[0]
 
-function rawUpgrade(port, cookie) {
+// origin: undefined sends no Origin (not a browser); a string sends that Origin.
+function rawUpgrade(port, cookie, origin) {
   return new Promise((ok, fail) => {
     const socket = connect(port, '127.0.0.1', () => {
-      socket.write(`GET /ws HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n${cookie ? `Cookie: ${cookie}\r\n` : ''}\r\n`)
+      socket.write(`GET /ws HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n${cookie ? `Cookie: ${cookie}\r\n` : ''}${origin ? `Origin: ${origin}\r\n` : ''}\r\n`)
     })
     let text = ''
     socket.on('data', (d) => {
@@ -290,6 +291,45 @@ describe('the sign-in rate limit', () => {
     const port = await startGate({ signInBurst: 1, signInPerSecond: 0.001 })
     expect((await signIn(port, right, { origin: 'https://evil.example' })).status).toBe(403)
     expect((await signIn(port, right)).status).toBe(303)
+  })
+})
+
+// Every *.compute.instacloud-edge.com service is one site, so a browser sends the session cookie
+// from another tenant's page too. The gate must refuse what such a page could do as the visitor.
+describe('requests from another page, with the visitor signed in', () => {
+  const sibling = 'https://prod-main-evil-000000-attacker.compute.instacloud-edge.com'
+  const signedInCookie = async (port) =>
+    sessionCookie(await signIn(port, { username: 'admin', password: 'correct horse' }))
+
+  it("a WebSocket upgrade from another tenant's page is refused: it would be the terminal", async () => {
+    const port = await startGate()
+    const cookie = await signedInCookie(port)
+    expect(await rawUpgrade(port, cookie, sibling)).toMatch(/^HTTP\/1\.1 403/)
+    expect(await rawUpgrade(port, cookie, 'https://evil.example')).toMatch(/^HTTP\/1\.1 403/)
+  })
+
+  it('the same page, and a client that is not a browser, still get the WebSocket', async () => {
+    const port = await startGate()
+    const cookie = await signedInCookie(port)
+    expect(await rawUpgrade(port, cookie, `http://127.0.0.1:${port}`)).toMatch(/^HTTP\/1\.1 101/)
+    expect(await rawUpgrade(port, cookie)).toMatch(/^HTTP\/1\.1 101/)
+  })
+
+  it("a state-changing request from another page is refused, the page's own goes through", async () => {
+    const port = await startGate()
+    const cookie = await signedInCookie(port)
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      expect((await call(port, '/api/x', { method, headers: { cookie, origin: sibling } })).status).toBe(403)
+      expect((await call(port, '/api/x', { method, headers: { cookie, origin: `http://127.0.0.1:${port}` } })).status).toBe(200)
+    }
+    const byFetchMetadata = await call(port, '/api/x', { method: 'POST', headers: { cookie, 'sec-fetch-site': 'same-site' } })
+    expect(byFetchMetadata.status).toBe(403)
+  })
+
+  it('reads stay open, since the browser does not show them to the other page', async () => {
+    const port = await startGate()
+    const cookie = await signedInCookie(port)
+    expect((await call(port, '/token', { headers: { cookie, origin: sibling } })).status).toBe(200)
   })
 })
 

@@ -39,7 +39,8 @@ Out of scope: every other template, and a platform-level password gate in front 
 | `POST /_insta/sign-in` past the sign-in rate limit | `429` with `Retry-After`, the sign-in page with "Too many sign-in attempts", credentials not compared |
 | `POST /_insta/sign-in` with the wrong username or password | `401`, the sign-in page with the error and the username still filled in, after a one second delay |
 | `POST /_insta/sign-in` with the right ones | `303` to the page the visitor asked for, and a session cookie |
-| Anything with a valid session | proxied to ttyd unchanged, WebSocket included |
+| A WebSocket upgrade, or a `POST`, `PUT`, `PATCH` or `DELETE`, whose `Origin` (or `Sec-Fetch-Site`) says another page sent it | `403`, even with a valid session (added in gate 0.1.1) |
+| Anything else with a valid session | proxied to ttyd unchanged, WebSocket included |
 | `GET /_insta/sign-out` | clears the cookie, `303` to `/` |
 
 - The health check (`/`) keeps answering below 500 with or without a session, so deploys report
@@ -200,6 +201,17 @@ would make an upgrade change how people sign in.
 **What happens when a session expires with the terminal open?** ttyd's page shows its reconnect
 prompt and the reconnect is refused with a 401. Reloading the page shows the sign-in page. Changing
 ttyd's own front end to do that automatically is out of scope.
+
+**Why does a signed-in WebSocket still check where it came from?** (Added in gate 0.1.1.) A browser
+sends a `SameSite=Lax` cookie on requests from any page on the same site, and every
+`*.compute.instacloud-edge.com` service is one site, because that domain is not on the Public Suffix
+List. Without the check, another tenant's page could open this terminal's WebSocket as a visitor who
+had signed in here, which is a root shell. ttyd's own `-c` resisted this, since its page first reads
+`/token`, which another origin cannot read, and the gate replaced `-c`. So the upgrade, and every
+state-changing method, is refused when its `Origin` is not this service's (or, with no `Origin`,
+when `Sec-Fetch-Site` is not `same-origin` or `none`). Reads are left open: the browser does not
+show their response to the other page. Getting the domain onto the Public Suffix List would help
+every app on the platform, but it is a separate effort and no substitute for the check.
 
 **Is there brute-force protection?** Yes: one rate limit for every sign-in, taken before the
 credentials are compared. A burst of 10 attempts, then 1 per second, and past it a `429`. A delay on

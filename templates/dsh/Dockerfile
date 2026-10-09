@@ -29,10 +29,11 @@ RUN npm install -g pnpm@${PNPM_VERSION}
 
 # upstream pin: keep in sync with insta.template.yaml (upstream.pinned)
 ARG DSH_VERSION=0.1.1-rc.2
-# The release candidate's transitive ranges float, and they moved under it: built after 2026-09-22,
-# @deepseek-ai/cordis 4.0.3 and later make `dsh web` exit at boot with "user patch-layer watching
-# requires the Cordis HMR service". --before resolves the tree as npm saw it when the 0.4.2 image
-# was built, the last one tested. Move it with DSH_VERSION, then re-run gate-assertions.mjs.
+# The release candidate's transitive ranges float, and they moved under it: the @deepseek-ai/cordis
+# releases of 2026-09-22 (4.0.4 and cordis-plugin-hmr 1.0.19 measured) make `dsh web` exit at boot
+# with "user patch-layer watching requires the Cordis HMR service". --before resolves the tree as
+# npm saw it when the 0.4.2 image was built, the last one tested. Move it with DSH_VERSION, then
+# re-run gate-assertions.mjs.
 ARG DSH_NPM_BEFORE=2026-09-10T17:41:34Z
 RUN npm install -g --before="${DSH_NPM_BEFORE}" @deepseek-ai/dsh@${DSH_VERSION}
 

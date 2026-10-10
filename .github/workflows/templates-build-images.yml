@@ -42,23 +42,43 @@ jobs:
               | xargs -n1 basename | sort -u
           }
           before='${{ github.event.before }}'
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ -z "$before" ] \
-             || ! git cat-file -e "$before" 2>/dev/null; then
-            # Dispatch, or a base we cannot resolve (first push, force-push): build everything.
-            codes=$(buildable)
-          # Captured rather than piped into `grep -q`: grep exits at the first match and can
-          # SIGPIPE git, which pipefail would then read as a failed test.
-          elif [ -n "$(git diff --name-only "$before" "${{ github.sha }}" \
-                        -- .github/workflows/templates-build-images.yml)" ]; then
-            # This file changed: rebuild everything, since the change may be to how they build.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Asked for by hand: build everything, whatever the history would have said.
             codes=$(buildable)
           else
-            # Only templates whose IMAGE could have changed. A README is published from the repo by
-            # templates-publish and copied into no image, so rebuilding for one would re-push an
-            # identical tag over a published one for nothing.
-            changed=$(git diff --name-only "$before" "${{ github.sha }}" -- templates/ \
-              | awk -F/ 'NF>=3 && $3 != "README.md" {print $2}' | sort -u)
-            codes=$(comm -12 <(printf '%s\n' "$changed") <(buildable))
+            # A new branch pushes an all-zero base and a force-push one this clone no longer has.
+            # Both used to mean every buildable template, which on a one-template branch is 22
+            # images nobody asked for. Off main the branch's own change is its diff from the commit
+            # it forked at, and a branch only ever pushes sha- and branch- tags, so the worst a
+            # wrong fork point costs is a throwaway tag. On main the canonical :<version> tags are
+            # what a published template pulls, so there an unresolvable base still builds all.
+            if [ -z "$before" ] || ! git cat-file -e "$before" 2>/dev/null; then
+              before=
+              if [ "${{ github.ref_name }}" != "main" ]; then
+                # checkout@v4 fetches the pushed ref's refspec alone, so origin/main is absent here
+                # even at fetch-depth 0; walking to the fork point needs commits, not blobs.
+                git fetch --no-tags --filter=blob:none origin main 2>/dev/null \
+                  || git fetch --no-tags origin main
+                before=$(git merge-base FETCH_HEAD "${{ github.sha }}" || true)
+              fi
+            fi
+            if [ -z "$before" ]; then
+              # Still nothing to compare against: build everything rather than guess low.
+              codes=$(buildable)
+            # Captured rather than piped into `grep -q`: grep exits at the first match and can
+            # SIGPIPE git, which pipefail would then read as a failed test.
+            elif [ -n "$(git diff --name-only "$before" "${{ github.sha }}" \
+                          -- .github/workflows/templates-build-images.yml)" ]; then
+              # This file changed: rebuild everything, since the change may be to how they build.
+              codes=$(buildable)
+            else
+              # Only templates whose IMAGE could have changed. A README is published from the repo
+              # by templates-publish and copied into no image, so rebuilding for one would re-push
+              # an identical tag over a published one for nothing.
+              changed=$(git diff --name-only "$before" "${{ github.sha }}" -- templates/ \
+                | awk -F/ 'NF>=3 && $3 != "README.md" {print $2}' | sort -u)
+              codes=$(comm -12 <(printf '%s\n' "$changed") <(buildable))
+            fi
           fi
           # awk 'NF', not `grep -v '^$'`: grep exits 1 when it selects nothing, and under
           # `set -euo pipefail` that kills the step on exactly the "nothing to build" case this

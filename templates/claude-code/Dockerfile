@@ -28,6 +28,23 @@ RUN arch="$(dpkg --print-architecture)"; \
     && echo "${patched_sha}  /usr/local/bin/ttyd" | sha256sum -c - \
     && chmod +x /usr/local/bin/ttyd
 
+# trzsz: the receiving end of ttyd's file upload (enableTrzsz in entrypoint.sh).
+ARG TRZSZ_VERSION=1.2.0
+ARG TRZSZ_SHA256_X86_64=70e3e0847177d4c7b681a8ec19fa00092e422a6c628ef9d8a5db6dfbf4612add
+ARG TRZSZ_SHA256_AARCH64=9a73c237b6b12af267e878591ff22a01c97ca9d1cd8125f9ff4ffd6df4fea97c
+RUN arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) trzsz_arch=x86_64;  trzsz_sha="$TRZSZ_SHA256_X86_64" ;; \
+        arm64) trzsz_arch=aarch64; trzsz_sha="$TRZSZ_SHA256_AARCH64" ;; \
+        *)     echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    tarball="trzsz_${TRZSZ_VERSION}_linux_${trzsz_arch}.tar.gz"; \
+    curl -fsSL "https://github.com/trzsz/trzsz-go/releases/download/v${TRZSZ_VERSION}/${tarball}" -o "/tmp/${tarball}" \
+    && echo "${trzsz_sha}  /tmp/${tarball}" | sha256sum -c - \
+    && tar -xzf "/tmp/${tarball}" -C /usr/local/bin --strip-components=1 \
+        "trzsz_${TRZSZ_VERSION}_linux_${trzsz_arch}/trz" "trzsz_${TRZSZ_VERSION}_linux_${trzsz_arch}/tsz" \
+    && rm "/tmp/${tarball}"
+
 # The InstaCloud sign-in page in front of ttyd (gate/ in this repository, released as gate-v*).
 # Plain JavaScript on Node built-ins, so one checksum covers both architectures.
 ARG INSTA_GATE_VERSION=0.1.1

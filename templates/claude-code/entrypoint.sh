@@ -10,5 +10,7 @@ cd "$HOME"
 # with no credential of its own, so the gate is the only way in (plans/2026-10-08-ttyd-login-gate-spec.md).
 # ttyd kills its child when a tab closes, so every tab attaches to one tmux session that outlives it.
 # tmux takes the mouse, so a Mac needs Option+drag to select text, which xterm.js leaves off by default.
+# enableTrzsz: a file dropped on the terminal, or picked by `trz`, uploads into the shell's directory.
 exec node /usr/local/lib/insta-gate.mjs --name claude-code -- \
-  ttyd -i lo -p 7682 -W -t macOptionClickForcesSelection=true tmux -u new-session -A -s main
+  ttyd -i lo -p 7682 -W -t macOptionClickForcesSelection=true -t enableTrzsz=true \
+  tmux -u new-session -A -s main

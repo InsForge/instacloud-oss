@@ -1,8 +1,10 @@
 # Base pinned by digest (multi-arch OCI index: linux/amd64 + linux/arm64): tags float.
 FROM node:24-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03
 
+# Line two is for agents: tmux outlives the browser tab, the rest are tools they reach for first.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bash git ca-certificates curl ripgrep procps \
+        tmux openssh-client rsync unzip less jq python3 python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # ttyd: browser terminal over HTTPS (same approach as Railway's pi template)
@@ -26,10 +28,23 @@ RUN arch="$(dpkg --print-architecture)"; \
     && echo "${patched_sha}  /usr/local/bin/ttyd" | sha256sum -c - \
     && chmod +x /usr/local/bin/ttyd
 
+# The InstaCloud sign-in page in front of ttyd (gate/ in this repository, released as gate-v*).
+# Plain JavaScript on Node built-ins, so one checksum covers both architectures.
+ARG INSTA_GATE_VERSION=0.1.1
+ARG INSTA_GATE_SHA256=75a11d24a0b60c277593de699505505e4d641d75077b1a32048318ba38a73966
+RUN curl -fsSL "https://github.com/InsForge/instacloud-oss/releases/download/gate-v${INSTA_GATE_VERSION}/insta-gate.mjs" \
+        -o /usr/local/lib/insta-gate.mjs \
+    && echo "${INSTA_GATE_SHA256}  /usr/local/lib/insta-gate.mjs" | sha256sum -c -
+
 # upstream pin: keep in sync with insta.template.yaml (upstream.pinned)
 RUN npm install -g @anthropic-ai/claude-code@2.1.235
 
 ENV HOME=/data/home
+# ~/.local/bin is on the volume. /.insta/tools/bin is the platform toolbox (gh), when mounted.
+ENV PATH=$HOME/.local/bin:$PATH:/.insta/tools/bin
+COPY tmux.conf /etc/tmux.conf
+# Claude Code's managed CLAUDE.md path on Linux, loaded in every session.
+COPY machine-notes.md /etc/claude-code/CLAUDE.md
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 EXPOSE 7681

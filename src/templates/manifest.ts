@@ -8,6 +8,7 @@
 // to 400. Canonical credential keys come from ../manageddb (the same catalog the engine mints from),
 // not from a second copy of the table.
 import { createHash, randomBytes } from 'node:crypto'
+import { posix } from 'node:path'
 import YAML from 'yaml'
 import { CANONICAL_KEYS } from '../manageddb'
 
@@ -44,6 +45,8 @@ const GENERATOR_NAME_RE = /^[a-z][a-z0-9_]{0,63}$/
 const HEALTHCHECK_RE = /^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]*$/
 /** Env names, the same grammar user secrets use (platform secretNames.ts USER_SECRET_NAME_RE). */
 export const ENV_NAME_RE = /^[A-Z][A-Z0-9_]{0,63}$/
+/** Every key a service may carry (the platform's TEMPLATE_FIELDS), spec and volumeGib included so their own refusals fire. */
+const SERVICE_KEYS = ['type', 'image', 'build', 'port', 'healthcheck', 'volume', 'volumeGib', 'spec', 'alwaysOn', 'command', 'mountPath', 'env', 'pgVersion', 'public']
 
 export type TemplateVarSpec = {
   description?: string
@@ -64,7 +67,11 @@ export type TemplateServiceEnv = {
 }
 
 export type TemplateService = {
-  type: 'web' | 'worker' | 'postgres'
+  type: 'web' | 'worker' | 'postgres' | 'storage'
+  /** Postgres only: the major version. Parsed for digest parity, refused at execution unless it is the local major. */
+  pgVersion?: number
+  /** Storage only: anonymous public-read. Parsed for digest parity, refused at execution. */
+  public?: boolean
   image?: string
   build?: string
   port?: number
@@ -75,6 +82,10 @@ export type TemplateService = {
    *  bot long-polling its platform) is never woken by traffic at all, so staying warm is
    *  correctness rather than latency. */
   alwaysOn?: boolean
+  /** Start command, run through `sh -c`. Absent = the image's own. Parsed for digest parity, refused at execution. */
+  command?: string
+  /** Where the volume mounts. Only with `volume: true`. Absent = /data. Parsed for digest parity, refused at execution. */
+  mountPath?: string
   env: TemplateServiceEnv
 }
 
@@ -237,14 +248,23 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
     const at = `services.${name}`
     if (!SERVICE_NAME_RE.test(name)) return bad(`${at}: service names must be lower-kebab (a-z, 0-9, -)`)
     if (!isRecord(rawSvc)) return bad(`${at} must be a map`)
-    const type = rawSvc.type === 'web' || rawSvc.type === 'worker' || rawSvc.type === 'postgres'
-      ? rawSvc.type : bad(`${at}.type must be web, worker or postgres`)
-    // A managed postgres service is BARE: the daemon owns its image, port, sizing and credentials,
+    const type = rawSvc.type === 'web' || rawSvc.type === 'worker' || rawSvc.type === 'postgres' || rawSvc.type === 'storage'
+      ? rawSvc.type : bad(`${at}.type must be web, worker, postgres or storage`)
+    // Authored input refuses a key the platform does not know. Stored rows stay lenient, so a bundled template never vanishes.
+    if (opts?.rejectAuthoredSizing) {
+      for (const key of Object.keys(rawSvc)) {
+        if (!SERVICE_KEYS.includes(key)) return bad(`${at}.${key} is not a template field`)
+      }
+    }
+    // One type each, the per-type rule the platform's add() applies.
+    if (rawSvc.pgVersion !== undefined && type !== 'postgres') return bad(`${at}.pgVersion: only a postgres service takes a version`)
+    if (rawSvc.public !== undefined && type !== 'storage') return bad(`${at}.public: only a storage service can be public`)
+    // A postgres or storage service is BARE: the daemon owns its image, port, sizing and credentials,
     // so a manifest has nothing to configure on it and anything it set would be silently ignored.
-    // Refused with the field named.
-    if (type === 'postgres') {
-      for (const field of ['image', 'build', 'port', 'healthcheck', 'volume', 'volumeGib', 'spec', 'alwaysOn'] as const) {
-        if (rawSvc[field] !== undefined) return bad(`${at}.${field}: a postgres service is platform-managed and carries no ${field} (declare it bare: { type: postgres })`)
+    // Refused with the field named. pgVersion and public are the one field each takes.
+    if (type === 'postgres' || type === 'storage') {
+      for (const field of ['image', 'build', 'port', 'healthcheck', 'volume', 'volumeGib', 'spec', 'alwaysOn', 'command', 'mountPath'] as const) {
+        if (rawSvc[field] !== undefined) return bad(`${at}.${field}: a ${type} service is platform-managed and carries no ${field} (declare it bare: { type: ${type} })`)
       }
       // env must be absent or an EXACT empty shell (known group names, each an empty map): the
       // shell so the normalized manifest round-trips losslessly, and EXACT so shapes like
@@ -253,9 +273,24 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
         const groups = ['fixed', 'generated', 'platform', 'required', 'optional']
         const emptyShell = isRecord(rawSvc.env)
           && Object.entries(rawSvc.env).every(([g, v]) => groups.includes(g) && isRecord(v) && Object.keys(v).length === 0)
-        if (!emptyShell) return bad(`${at}.env: a postgres service is platform-managed and carries no env (declare it bare: { type: postgres })`)
+        if (!emptyShell) return bad(`${at}.env: a ${type} service is platform-managed and carries no env (declare it bare: { type: ${type} })`)
       }
-      services[name] = { type, env: { fixed: {}, generated: {}, platform: {}, required: {}, optional: {} } }
+      let pgVersion: number | undefined
+      if (rawSvc.pgVersion !== undefined) {
+        if (typeof rawSvc.pgVersion !== 'number' || !Number.isInteger(rawSvc.pgVersion)) return bad(`${at}.pgVersion must be an integer Postgres major version`)
+        pgVersion = rawSvc.pgVersion
+      }
+      let isPublic: boolean | undefined
+      if (rawSvc.public !== undefined) {
+        if (typeof rawSvc.public !== 'boolean') return bad(`${at}.public must be a boolean`)
+        isPublic = rawSvc.public
+      }
+      services[name] = {
+        type,
+        ...(pgVersion !== undefined ? { pgVersion } : {}),
+        ...(isPublic ? { public: true } : {}),
+        env: { fixed: {}, generated: {}, platform: {}, required: {}, optional: {} },
+      }
       continue
     }
     const image = rawSvc.image !== undefined ? scalarString(rawSvc.image, `${at}.image`) : undefined
@@ -277,7 +312,6 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
       if (typeof rawSvc.alwaysOn !== 'boolean') return bad(`${at}.alwaysOn must be a boolean`)
       alwaysOn = rawSvc.alwaysOn
     }
-    if (type === 'web' && !healthcheck) return bad(`${at}: web services must declare a healthcheck path`)
     if (healthcheck !== undefined) {
       if (!healthcheck.startsWith('/')) return bad(`${at}.healthcheck must be an absolute path (start with /)`)
       // The daemon FETCHES this path: it must be a path on the deployed service and nothing else.
@@ -296,6 +330,24 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
       volume = true
     } else if (rawSvc.volumeGib !== undefined) {
       volume = true
+    }
+    let command: string | undefined
+    if (rawSvc.command !== undefined) {
+      if (typeof rawSvc.command !== 'string') return bad(`${at}.command must be a non-empty string`)
+      command = rawSvc.command.trim()
+      if (!command) return bad(`${at}.command must be a non-empty string`)
+    }
+    let mountPath: string | undefined
+    if (rawSvc.mountPath !== undefined) {
+      if (!volume) return bad(`${at}.mountPath requires volume: true`)
+      const raw = scalarString(rawSvc.mountPath, `${at}.mountPath`)
+      if (!raw.trim()) return bad(`${at}.mountPath must be an absolute path`)
+      try {
+        mountPath = normalizeMountPath(raw)
+      } catch (e) {
+        // The validator names the field `mountPath` already, so only the location is prefixed.
+        return bad(`${at}.${(e as Error).message}`)
+      }
     }
 
     const rawEnv = rawSvc.env === undefined ? {} : rawSvc.env
@@ -336,7 +388,12 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
       }
     }
 
-    services[name] = { type, image, build, port, healthcheck, volume, alwaysOn, env: { fixed, generated: generatedEnv, platform, required, optional } }
+    services[name] = {
+      type, image, build, port, healthcheck, volume, alwaysOn,
+      ...(command !== undefined ? { command } : {}),
+      ...(mountPath !== undefined ? { mountPath } : {}),
+      env: { fixed, generated: generatedEnv, platform, required, optional },
+    }
   }
 
   // env.platform refs are validated once ALL services are parsed (a web service may reference a
@@ -399,9 +456,10 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
         const svcRef = /^services\.([a-z0-9-]+)\.([a-zA-Z0-9_]+)$/.exec(ref)
         if (svcRef) {
           if (!Object.hasOwn(services, svcRef[1])) return bad(`${at} references unknown service '${svcRef[1]}' (\${${ref}})`)
-          // A managed database runs no app: it has no url/host to resolve. Its credentials flow
+          // A managed database or a bucket runs no app: it has no url/host to resolve. Its credentials flow
           // through env.platform (${{services.<name>.<KEY>}}), never a URL ref.
-          if (services[svcRef[1]].type === 'postgres') return bad(`${at}: service '${svcRef[1]}' is a managed postgres, it has no url/host; reference its credentials via env.platform (\${${ref}})`)
+          const targetType = services[svcRef[1]].type
+          if (targetType === 'postgres' || targetType === 'storage') return bad(`${at}: service '${svcRef[1]}' is a managed ${targetType}, it has no url/host; reference its credentials via env.platform (\${${ref}})`)
           if (svcRef[2] !== 'url' && svcRef[2] !== 'host') return bad(`${at}: '${svcRef[2]}' is not a resolvable service property (url or host) (\${${ref}})`)
           continue
         }
@@ -562,8 +620,8 @@ export function manifestDigest(manifest: TemplateManifest): string {
   return createHash('sha256').update(JSON.stringify(canon(identity))).digest('hex')
 }
 
-/** Which normalization produced a stored digest (contract section 4 `digestEpoch`). */
-export const DIGEST_EPOCH = 2
+/** Which normalization produced a stored digest (contract section 4 `digestEpoch`). 3: pgVersion and public joined. */
+export const DIGEST_EPOCH = 3
 
 /** Cryptographically random value for a generator spec (secret:N -> N base64url chars). */
 export function generateValue(spec: string): string {
@@ -726,4 +784,19 @@ export function capLogTail(tail: string): string {
   const budget = LOG_TAIL_MAX_BYTES - Buffer.byteLength(LOG_TAIL_TRUNCATION_MARKER, 'utf8')
   const start = buf.length - budget
   return `${LOG_TAIL_TRUNCATION_MARKER}${buf.subarray(start).toString('utf8')}`
+}
+
+// Ported from the platform's volume-path.ts: same rules, same messages.
+const RESERVED_MOUNTS = ['/', '/bin', '/boot', '/dev', '/etc', '/home', '/lib', '/lib32', '/lib64', '/libx32', '/proc', '/root', '/run', '/sbin', '/sys', '/usr', '/var']
+function normalizeMountPath(value: string): string {
+  const path = value.trim()
+  if (path.length > 255) throw new Error('mountPath must be at most 255 characters')
+  if (!path.startsWith('/')) throw new Error('mountPath must be an absolute path')
+  if (!/^[a-zA-Z0-9._/\-]+$/.test(path)) throw new Error("mountPath may contain only letters, digits, '.', '-', '_' and '/'")
+  if (path.split('/').includes('..')) throw new Error('mountPath must not contain ..')
+  const clean = posix.normalize(path).replace(/\/$/, '') || '/'
+  if (RESERVED_MOUNTS.includes(clean) || ['/dev', '/proc', '/sys', '/.insta'].some((p) => clean === p || clean.startsWith(p + '/'))) {
+    throw new Error('mountPath is reserved by the container runtime')
+  }
+  return clean
 }

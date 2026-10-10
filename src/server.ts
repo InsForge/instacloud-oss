@@ -1506,6 +1506,7 @@ export function buildServer(
   // filtering; kept modest because the raw body is buffered before the signature is checked.
   app.post('/webhooks/git/:bindingId', { bodyLimit: 5 * 1024 * 1024 }, async (req, reply) => {
     const { bindingId } = req.params as { bindingId: string }
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(bindingId)) return reply.code(404).send({ error: 'unknown webhook' })
     const rec = loadState().gitBindings?.[bindingId]
     if (!rec) return reply.code(404).send({ error: 'unknown webhook' })
     const raw = (req as FastifyRequest & { rawBody?: string }).rawBody ?? ''

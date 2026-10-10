@@ -1,15 +1,15 @@
 ---
 title: "Multi-tenant & integrations"
-description: "Provision apps for your users, out of the box: a master token for your backend, then a project or an app per customer, all over the REST API."
+description: "Provision apps for your users with the right security boundaries, over the API."
 ---
 
-InstaCloud supports multi-tenancy out of the box: to make each of your customers an **app** or a **project** with exactly the right permissions, use the endpoints below. The [API](/reference/api/overview) is directly available on any account; when you put a real fleet on it, [contact us](#enterprise-plans) for an Enterprise plan with custom restrictions.
+InstaCloud supports multi-tenancy out of the box: to make each of your customers an **app** or a **project**, with exactly the right permissions and the right billing, use the endpoints below. The [API](/reference/api/overview) is directly available on any account; reached the machine limit? [Contact us](#enterprise-plans) for an Enterprise plan with custom restrictions.
 
 ## 1. Provision the master token
 
-Your backend keeps one **master token**: an organization-scoped API token, minted once (`insta tokens create master --org <orgId>`). It acts as your backend's master key: it is the credential that creates projects and [mints narrower tokens](/reference/api/overview#minting-a-token), never wider than itself, and it never leaves your backend.
+Your backend keeps one **master token**: an organization-scoped API token, minted once (`insta tokens create master --org <orgId>`). It is the credential that creates projects and [mints narrower tokens](/reference/api/overview#minting-a-token), never wider than itself, and it never leaves your backend.
 
-From there, give each customer the isolation boundary that matches how much they touch. In doubt, take a project per customer.
+From there, give each customer the isolation boundary that matches how much they touch. When in doubt, take a project per customer.
 
 ## 2. A project per customer
 
@@ -23,11 +23,13 @@ PROJECT=$(curl -s -X POST $API/orgs/$ORG/projects \
   -H "Authorization: Bearer $MASTER" -H "Content-Type: application/json" \
   -d '{"name":"acme"}' | jq -r .project.id)
 
-# 2. A token bound to that project alone. The plaintext is returned once;
-#    store it with the customer record.
-TOKEN=$(curl -s -X POST $API/tokens \
+# 2. A token bound to that project alone. The plaintext (.token) is returned
+#    once; store it, and the record id, with the customer record.
+MINT=$(curl -s -X POST $API/tokens \
   -H "Authorization: Bearer $MASTER" -H "Content-Type: application/json" \
-  -d "{\"name\":\"acme\",\"orgId\":\"$ORG\",\"projectId\":\"$PROJECT\"}" | jq -r .token)
+  -d "{\"name\":\"acme\",\"orgId\":\"$ORG\",\"projectId\":\"$PROJECT\"}")
+TOKEN=$(echo "$MINT" | jq -r .token)
+TOKEN_ID=$(echo "$MINT" | jq -r .record.id)
 
 # 3. Everything for this customer now runs under $TOKEN.
 curl -s -X POST $API/projects/$PROJECT/services -H "Authorization: Bearer $TOKEN" \
@@ -44,25 +46,11 @@ curl -s -X POST $API/projects/$PROJECT/deploy -H "Authorization: Bearer $TOKEN" 
   -d '{"image":"ghcr.io/you/tenant-app:1.0.0","group":"app","port":3000}'
 ```
 
-The responses are plain JSON. Creating the project answers with the project row and its default branch; minting the token answers once with the plaintext:
-
-```json title="POST /orgs/{orgId}/projects (201)"
-{"project":{"id":"36b7fe0a-87a1-4db4-8fc5-9b2188962afe","org_id":"86e77ca0-...","name":"acme","status":"active","agent_policy":{"mode":"full_access"},"created_at":"2026-09-29T03:28:24.245Z"},"defaultBranch":{"id":"0ba7ab98-...","name":"main"},"resources":[]}
-```
-
-```json title="POST /tokens (201)"
-{"token":"insta_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","record":{"id":"nbvAiBn5...","name":"acme","scope":"project","orgId":"86e77ca0-...","projectId":"36b7fe0a-...","access":"full","expiresAt":null,"createdAt":"2026-09-29T03:28:24.873Z"}}
-```
-
 The project token is the isolation boundary, so hand it to the customer's runtime without worry:
 
 - It reaches its own project only. Any endpoint outside the binding answers `403 token_scope`, and it cannot mint tokens at all.
-- A second token with `"access":"read_only"` serves customer-facing dashboards: it is accepted on `GET` and `HEAD` only.
+- A second token with `"access":"read_only"` is accepted on `GET` and `HEAD` only: useful for backend read paths that should not be able to write. Like any project token it can still read the project's credentials, so neither belongs in a customer's browser.
 - Each customer gets their own branches for previews and agent runs ([branch per task](/agents/branch-per-task)).
-- `GET /projects/{projectId}/usage` is that customer's bill; `/usage/daily` gives the day-by-day series.
-- Offboarding is two calls with the master token: `DELETE /projects/{projectId}` and `DELETE /tokens/{tokenId}`.
-
-Idle customers stay cheap: a project's [Postgres suspends by default](/postgres/overview) and bills only for storage, and its compute can [scale to zero](/compute/overview) the same way.
 
 ## 3. An app per customer
 
@@ -83,18 +71,82 @@ curl -s -X POST $API/projects/$PROJECT/deploy -H "Authorization: Bearer $TOKEN" 
 - Each app deploys, scales, restarts and stops on its own, without touching the rest of the fleet.
 - Logs and metrics still read per app: `GET /projects/{projectId}/logs?group=<app>`, and the same `group` filter on `/metrics`.
 - A database per customer inside the shared Postgres keeps separation clean: `POST /projects/{projectId}/database/databases`.
-- Usage is reported for the whole project, so per-customer billing needs your own accounting on top, and a growing fleet hits the plan's per-branch service caps first. When a customer outgrows the shared project, promote them to a project of their own.
+- A growing fleet hits the plan's per-branch service caps; when a customer outgrows the shared project, promote them to a project of their own.
 
 Either way, the organization's audit stream (`GET /orgs/{orgId}/events/stream`) gives you one timeline of everything every customer's infrastructure did.
 
+## 4. Check the bill, stop the spend
+
+Billing reads over the same API, from your backend:
+
+```bash
+# A project's bill: the current cycle's spend across the 5 billing dimensions.
+curl -s $API/projects/$PROJECT/usage -H "Authorization: Bearer $TOKEN"
+
+# An app's bill: the same response's byService, the money split per service.
+curl -s $API/projects/$PROJECT/usage -H "Authorization: Bearer $TOKEN" \
+  | jq '.byService[] | {name, type, totalCostUsd}'
+
+# Day by day over a window (unix seconds; default = current cycle).
+curl -s "$API/projects/$PROJECT/usage/daily?from=1788220800&to=1790812800" \
+  -H "Authorization: Bearer $TOKEN"
+
+# All customers at once: the org roll-up per project, deleted projects
+# included, so a final bill still reads after offboarding. Master token.
+curl -s $API/orgs/$ORG/usage -H "Authorization: Bearer $MASTER"
+```
+
+A project with two customer apps and a shared database reads like this:
+
+```json title="GET /projects/{projectId}/usage (200)"
+{
+  "from": 1789430400, "to": 1792022400,
+  "totalCostUsd": 9.33,
+  "byService": [
+    {"name": "acme", "type": "compute", "branch": "main", "totalCostUsd": 7.18},
+    {"name": "beta", "type": "compute", "branch": "main", "totalCostUsd": 1.92},
+    {"name": "db", "type": "postgres", "branch": "main", "totalCostUsd": 0.23}
+  ]
+}
+```
+
+Each row also carries `serviceId`, `status` and its per-dimension quantities (ram, cpu, volume, storage, egress), and the response's own project-level `dimensions` array sits above `byService`; both are trimmed here. Deleted services keep their rows, and spend with no recoverable service lands in one unattributed bucket, so the split still sums to the total. Compute splits per customer; a shared Postgres stays one row, and a branch database's cost rolls onto the service it was forked from.
+
+These reads belong to your backend. Even a `read_only` token reads more than billing (the project's credentials included), so no token goes into customer-facing code: serve each customer their own numbers, and in a shared project, where the response spans every customer, select their row first. The master token stays behind your backend either way.
+
+Stopping is just as direct. Idle customers already stay cheap on their own: compute [scales to zero](/compute/overview) by default (workers and always-on services keep running and billing); stopping is for taking a customer offline on purpose. In the shared project:
+
+```bash
+# The app's service id, from the services list.
+SERVICE=$(curl -s $API/projects/$PROJECT/services -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.services[] | select(.name == "acme" and .type == "compute") | .id')
+
+# Stop the app and keep it off: traffic is refused rather than woken, so the
+# customer accrues no further compute charges (stored data still bills).
+curl -s -X POST $API/projects/$PROJECT/services/$SERVICE/stop \
+  -H "Authorization: Bearer $TOKEN"
+
+# Bring it back.
+curl -s -X POST $API/projects/$PROJECT/services/$SERVICE/start \
+  -H "Authorization: Bearer $TOKEN"
+
+# Offboard a shared-project customer: remove their app and its resources.
+curl -s -X DELETE $API/projects/$PROJECT/services/$SERVICE \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+`.../suspend` also takes an app down, but it may wake on the next request; only stop guarantees it stays off. A whole project stops by stopping its compute services: its [Postgres suspends when idle](/postgres/overview) on its own and bills only for storage.
+
+Offboarding a project-per-customer tenant for good is two calls with the master token, using the `$TOKEN_ID` captured at mint in section 2. This deletes that customer's entire project, so it has no place in the shared shape:
+
+```bash
+curl -s -X DELETE $API/projects/$PROJECT -H "Authorization: Bearer $MASTER"
+curl -s -X DELETE $API/tokens/$TOKEN_ID -H "Authorization: Bearer $MASTER"
+```
+
 ## Enterprise plans
 
-Standard plans cap how many services of each type a branch can hold, sized for one team rather than a fleet of tenants, so an app per customer hits the compute cap first and a project per customer eventually meets its own ceilings. For production multi-tenant use, contact us to be upgraded to an **Enterprise plan with custom restrictions**: limits sized to your tenant count, and guardrails where you want them, per project. Tell us what you are building and roughly how many tenants you expect:
-
-- Email [founders@insforge.dev](mailto:founders@insforge.dev), or
-- use the [contact form](https://www.instacloud.com/contact).
-
-We answer within one business day.
+Standard plans cap how many services of each type a branch can hold, sized for one team rather than a fleet of tenants. For production multi-tenant use, contact us to be upgraded to an **Enterprise plan with custom restrictions**: limits sized to your tenant count, and guardrails where you want them, per project. Email [founders@insforge.dev](mailto:founders@insforge.dev) or use the [contact form](https://www.instacloud.com/contact); we answer within one business day.
 
 ## The API design
 

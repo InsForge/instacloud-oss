@@ -1,12 +1,15 @@
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import {
   liveSeries, MAX_POINTS, MAX_RATE_GAP_SEC, MetricsHistory, metricsWindow, parseStep, RETENTION_SEC, statsToSamples,
   type ContainerSample,
 } from '../src/metrics-history'
 import { MetricsSampler, PERSIST_INTERVAL_SEC } from '../src/metrics-sampler'
+
+vi.mock('node:fs/promises', async (importOriginal) => ({ ...await importOriginal<typeof import('node:fs/promises')>() }))
 
 const sample = (name: string, cpuCores: number, memBytes: number, rxBytes = 0, txBytes = 0): ContainerSample =>
   ({ name, cpuCores, memBytes, rxBytes, txBytes })
@@ -145,6 +148,20 @@ describe('retention and persistence', () => {
     expect(restored.query([APP], 0, 200, 60)).toEqual(h.query([APP], 0, 200, 60))
   })
 
+  test.each([1, 2])('version %s preserves stopped/running boundaries and rates', (version) => {
+    const samples = [
+      [0, 0.1, 100, 1_000, 1_000],
+      [30, 0, 0, 0, 0],
+      [60, 0, 0, 0, 0],
+      [90, 0.1, 100, 2_000, 2_000],
+      [120, 0.1, 100, 5_000, 5_000],
+    ].flatMap((row) => version === 2 ? [...row, 123] : row)
+    const h = new MetricsHistory()
+    h.load({ version, samples: { [APP.container]: samples } }, 120)
+    h.record(150, [{ ...sample(APP.container, 0.1, 100, 8_000, 8_000), generation: version === 2 ? 123 : 0, running: true }])
+    expect(named(h.query([APP], 0, 150, 30), 'egress_bytes_rate')[0]!.points).toEqual([[60, 0], [120, 100], [150, 100]])
+  })
+
   test('load skips malformed containers and past-retention samples instead of failing', () => {
     const h = new MetricsHistory()
     h.load({ version: 1, samples: {
@@ -244,7 +261,11 @@ describe('a redeployed container (regression: a new container differenced agains
     const h = new MetricsHistory()
     gen(APP.container, 1, 100, 100, 0, h)
     gen(APP.container, 2, 1_000, 1_000, 30, h) // a fresh container that already sent more than the old one had
-    expect(named(h.query([APP], 0, 60, 60), 'egress_bytes_rate')).toEqual([])
+    const restored = new MetricsHistory()
+    restored.load(JSON.parse(JSON.stringify(h.toJSON())), 60)
+    for (const history of [h, restored]) {
+      expect(named(history.query([APP], 0, 60, 60), 'egress_bytes_rate')).toEqual([])
+    }
   })
 
   test('rates carry on within one generation', () => {
@@ -258,7 +279,7 @@ describe('a redeployed container (regression: a new container differenced agains
     const h = new MetricsHistory()
     h.load({ version: 1, samples: { [APP.container]: [0, 0.1, 100, 0, 0, 30, 0.1, 100, 3_000, 3_000] } }, 60)
     expect(named(h.query([APP], 0, 60, 60), 'egress_bytes_rate')[0]!.points).toEqual([[0, 100]])
-    expect(h.toJSON().version).toBe(2)
+    expect(h.toJSON().version).toBe(3)
   })
 })
 
@@ -336,12 +357,12 @@ test('liveSeries answers one reading per target that docker reported', () => {
 })
 
 describe('MetricsSampler', () => {
-  const PS = 'io-demo-main-app-web\trunning\nio-demo-main-pg-db\texited\nsomething-else\trunning\n'
+  const PS = 'io-demo-main-app-web\trunning\t000000000001\nio-demo-main-pg-db\texited\t000000000002\nsomething-else\trunning\t000000000003\n'
   const STATS = '{"Name":"io-demo-main-app-web","CPUPerc":"2.00%","MemUsage":"10MiB / 1GiB","NetIO":"0B / 0B"}\n'
-  const fakeDocker = (calls: string[][], stats: () => Promise<Buffer> = async () => Buffer.from(STATS)) =>
+  const fakeDocker = (calls: string[][], stats: () => Promise<Buffer> = async () => Buffer.from(STATS), ps = () => PS) =>
     async (args: string[]) => {
       calls.push(args)
-      if (args[0] === 'ps') return Buffer.from(PS)
+      if (args[0] === 'ps') return Buffer.from(ps())
       if (args[0] === 'stats') return stats()
       return Buffer.from('')
     }
@@ -352,12 +373,74 @@ describe('MetricsSampler', () => {
     const history = new MetricsHistory()
     const sampler = new MetricsSampler(history, { file: file(), docker: fakeDocker(calls), now: () => 1_000, log: () => {} })
     await sampler.sampleOnce()
+    expect(calls.find((c) => c[0] === 'ps')).toEqual(['ps', '-a', '--format', '{{.Names}}\t{{.State}}\t{{.ID}}'])
     const statsCall = calls.find((c) => c[0] === 'stats')!
     expect(statsCall.filter((a) => a.startsWith('io-'))).toEqual(['io-demo-main-app-web'])
     const targets = [APP, { container: 'io-demo-main-pg-db', group: 'db' }]
     const cpu = named(history.query(targets, 0, 2_000, 60), 'cpu_cores')
     expect(cpu.map((s) => [s.labels!.group, s.points[0]![1]])).toEqual([['web', 0.02], ['db', 0]])
     expect(history.sampled(on('something-else'))).toBe(false)
+    expect(history.toJSON().samples[APP.container]![5]).toBe(1)
+    expect(history.toJSON().samples['io-demo-main-pg-db']![5]).toBe(2)
+  })
+
+  test('network rates use Docker state when memory readings are unavailable', async () => {
+    const history = new MetricsHistory()
+    let now = 990
+    let state = 'running'
+    let memory = '-- / --'
+    let rx = 5e9
+    const sampler = new MetricsSampler(history, {
+      file: file(), now: () => now,
+      docker: fakeDocker([], async () => Buffer.from(STATS.replace('10MiB / 1GiB', memory).replace('0B / 0B', `${rx}B / ${rx * 2}B`)),
+        () => PS.replace('\trunning\t', `\t${state}\t`)),
+    })
+    await sampler.sampleOnce()
+    now += 30
+    state = 'paused'
+    await sampler.sampleOnce()
+    now += 30
+    await sampler.sampleOnce()
+    now += 30
+    state = 'running'
+    rx += 3_000
+    await sampler.sampleOnce()
+    now += 30
+    memory = '10MiB / 1GiB'
+    rx += 300
+    await sampler.sampleOnce()
+
+    const restored = new MetricsHistory()
+    restored.load(JSON.parse(JSON.stringify(history.toJSON())), now)
+    for (const h of [history, restored]) {
+      const series = h.query([APP], 990, now, 30)
+      expect(named(series, 'ingress_bytes_rate')[0]!.points).toEqual([[1_050, 0], [1_110, 10]])
+      expect(named(series, 'egress_bytes_rate')[0]!.points).toEqual([[1_050, 0], [1_110, 20]])
+    }
+  })
+
+  test('redeploying under the same name starts a new network-counter generation', async () => {
+    const history = new MetricsHistory()
+    let now = 990
+    let id = '000000000001'
+    let rx = 100
+    const sampler = new MetricsSampler(history, {
+      file: file(), now: () => now,
+      docker: fakeDocker([], async () => Buffer.from(STATS.replace('0B / 0B', `${rx}B / ${rx * 2}B`)),
+        () => PS.replace('000000000001', id)),
+    })
+    await sampler.sampleOnce()
+    now += 30
+    id = '000000000004'
+    rx = 1_000
+    await sampler.sampleOnce()
+    now += 30
+    rx = 1_300
+    await sampler.sampleOnce()
+
+    const series = history.query([APP], 990, 1_050, 30)
+    expect(named(series, 'ingress_bytes_rate')[0]!.points).toEqual([[1_050, 10]])
+    expect(named(series, 'egress_bytes_rate')[0]!.points).toEqual([[1_050, 20]])
   })
 
   test('a failed docker stats still records the stopped containers', async () => {
@@ -374,7 +457,9 @@ describe('MetricsSampler', () => {
     const path = file()
     let now = 1_000
     const first = new MetricsSampler(new MetricsHistory(), { file: path, docker: fakeDocker([]), now: () => now, intervalSec: 3_600, log: () => {} })
+    const firstSample = vi.spyOn(first, 'sampleOnce')
     first.start()
+    await firstSample.mock.results[0]!.value
     now += 30
     await first.stop()
     expect(statSync(path).mode & 0o777).toBe(0o600)
@@ -382,6 +467,101 @@ describe('MetricsSampler', () => {
     const second = new MetricsSampler(restored, { file: path, docker: fakeDocker([]), now: () => now, log: () => {} })
     second.load()
     expect(restored.sampled(on(APP.container))).toBe(true)
+  })
+
+  test('a reused temporary file is made owner-only before publication', async () => {
+    const path = file()
+    const write = fs.writeFile
+    const writer = vi.spyOn(fs, 'writeFile').mockImplementationOnce(async (...args) => {
+      writeFileSync(args[0], 'stale', { mode: 0o644 })
+      await write(...args)
+    })
+    try {
+      const sampler = new MetricsSampler(new MetricsHistory(), { file: path, docker: fakeDocker([]), now: () => 1_000 })
+      await sampler.sampleOnce()
+      expect(statSync(path).mode & 0o777).toBe(0o600)
+    } finally { writer.mockRestore() }
+  })
+
+  test('a save after a failed rename uses a new temporary file', async () => {
+    const path = file()
+    let now = 1_000
+    const writer = vi.spyOn(fs, 'writeFile')
+    const rename = vi.spyOn(fs, 'rename').mockRejectedValueOnce(new Error('rename failed'))
+    try {
+      const sampler = new MetricsSampler(new MetricsHistory(), { file: path, docker: fakeDocker([]), now: () => now, log: () => {} })
+      await sampler.sampleOnce()
+      expect(existsSync(writer.mock.calls[0]![0] as string)).toBe(false)
+      now += 300
+      await sampler.sampleOnce()
+      expect(writer.mock.calls).toHaveLength(2)
+      expect(writer.mock.calls[1]![0]).not.toBe(writer.mock.calls[0]![0])
+      expect(JSON.parse(readFileSync(path, 'utf8')).version).toBe(3)
+    } finally { writer.mockRestore(); rename.mockRestore() }
+  })
+
+  test('stop saves completed history without waiting for a blocked Docker sample', async () => {
+    const path = file()
+    const history = new MetricsHistory()
+    history.record(990, [sample(APP.container, 0.1, 100)])
+    const saved = structuredClone(history.toJSON())
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
+    const sampling = new Promise<void>((resolve) => { entered = resolve })
+    const sampler = new MetricsSampler(history, {
+      file: path, now: () => 1_020, intervalSec: 3_600,
+      docker: fakeDocker([], async () => { entered(); await blocked; return Buffer.from(STATS) }),
+    })
+    const sampleOnce = vi.spyOn(sampler, 'sampleOnce')
+    sampler.start()
+    await sampling
+    const stopping = sampler.stop()
+    try {
+      await expect.poll(() => existsSync(path), { timeout: 1_000 }).toBe(true)
+      await stopping
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(saved)
+    } finally {
+      release()
+      await sampleOnce.mock.results[0]!.value
+      await stopping
+    }
+    expect(history.toJSON()).toEqual(saved)
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(saved)
+  })
+
+  test('stop serializes its final save after a periodic save already writing', async () => {
+    const path = file()
+    let now = 1_000
+    const history = new MetricsHistory()
+    const sampler = new MetricsSampler(history, { file: path, docker: fakeDocker([]), now: () => now })
+    const firstSample = vi.spyOn(sampler, 'sampleOnce')
+    sampler.start()
+    await firstSample.mock.results[0]!.value
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
+    const writing = new Promise<void>((resolve) => { entered = resolve })
+    const writeFile = fs.writeFile
+    const writes = vi.spyOn(fs, 'writeFile').mockImplementationOnce(async (...args) => {
+      entered()
+      await blocked
+      return writeFile(...args)
+    })
+    now += PERSIST_INTERVAL_SEC
+    const periodic = sampler.sampleOnce()
+    await writing
+    const stopping = sampler.stop()
+    try {
+      await Promise.resolve()
+      expect(writes).toHaveBeenCalledTimes(1)
+    } finally {
+      release()
+      await periodic
+      await stopping
+    }
+    expect(writes).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(history.toJSON())
   })
 
   test('saves on its own every PERSIST_INTERVAL_SEC, not on every tick', async () => {

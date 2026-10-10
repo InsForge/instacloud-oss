@@ -162,8 +162,8 @@ the Whisper model never touches it.
 
 ## Links
 
-- Upstream: <https://github.com/baryhuang/whisper-turbo.c>, pinned at commit
-  `54ad979a08e654929186b374d266a4ced291f1be` (upstream publishes no tags or releases)
+- Upstream: <https://github.com/baryhuang/whisper-turbo.c>, pinned at a commit because
+  upstream publishes no tags or releases
 - API reference: <https://github.com/baryhuang/whisper-turbo.c/blob/main/docs/http-api.md>
 - Image: `ghcr.io/insforge/insta-oss/templates/whisper-turbo`, built from `./Dockerfile`
 - Model checkpoint: `ggml-large-v3-turbo.bin` from

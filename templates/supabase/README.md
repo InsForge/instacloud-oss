@@ -14,7 +14,7 @@ sign-up and sign-in, an auto-generated REST API over your tables with row level 
 storage with on-the-fly image resizing, realtime messaging over websockets, and Studio, a dashboard
 with a table editor and a SQL editor.
 
-This template is upstream's self-hosted stack at tag `self-hosted/v0.8.2`, with every component
+This template is upstream's self-hosted stack, with every component
 image pinned to that tag's `docker/docker-compose.yml`. Instead of one machine running the compose
 file, each component gets its own service, and the database is a managed InstaCloud Postgres:
 
@@ -152,7 +152,7 @@ to and restart that service. Common ones:
 - Architectures: `linux/amd64` and `linux/arm64`. Every upstream image is a two-architecture index,
   and this template's image only copies their files together.
 - Self-hosting documentation: <https://supabase.com/docs/guides/self-hosting/docker>
-- Upstream: <https://github.com/supabase/supabase>, tag `self-hosted/v0.8.2`
+- Upstream: <https://github.com/supabase/supabase>, the `self-hosted` release line
 - Images: `supabase/studio:2026.09.07-sha-7996410`, `supabase/gotrue:v2.196.0`,
   `postgrest/postgrest:v14.17`, `supabase/realtime:v2.134.10`, `supabase/storage-api:v1.74.0`,
   `darthsim/imgproxy:v3.31.4`, `supabase/postgres-meta:v0.99.0`, `envoyproxy/envoy:v1.39.1`

@@ -98,10 +98,10 @@ cannot fire on a machine that has scaled to zero. Set `alwaysOn: true` if you cr
 
 ## Links
 
-- Architectures: `linux/amd64` and `linux/arm64`. Upstream's `v0.11.4` index carries both; nothing
+- Architectures: `linux/amd64` and `linux/arm64`. Upstream's index carries both; nothing
   is rebuilt here.
 - Upstream: <https://github.com/open-webui/open-webui>
 - Documentation: <https://docs.openwebui.com>
-- Image: `ghcr.io/open-webui/open-webui`, pinned to `v0.11.4`
+- Image: `ghcr.io/open-webui/open-webui`
 - License: the Open WebUI License (upstream `open-webui/open-webui`), BSD-3-Clause plus a branding
   clause that applies above 50 end users. <https://docs.openwebui.com/license>

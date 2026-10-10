@@ -100,7 +100,7 @@ Umami answers with a token and the view shows up on the dashboard.
 
 ## Links
 
-- Upstream: <https://github.com/umami-software/umami>, pinned at `3.4.0`
-- Image: `ghcr.io/umami-software/umami:3.4.0`, with this directory's `Dockerfile` on top
+- Upstream: <https://github.com/umami-software/umami>
+- Image: `ghcr.io/umami-software/umami`, with this directory's `Dockerfile` on top
 - Documentation: <https://umami.is/docs>
 - License: MIT

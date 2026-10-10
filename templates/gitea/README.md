@@ -96,9 +96,9 @@ the SSH clone URL.
 
 ## Links
 
-- Architectures: `linux/amd64` and `linux/arm64`. Upstream's `1.27.3` index carries both (and
+- Architectures: `linux/amd64` and `linux/arm64`. Upstream's index carries both (and
   riscv64), and this image only copies a script in.
 - Upstream: <https://github.com/go-gitea/gitea>
-- Image: `docker.io/gitea/gitea`, pinned to `1.27.3` by index digest via `./Dockerfile`
+- Image: `docker.io/gitea/gitea`, pinned by index digest via `./Dockerfile`
 - Documentation: <https://docs.gitea.com>
 - License: MIT (upstream `go-gitea/gitea`).

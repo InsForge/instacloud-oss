@@ -31,6 +31,13 @@ upgrading does not remove those lines from the log history: if you ran one, set 
   variables.
 - Deploys are health-gated: a container that does not answer is rolled back to the last healthy
   image instead of leaving you with a dead URL.
+- A terminal that outlives the tab. Every tab attaches to the same tmux session, `main`, so closing
+  the tab or dropping the network does not stop an agent mid-task, and opening the URL again picks
+  up where it was. The machine itself still scales to zero once nothing is connected, which ends
+  the session. To keep agents working with nobody connected, run
+  `insta compute always-on on <service>`, which bills for the uptime.
+- Common tools preinstalled: git, curl, ripgrep, jq, ssh, rsync, unzip, less, and python3 with
+  venv. `gh` comes from the platform toolbox at `/.insta/tools/bin` where the machine has one.
 
 ## What you need before deploying
 

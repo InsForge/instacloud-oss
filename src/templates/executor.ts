@@ -236,6 +236,7 @@ export class TemplateExecutor {
   private assertExecutable(manifest: TemplateManifest): void {
     for (const [name, svc] of Object.entries(manifest.services)) {
       if (svc.build) throw new TemplateError(400, `services.${name} uses build: - template deploys support image services only (build-based templates are deployed via their published image)`)
+      if (svc.source) throw new TemplateError(400, `services.${name} builds from GitHub (source:): self-hosted template deploys run images only, deploy this template on InstaCloud cloud`)
       if (svc.type === 'worker') throw new TemplateError(400, `services.${name} is a worker - template deploys support web services only in v1 (a portless worker path is a follow-up)`)
       if (svc.command !== undefined) throw new TemplateError(400, `services.${name}.command is cloud-only today: the self-hosted runtime runs the image's own command`)
       if (svc.mountPath !== undefined) throw new TemplateError(400, `services.${name}.mountPath is cloud-only today: the self-hosted runtime mounts volumes at /data`)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEPLOY_BUTTON_ASSET, findDeployButtons, ghcrGateMessage, ghcrRetryVerdict, parseGhcrRef, rewriteReadme, stripDeployBadge } from './publish-lib.mjs'
+import { DEPLOY_BUTTON_ASSET, findDeployButtons, ghcrGateMessage, ghcrRetryVerdict, parseGhcrRef, repoPathOf, rewriteReadme, stripDeployBadge } from './publish-lib.mjs'
 
 const SHA = 'a'.repeat(40)
 const REPO = 'InsForge/instacloud-oss'
@@ -281,5 +281,33 @@ describe('findDeployButtons', () => {
       const text = wrap(line)
       expect(findDeployButtons(text).length > 0).toBe(stripDeployBadge(text) !== text)
     }
+  })
+})
+
+describe('repoPathOf', () => {
+  const ROOT = '/repo'
+
+  it('names a directory the way the repository does, however the caller wrote it', () => {
+    for (const written of ['templates/hermes', './templates/hermes', '/repo/templates/hermes']) {
+      expect(repoPathOf(written, ROOT)).toBe('templates/hermes')
+    }
+  })
+
+  it('refuses a directory outside the repository', () => {
+    // The real path from the run that minted
+    // `.../insta-oss@8b25847//Users/carmen/.claude/jobs/.../hermes/logo.png`,
+    // a url the registry still serves and jsDelivr will never resolve.
+    expect(() => repoPathOf('/Users/carmen/.claude/jobs/38df30c0/tmp/hermes-staging-test/hermes', ROOT))
+      .toThrow(/outside the repository/)
+    expect(() => repoPathOf('/repo/../elsewhere/hermes', ROOT)).toThrow(/outside the repository/)
+  })
+
+  it('refuses the repository root itself, which names no template', () => {
+    expect(() => repoPathOf('/repo', ROOT)).toThrow(/outside the repository/)
+  })
+
+  it('builds the url the CDN can actually serve', () => {
+    expect(cdn(`${repoPathOf('/repo/templates/hermes', ROOT)}/logo.png`))
+      .toBe(`https://cdn.jsdelivr.net/gh/${REPO}@${SHA}/templates/hermes/logo.png`)
   })
 })

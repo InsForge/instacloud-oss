@@ -42,6 +42,7 @@ RUN npm install -g @openai/codex@0.148.0
 ENV HOME=/data/home
 # ~/.local/bin is on the volume. /.insta/tools/bin is the platform toolbox (gh), when mounted.
 ENV PATH=$HOME/.local/bin:$PATH:/.insta/tools/bin
+COPY tmux.conf /etc/tmux.conf
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 EXPOSE 7681

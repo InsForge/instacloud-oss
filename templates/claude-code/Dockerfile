@@ -43,8 +43,6 @@ ENV HOME=/data/home
 # ~/.local/bin is on the volume. /.insta/tools/bin is the platform toolbox (gh), when mounted.
 ENV PATH=$HOME/.local/bin:$PATH:/.insta/tools/bin
 COPY tmux.conf /etc/tmux.conf
-# Claude Code's managed CLAUDE.md path on Linux, loaded in every session.
-COPY machine-notes.md /etc/claude-code/CLAUDE.md
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 EXPOSE 7681

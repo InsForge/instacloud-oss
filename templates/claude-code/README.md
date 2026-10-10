@@ -41,10 +41,6 @@ upgrade.
   up where it was. The machine itself still scales to zero once nothing is connected, which ends
   the session. To keep agents working with nobody connected, run
   `insta compute always-on on <service>`, which bills for the uptime.
-- Instructions for the agent. The image ships a managed `CLAUDE.md` at `/etc/claude-code/CLAUDE.md`
-  that tells Claude Code what is particular to this machine: what survives a restart, where to
-  install tools, and how a server it starts can be reached. It loads alongside your own
-  `~/.claude/CLAUDE.md`.
 - Common tools preinstalled: git, curl, ripgrep, jq, ssh, rsync, unzip, less, and python3 with
   venv. `gh` comes from the platform toolbox at `/.insta/tools/bin` where the machine has one.
 

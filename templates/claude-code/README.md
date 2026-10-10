@@ -98,6 +98,11 @@ has all of that. Both fields can be changed later from the service's variables.
 6. To open a server the agent started here, forward its port from your own computer:
    `insta compute ssh --setup <service>` once, then `ssh -L <port>:localhost:<port> <service>.insta`.
    Over SSH, `tmux attach -t main` joins the same session the browser shows.
+7. To upload a file, such as a screenshot for Claude, drag it onto the terminal while a shell
+   prompt is showing, or run `trz` to pick it. It lands in the shell's current directory; then give
+   Claude the path. Do this in a shell, not in Claude: a drop there types `trz` into Claude's
+   prompt. `Ctrl-b c` opens a second shell window, `Ctrl-b n` switches back. `trz` opens the file
+   picker only in Chrome and Edge; in other browsers, drag instead.
 
 ## Links
 

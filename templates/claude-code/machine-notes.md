@@ -16,4 +16,7 @@ You are running on an InstaCloud compute machine deployed from the Claude Code t
   `ssh -L <port>:localhost:<port> <service>.insta`, after a one-time `insta compute ssh --setup <service>`.
 - The browser terminal is a tmux session named `main`, so closing the tab does not stop what runs
   in it. The machine still stops once nobody is connected unless the service is always-on.
+- The user can upload a file from their computer by dropping it on the terminal while a shell
+  prompt is showing, or by running `trz` there. It lands in that shell's current directory. A
+  clipboard paste of an image cannot reach this machine, so suggest this instead.
 - `/usage` shows plan usage and what is consuming it.

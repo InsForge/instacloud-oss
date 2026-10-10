@@ -41,10 +41,6 @@ upgrade.
   up where it was. The machine itself still scales to zero once nothing is connected, which ends
   the session. To keep agents working with nobody connected, run
   `insta compute always-on on <service>`, which bills for the uptime.
-- Instructions for the agent. The image ships a managed `CLAUDE.md` at `/etc/claude-code/CLAUDE.md`
-  that tells Claude Code what is particular to this machine: what survives a restart, where to
-  install tools, and how a server it starts can be reached. It loads alongside your own
-  `~/.claude/CLAUDE.md`.
 - Common tools preinstalled: git, curl, ripgrep, jq, ssh, rsync, unzip, less, and python3 with
   venv. `gh` comes from the platform toolbox at `/.insta/tools/bin` where the machine has one.
 
@@ -95,9 +91,11 @@ has all of that. Both fields can be changed later from the service's variables.
    Files written outside the volume are lost when the container is replaced, and that includes
    packages from `apt-get`. Install extra tools under `~/.local`, for example
    `npm install -g --prefix ~/.local <package>`.
-6. To open a server the agent started here, forward its port from your own computer:
-   `insta compute ssh --setup <service>` once, then `ssh -L <port>:localhost:<port> <service>.insta`.
-   Over SSH, `tmux attach -t main` joins the same session the browser shows.
+6. SSH gives you the same terminal outside the browser: `insta compute ssh --setup <service>` once,
+   then `ssh <service>.insta`, where `tmux attach -t main` joins the session the browser shows. It
+   does not give you a port. The platform refuses SSH port forwarding, so `-L`, `-R` and `-D` all
+   fail, and the terminal's is the only routed port. A server that has to be reachable from your
+   computer belongs in its own compute service.
 
 ## Links
 

@@ -384,8 +384,12 @@ test('deploying n8n reaches succeeded: services, secrets, volume, attribution an
   expect(view.services[0].url).toBe('http://n8n-demo-main.localhost:8080')
   expect(view.error).toBeUndefined()
 
-  // The pinned image was deployed on the branch the request named.
-  expect(calls.some((c) => c.startsWith('deploy:demo-main:n8n:docker.io/n8nio/n8n:2.36.5'))).toBe(true)
+  // The pinned image was deployed on the branch the request named. Read off the manifest, which is
+  // where the pin lives: spelled out here, every bump of n8n turned this suite red on its own
+  // pull request, and the fix looked like editing a test to match a change it was meant to check.
+  const image = manifestOf('n8n').services.n8n.image
+  expect(image).toMatch(/^docker\.io\/n8nio\/n8n:\S+$/)
+  expect(calls.some((c) => c.startsWith(`deploy:demo-main:n8n:${image}`))).toBe(true)
   // Fixed values with a service ref resolved to the router URL; the generator is 32 chars.
   const secrets = (await get(`/projects/${id}/secrets?branch=main`)).json().secrets
   expect(secrets.N8N_WEBHOOK_URL).toBe('http://n8n-demo-main.localhost:8080')

@@ -90,5 +90,5 @@ fair-code upstreams. Read the upstream license before using it commercially.
 - Architectures: `linux/amd64` and `linux/arm64`, as published by the official image.
 - Documentation: <https://docs.n8n.io>
 - Upstream: <https://github.com/n8n-io/n8n>
-- Image: `docker.io/n8nio/n8n`, pinned to `2.36.5`
+- Image: `docker.io/n8nio/n8n`
 - License: Sustainable Use License (see <https://github.com/n8n-io/n8n/blob/master/LICENSE.md>).

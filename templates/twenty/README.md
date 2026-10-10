@@ -10,7 +10,7 @@ Open-source CRM for contacts, companies and deals.
 tasks, on customisable record views with a kanban and a table mode, plus workflows, a REST API and
 a GraphQL API. Upstream describes it as the open-source alternative to Salesforce.
 
-This template deploys upstream's own release image, `twentycrm/twenty:v2.44.0`, against a managed
+This template deploys upstream's own release image, `twentycrm/twenty`, against a managed
 PostgreSQL and a managed Redis. Nothing of Twenty is rebuilt. Setup is upstream's own
 `database:init:prod`, `upgrade`, `cache:flush` and `cron:register:all`, run in upstream's order on
 every boot.
@@ -144,5 +144,5 @@ software.
 - Architectures: `linux/amd64` and `linux/arm64`, as published by the upstream image.
 - Documentation: <https://twenty.com/developers/section/self-hosting>
 - Upstream: <https://github.com/twentyhq/twenty>
-- Base image: `docker.io/twentycrm/twenty`, pinned to `v2.44.0`
+- Base image: `docker.io/twentycrm/twenty`
 - License: AGPL-3.0-only (see <https://github.com/twentyhq/twenty/blob/main/LICENSE>).

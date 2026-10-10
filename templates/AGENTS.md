@@ -26,6 +26,13 @@ IS the template code. Copying the closest existing template is the fastest way t
   it does and where the value comes from), After deploy (how to actually start using it), and
   Links (upstream, the image or package, the license). A draft template opens with a note saying
   why it is draft.
+- **No version numbers in the README.** Name the image or the package, not its tag: the pin lives
+  in `upstream.pinned` and in the manifest's image reference, and a copy here has nothing keeping
+  it true. `check-upstreams --apply` moves those two and reads no README, so every bump used to
+  leave the page naming the version before it, which is what a reader deciding whether to deploy
+  reads first. Lint warns on one. Where a version is evidence rather than a label, such as which
+  upstream index was checked for an architecture, it belongs in the table in
+  [README.md](README.md), which records what was checked and when.
 - The **deploy button**, in its own paragraph under the title and tagline, for every publishable
   template: `[![Deploy on InstaCloud](<cdn>/assets/deploy-button.svg)](https://instacloud.com/templates/<code>)`.
   CI rejects a publishable template that omits it, checks that the href names this template's own

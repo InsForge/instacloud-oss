@@ -5,6 +5,8 @@ FROM node:24-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba32756
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bash git ca-certificates curl ripgrep procps \
         tmux openssh-client rsync unzip less jq python3 python3-venv \
+        build-essential python3-pip nano vim-tiny wget gnupg zip tree fzf bc sudo \
+        htop lsof socat iproute2 bind9-dnsutils net-tools psmisc \
     && rm -rf /var/lib/apt/lists/*
 
 # ttyd: browser terminal over HTTPS (same approach as Railway's pi template)
@@ -35,6 +37,29 @@ ARG INSTA_GATE_SHA256=75a11d24a0b60c277593de699505505e4d641d75077b1a32048318ba38
 RUN curl -fsSL "https://github.com/InsForge/instacloud-oss/releases/download/gate-v${INSTA_GATE_VERSION}/insta-gate.mjs" \
         -o /usr/local/lib/insta-gate.mjs \
     && echo "${INSTA_GATE_SHA256}  /usr/local/lib/insta-gate.mjs" | sha256sum -c -
+
+# Debian's own gh is 2.23.0, years behind, so this is upstream's repository and gh tracks it.
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# Claude Code's channel plugins are Bun scripts, so without bun they cannot be installed at all.
+RUN arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) bun_arch=x64 ;; \
+        arm64) bun_arch=aarch64 ;; \
+        *)     echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/oven-sh/bun/releases/latest/download/bun-linux-${bun_arch}.zip" \
+        -o /tmp/bun.zip \
+    && unzip -q /tmp/bun.zip -d /tmp \
+    && install -m 0755 "/tmp/bun-linux-${bun_arch}/bun" /usr/local/bin/bun \
+    && ln -s bun /usr/local/bin/bunx \
+    && rm -rf /tmp/bun.zip "/tmp/bun-linux-${bun_arch}"
 
 # upstream pin: keep in sync with insta.template.yaml (upstream.pinned)
 RUN npm install -g @earendil-works/pi-coding-agent@0.84.2

@@ -1,0 +1,87 @@
+# An overlay, not a fork. nanobot publishes no container image anywhere: the repository ships a
+# Dockerfile (a recipe for building one from a checkout, with a Node stage that compiles the
+# frontend), and neither Docker Hub nor ghcr carries a published artifact. Its one published
+# artifact is the PyPI wheel, and that wheel already contains the built WebUI under
+# nanobot/web/dist, so this image installs the wheel and skips the frontend build entirely.
+#
+# What it adds on top is the three things a public deploy needs and a library has no reason to
+# carry: an instance root on the platform's volume, a seeded config that enables the WebUI channel
+# and puts the password in front of it, and the privilege drop upstream's own entrypoint performs.
+#
+# Pinned to the INDEX digest of python:3.12-slim-bookworm (the top-level Digest:, not one of the
+# per-architecture children), so the FROM resolves on both declared architectures.
+FROM python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258
+
+# The runtime binaries nanobot reaches for, matching upstream's own image list:
+#   git             the agent's git tooling, and how skills are installed
+#   openssh-client  git over ssh
+#   libmagic1       file-type detection on uploads and attachments
+#   ripgrep         the `rg` tool registers only when the binary is present (agent/tools/rg.py)
+#   ca-certificates every outbound provider call
+# Upstream also installs bubblewrap. It is left out here: tools.exec.sandbox is opt-in and off by
+# default, and upstream's own compose file shows bwrap needs cap_add SYS_ADMIN plus an unconfined
+# seccomp profile, neither of which a compute machine grants. Shipping it would be a sandbox that
+# cannot start rather than one a user chose not to use.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates git openssh-client libmagic1 ripgrep procps \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONFAULTHANDLER=1 \
+    VIRTUAL_ENV=/opt/nanobot-venv \
+    PATH=/opt/nanobot-venv/bin:$PATH \
+    HOME=/home/nanobot
+
+RUN python -m venv /opt/nanobot-venv
+
+# upstream pin: keep in sync with insta.template.yaml (upstream.pinned). Every dependency resolves
+# to a prebuilt wheel on both architectures, which is why nothing here compiles and the arm64 leg
+# cross-builds. The platform-specific wheel (manylinux_2_17_x86_64 / _aarch64) is nanobot's own:
+# it bundles the native TUI binary, which this image never runs but which is what makes the wheel
+# architecture-tagged.
+ARG NANOBOT_VERSION=0.3.5
+RUN pip install --no-cache-dir "nanobot-ai==${NANOBOT_VERSION}"
+
+# The WebUI is served from inside the wheel; without it the gateway answers 404 at / and the health
+# gate fails on a deploy instead of here. Asserted rather than assumed because it is the one thing
+# that makes installing from PyPI equivalent to upstream's two-stage build.
+RUN python -c "import pathlib, nanobot.web; \
+index = pathlib.Path(nanobot.web.__file__).parent / 'dist' / 'index.html'; \
+assert index.is_file(), f'the wheel carries no built WebUI at {index}'; \
+print('WebUI bundle OK:', index)" \
+    && nanobot --version
+
+# Upstream starts as root, hands the data directory to a non-root user and re-execs as that user,
+# failing closed rather than running an agent with a shell tool as root. entrypoint.sh does the
+# same, so the image needs the account. uid 1000 matches upstream's.
+RUN useradd -m -u 1000 -s /bin/bash nanobot \
+    && chown -R nanobot:nanobot /opt/nanobot-venv /home/nanobot
+
+COPY config.seed.json /opt/nanobot/config.seed.json
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Start the real gateway with the real seeded config and wait for the exact path the manifest
+# declares as its health check. This is the check that would otherwise only run on someone's
+# deploy, where the CLI reports every runtime failure as "internal template deployment failure":
+# a config key the schema rejects, a WebUI bundle that does not resolve, a channel that refuses to
+# bind. /tmp rather than /data so the build never writes where the volume will mount.
+RUN set -eu; \
+    mkdir -p /tmp/smoke; \
+    sed 's|/data/workspace|/tmp/smoke/workspace|' /opt/nanobot/config.seed.json > /tmp/smoke/config.json; \
+    ADMIN_PASSWORD=smoke-test-only nanobot --home /tmp/smoke gateway & \
+    pid=$!; \
+    ok=""; i=0; \
+    while [ "$i" -lt 90 ]; do \
+      if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/', timeout=2)" 2>/dev/null; then ok=1; break; fi; \
+      i=$((i + 1)); sleep 1; \
+    done; \
+    kill "$pid" 2>/dev/null || true; \
+    rm -rf /tmp/smoke; \
+    [ -n "$ok" ] || { echo "the gateway did not answer / on 8765 with the seeded config" >&2; exit 1; }; \
+    echo "gateway health path OK"
+
+EXPOSE 8765
+
+ENTRYPOINT ["/entrypoint.sh"]

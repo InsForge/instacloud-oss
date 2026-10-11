@@ -27,9 +27,9 @@ and still serves the WebUI, which is where you configure one.
 ## What you get by hosting it
 
 - An HTTPS URL for the nanobot WebUI, behind a password you set at deploy time.
-- A persistent volume at `/data` holding the whole instance: `config.json`, session history,
-  long-term memory, the WebUI's chat transcripts, saved automations, generated media, logs, and the
-  agent's workspace.
+- A persistent volume at `/data` holding the whole instance under `/data/.nanobot`: `config.json`,
+  session history, long-term memory, the WebUI's chat transcripts, saved automations, generated
+  media, logs, and the agent's workspace.
 - A single always-on process, so automations fire on their schedule and chat-app channels
   (Telegram, Discord, Slack, WeChat, email, Mattermost, Linear and the rest) stay connected without
   anyone opening the browser.
@@ -52,12 +52,14 @@ That is the whole deploy form. Providers, models, chat channels, MCP servers, sk
 automations all live in nanobot's own **Settings** pages and are written to `config.json` on the
 volume, so a deploy-form copy would only be a second place for the same value to drift from.
 
-Set by the template, not by you: the image starts `nanobot gateway` with `--home /data`, and seeds
-`/data/config.json` on first boot with the WebSocket channel enabled on `0.0.0.0:8765`, the
-gateway's own control port on loopback, `tools.restrictToWorkspace` on, and remote package installs
-from the WebUI off. The seed keeps `${ADMIN_PASSWORD}` as a literal placeholder rather than the
-value, so rotating the variable and restarting rotates the password. The file is written once and
-never overwritten, so everything you configure in the UI survives a restart and a redeploy.
+Set by the template, not by you: the image sets `HOME=/data`, which is what makes `~/.nanobot` (the
+instance root nanobot resolves everything from) land on the volume, and seeds
+`/data/.nanobot/config.json` on first boot with the WebSocket channel enabled on `0.0.0.0:8765`,
+the gateway's own control port on loopback, `tools.restrictToWorkspace` on, and remote package
+installs from the WebUI off. The seed keeps `${ADMIN_PASSWORD}` as a literal placeholder rather
+than the value, so rotating the variable and restarting rotates the password. The file is written
+once and never overwritten, so everything you configure in the UI survives a restart and a
+redeploy.
 
 ## After deploy
 
@@ -69,7 +71,8 @@ never overwritten, so everything you configure in the UI survives a restart and 
 3. Start a new topic and send `Hello!`. A normal reply means the provider, the model, the workspace
    and the gateway are working together.
 4. Choose a workspace and an access mode from the composer before giving the agent project work.
-   The template sets `tools.restrictToWorkspace`, which keeps file tools inside `/data/workspace`.
+   The template sets `tools.restrictToWorkspace`, which keeps file tools inside
+   `/data/.nanobot/workspace`.
 5. Connect a chat app or create an automation from **Settings** when you want the agent reachable
    or running without the browser open.
 

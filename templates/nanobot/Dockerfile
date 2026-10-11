@@ -30,8 +30,7 @@ ENV PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
     VIRTUAL_ENV=/opt/nanobot-venv \
-    PATH=/opt/nanobot-venv/bin:$PATH \
-    HOME=/home/nanobot
+    PATH=/opt/nanobot-venv/bin:$PATH
 
 RUN python -m venv /opt/nanobot-venv
 
@@ -62,15 +61,15 @@ COPY config.seed.json /opt/nanobot/config.seed.json
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Start the real gateway with the real seeded config and wait for the exact path the manifest
+# Start the real entrypoint, with the real seeded config, and wait for the exact path the manifest
 # declares as its health check. This is the check that would otherwise only run on someone's
 # deploy, where the CLI reports every runtime failure as "internal template deployment failure":
-# a config key the schema rejects, a WebUI bundle that does not resolve, a channel that refuses to
-# bind. /tmp rather than /data so the build never writes where the volume will mount.
+# a config key the schema rejects, a WebUI bundle that does not resolve, a CLI flag a release does
+# not have, a channel that refuses to bind, a privilege drop that cannot write its own data dir.
+# HOME is overridden to /tmp so the build never writes where the volume will mount, which is also
+# what proves the entrypoint derives everything from HOME rather than from a hardcoded path.
 RUN set -eu; \
-    mkdir -p /tmp/smoke; \
-    sed 's|/data/workspace|/tmp/smoke/workspace|' /opt/nanobot/config.seed.json > /tmp/smoke/config.json; \
-    ADMIN_PASSWORD=smoke-test-only nanobot --home /tmp/smoke gateway & \
+    HOME=/tmp/smoke ADMIN_PASSWORD=smoke-test-only /entrypoint.sh & \
     pid=$!; \
     ok=""; i=0; \
     while [ "$i" -lt 90 ]; do \
@@ -78,9 +77,16 @@ RUN set -eu; \
       i=$((i + 1)); sleep 1; \
     done; \
     kill "$pid" 2>/dev/null || true; \
+    pkill -f "nanobot gateway" 2>/dev/null || true; \
+    sleep 1; \
     rm -rf /tmp/smoke; \
-    [ -n "$ok" ] || { echo "the gateway did not answer / on 8765 with the seeded config" >&2; exit 1; }; \
-    echo "gateway health path OK"
+    [ -n "$ok" ] || { echo "the gateway did not answer / on 8765 through entrypoint.sh" >&2; exit 1; }; \
+    echo "gateway health path OK after ${i}s"
+
+# Where the platform mounts the volume, and the whole of how nanobot's state gets onto it:
+# ~/.nanobot is the instance root it resolves config, sessions, memory, transcripts, cron, media,
+# logs and the default workspace from. Set after the install steps so no build cache lands here.
+ENV HOME=/data
 
 EXPOSE 8765
 

@@ -34,9 +34,11 @@ services:
     # an idle machine would miss them with nothing to wake it. Same call openclaw makes, for the
     # same reason. It bills around the clock; the README says so.
     alwaysOn: true
-    # Everything durable lives on it: config.json, sessions, long-term memory, the WebUI's chat
-    # transcripts, automations, media and the agent's workspace. entrypoint.sh passes `--home /data`,
-    # which is what puts nanobot's instance root here instead of $HOME/.nanobot.
+    # Everything durable lives on it, under /data/.nanobot: config.json, sessions, long-term memory,
+    # the WebUI's chat transcripts, automations, media and the agent's workspace. The image sets
+    # HOME=/data, which is what moves nanobot's instance root (~/.nanobot) onto the volume; 0.3.5
+    # has no flag that would do it, and the path helpers that fall back to Path.home() make HOME
+    # the only setting that catches all of them.
     volume: true
     env:
       required:

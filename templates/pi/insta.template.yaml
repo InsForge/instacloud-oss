@@ -44,7 +44,7 @@ services:
         OPENROUTER_API_KEY:
           description: "OpenRouter API key, for whichever model you route to"
         GH_TOKEN:
-          description: "GitHub token for gh, for example the output of `gh auth token` on your own computer. Setting it also points git at gh and fills in a committer identity, so a clone, commit and push work with nothing else to run. Leave blank and run `gh auth login` in the terminal instead"
+          description: "GitHub token from https://github.com/settings/tokens with `repo` ticked, so git and gh work without signing in on the box. Leave blank and run `gh auth login` in the terminal instead"
 
 meta:
   name: Pi Coding Agent

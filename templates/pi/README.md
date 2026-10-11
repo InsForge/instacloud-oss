@@ -63,7 +63,7 @@ ran one, set a new `ADMIN_PASSWORD` before you upgrade.
 | `ANTHROPIC_API_KEY` | no | Anthropic key, for Claude models. |
 | `OPENAI_API_KEY` | no | OpenAI key, for GPT models. |
 | `OPENROUTER_API_KEY` | no | OpenRouter key, for whichever model you route to. |
-| `GH_TOKEN` | no | Authenticates `gh`, for example with the output of `gh auth token` on your own computer. The box also points git at `gh` and fills in your committer name and GitHub noreply address from it, so a clone, commit and push work with nothing else to run. Both land in `~/.gitconfig` on the volume, and a name or address you set yourself is left alone. Leave blank to run `gh auth login` in the terminal instead. |
+| `GH_TOKEN` | no | A GitHub token, so git and `gh` work on the box without signing in there. Make one at [github.com/settings/tokens](https://github.com/settings/tokens) and tick `repo`, or run `gh auth token` if you already use `gh`. The box configures git with it and takes your committer name and GitHub noreply address from the same token, both saved in `~/.gitconfig` on the volume. A name you set yourself is left alone. Leave blank to run `gh auth login` in the terminal instead. |
 
 Both credentials are required and neither has a default, so the deploy form starts empty and refuses
 to submit until you supply them.

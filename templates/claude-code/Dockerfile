@@ -48,8 +48,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude Code's channel plugins are Bun scripts, so without bun they cannot be installed at all.
-# bun's own npm package fetches the binary for this architecture; npm 11 blocks that postinstall
-# by default, and without it bun installs as a shell with no binary behind it.
+# The binary is an optional dependency npm picks by architecture and verifies like any package.
+# --allow-scripts is for npm 12, which denies install scripts by default; npm 11 only warns.
 RUN npm install -g --allow-scripts=bun bun && npm cache clean --force
 
 # upstream pin: keep in sync with insta.template.yaml (upstream.pinned)

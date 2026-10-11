@@ -21,18 +21,14 @@ const pathLine = (dockerfile) => (dockerfile.match(/^ENV PATH=.*$/m) ?? [''])[0]
 // A config file's lines with comments and blank lines dropped.
 const settings = (text) => text.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
 
-// Each of these earns its place: without it something an agent routinely does fails outright.
-const REQUIRED = [
-  'build-essential', // npm install on any package with a native addon
-  'python3-pip', // python3-venv alone cannot install anything
-  'bind9-dnsutils', // dig
-  'iproute2', // ss
-  'lsof',
-  'nano',
-  'vim-tiny', // vi
-  'git',
-  'tmux',
-  'jq',
+// The whole baseline, not a sample. Asserting the parity of three lists only catches a package
+// dropped from one box; spelling the list out here is what catches one dropped from all three,
+// which is the way a tool the READMEs promise would actually go missing.
+const BASELINE = [
+  'bash', 'bc', 'bind9-dnsutils', 'build-essential', 'ca-certificates', 'curl', 'fzf', 'git',
+  'gnupg', 'htop', 'iproute2', 'jq', 'less', 'lsof', 'nano', 'net-tools', 'openssh-client',
+  'procps', 'psmisc', 'python3', 'python3-pip', 'python3-venv', 'ripgrep', 'rsync', 'socat',
+  'sudo', 'tmux', 'tree', 'unzip', 'vim-tiny', 'wget', 'zip',
 ]
 
 describe('the agent boxes carry the same tools', () => {
@@ -46,8 +42,8 @@ describe('the agent boxes carry the same tools', () => {
     for (const packages of rest) expect(packages).toEqual(first)
   })
 
-  it.each(boxes)('$code installs the tools an agent cannot work without', ({ dockerfile }) => {
-    expect(aptPackages(dockerfile)).toEqual(expect.arrayContaining(REQUIRED))
+  it.each(boxes)('$code installs the whole baseline and nothing is quietly dropped', ({ dockerfile }) => {
+    expect(aptPackages(dockerfile)).toEqual(BASELINE)
   })
 
   // Debian's own gh is years behind, so it comes from upstream's repository and is not pinned.

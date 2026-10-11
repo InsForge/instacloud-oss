@@ -208,7 +208,7 @@ for (const dir of dirs) {
       // empty shell. That tolerance is a storage round-trip concern: a NORMALIZED stored manifest
       // always carries an env record, and it must still parse on every by-code deploy. This linter
       // only ever sees hand-authored files, where an empty env shell is noise no author writes.
-      for (const field of ["image", "build", "port", "healthcheck", "volume", "volumeGib", "alwaysOn", "command", "mountPath", "env"]) {
+      for (const field of ["image", "build", "port", "healthcheck", "healthcheckTimeout", "volume", "volumeGib", "alwaysOn", "command", "mountPath", "env"]) {
         if (svc[field] !== undefined) err(dir, `${name}: a ${svc.type} service is platform-managed and carries no ${field}, declare it bare`);
       }
       continue;

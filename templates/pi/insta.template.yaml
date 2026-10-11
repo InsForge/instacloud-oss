@@ -1,5 +1,5 @@
 code: pi
-version: 0.11.0
+version: 0.12.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -14,7 +14,7 @@ services:
   # the same branch, the second overwriting the first (QA.md finding 1).
   pi:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/pi:0.11.0   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/pi:0.12.0   # built from ./Dockerfile by templates-build-images.yml
     port: 7681
     healthcheck: /
     # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works (hermes and n8n
@@ -43,6 +43,8 @@ services:
           description: "OpenAI API key, for GPT models"
         OPENROUTER_API_KEY:
           description: "OpenRouter API key, for whichever model you route to"
+        GH_TOKEN:
+          description: "GitHub token from https://github.com/settings/tokens with `repo` ticked, so git and gh work without signing in on the box. Leave blank and run `gh auth login` in the terminal instead"
 
 meta:
   name: Pi Coding Agent

@@ -60,6 +60,7 @@ upgrading does not remove those lines from the log history: if you ran one, set 
 | `ADMIN_USERNAME` | yes | Username for the InstaCloud sign-in page in front of the terminal. You choose it. |
 | `ADMIN_PASSWORD` | yes | Password for the InstaCloud sign-in page in front of the terminal. You choose it. |
 | `OPENAI_API_KEY` | no | Authenticates the CLI without an interactive login. Leave blank to run `codex login` in the terminal instead. |
+| `GH_TOKEN` | no | A GitHub token, so git and `gh` work on the box without signing in there. Make one at [github.com/settings/tokens](https://github.com/settings/tokens) and tick `repo`, or run `gh auth token` if you already use `gh`. The box configures git with it and takes your committer name and GitHub noreply address from the same token, both saved in `~/.gitconfig` on the volume. A name you set yourself is left alone. Leave blank to run `gh auth login` in the terminal instead. |
 
 Both credentials are required and neither has a default, so the deploy form starts empty and refuses
 to submit until you supply them.

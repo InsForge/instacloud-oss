@@ -1,5 +1,5 @@
 code: claude-code
-version: 0.12.0
+version: 0.13.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -13,7 +13,7 @@ services:
   # the same branch, the second overwriting the first (QA.md finding 1).
   claude-code:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/claude-code:0.12.0   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/claude-code:0.13.0   # built from ./Dockerfile by templates-build-images.yml
     port: 7681
     healthcheck: /
     # No `spec:`, so the platform's birth size applies. Worth keeping from when this asked for
@@ -42,7 +42,7 @@ services:
         CLAUDE_CODE_OAUTH_TOKEN:
           description: "Claude subscription token from running `claude setup-token` on your own computer, so every box is signed in without `claude login`. `ANTHROPIC_API_KEY` takes precedence if both are set. Leave blank if you want Remote Control, which this token cannot start"
         GH_TOKEN:
-          description: "GitHub token for gh, for example the output of `gh auth token` on your own computer. Leave blank and run `gh auth login` in the terminal instead"
+          description: "GitHub token from https://github.com/settings/tokens with `repo` ticked, so git and gh work without signing in on the box. Leave blank and run `gh auth login` in the terminal instead"
 
 meta:
   name: Claude Code

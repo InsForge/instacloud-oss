@@ -231,6 +231,23 @@ test('manifest parity: the refusals the platform makes, one case each', () => {
   expect(parse({ ...base, services: { web: { ...base.services.web, volume: { sizeGib: 20 } } } }).services.web.volume).toBe(true)
 })
 
+test('manifest parity: healthcheckTimeout is seconds, bounded, and only beside a healthcheck', () => {
+  const svc = (extra: Record<string, unknown>) => ({ ...base, services: { web: { ...base.services.web, ...extra } } })
+  expect(parse(svc({ healthcheckTimeout: 120 })).services.web.healthcheckTimeout).toBe(120)
+  // Declared only when authored, so every manifest written before this field hashes unchanged.
+  expect(Object.keys(parse(base).services.web)).not.toContain('healthcheckTimeout')
+  for (const bad of [0, -1, 901, 1.5, '120', true, null]) {
+    refuses(svc({ healthcheckTimeout: bad }), /healthcheckTimeout must be a whole number of seconds from 1 to 900/)
+  }
+  // Nothing to time without a probe, and a manifest that says otherwise is describing work the
+  // daemon will not do.
+  refuses({ ...base, services: { web: { type: 'web', image: 'i', port: 8080, healthcheckTimeout: 60 } } },
+    /healthcheckTimeout has no healthcheck to time/)
+  // A bare service is the platform's, the same as every other field it refuses.
+  refuses({ ...base, services: { db: { type: 'postgres', healthcheckTimeout: 60 } } },
+    /a postgres service is platform-managed and carries no healthcheckTimeout/)
+})
+
 test('manifest parity: command and mountPath are kept on the parsed service so the digest matches the cloud', () => {
   const m = parse({ ...base, services: { web: { ...base.services.web, volume: true, mountPath: '/app/storage', command: 'run' } } })
   expect(m.services.web.command).toBe('run')
@@ -649,6 +666,22 @@ test('a 401 counts as healthy; an off-origin healthcheck is refused without a pr
   expect(verdict.healthy).toBe(false)
   expect(verdict.reason).toMatch(/resolves off the service origin \(https:\/\/evil.example\) - refusing to probe it/)
   expect(probed.length).toBe(before)
+})
+
+test('the health gate uses the manifest\'s own timeout, not the daemon default', async () => {
+  const id = await project()
+  probeStatus = () => 500
+  // The harness runs the daemon at a 0s budget, so a message naming any other number can only have
+  // come from the manifest. Without that contrast this passes whether or not the field is read.
+  const r = await post(`/projects/${id}/template-deployments`, {
+    manifest: { code: 'slowboot', version: '1', services: { web: { type: 'web', image: 'i', port: 8080, healthcheck: '/healthz', healthcheckTimeout: 2 } } },
+    branch: 'main',
+  })
+  expect(r.statusCode).toBe(202)
+  await executor.idle()
+  const view = (await get(`/template-deployments/${r.json().deploymentId}`)).json()
+  expect(view.status).toBe('failed')
+  expect(view.error).toMatch(/^web: not healthy within 2s \(last status: HTTP 500 on \/healthz\)$/)
 })
 
 test('idempotency: the same id echoes, a changed manifest 409s, and a resume completes the run', async () => {

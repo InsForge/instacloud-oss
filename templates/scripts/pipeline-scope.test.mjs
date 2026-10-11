@@ -271,7 +271,7 @@ describe('lint: a managed datastore is declared bare, the shape the platform own
     expect(r.out).toContain('type must be one of web, worker, postgres, redis, mysql, mongodb, storage');
   });
 
-  // These seven are the fields unique to the managed-type loop: spec and volume are covered in
+  // These eight are the fields unique to the managed-type loop: spec and volume are covered in
   // their own cases below, because both interact with the shared spec/volume check above.
   it('refuses every field the platform owns, naming the field and the type', () => {
     const fields = [
@@ -279,6 +279,9 @@ describe('lint: a managed datastore is declared bare, the shape the platform own
       ['build', { build: './Dockerfile' }],
       ['port', { port: 6379 }],
       ['healthcheck', { healthcheck: '/' }],
+      // Its own row, because the managed branch returns before the web-service checks below it:
+      // adding the key to SERVICE_KEYS without adding it here let a managed service carry one.
+      ['healthcheckTimeout', { healthcheckTimeout: 60 }],
       ['volumeGib', { volumeGib: 10 }],
       ['alwaysOn', { alwaysOn: true }],
       // An exact empty shell, the one shape the platform's own parser tolerates. This lint refuses
@@ -369,6 +372,9 @@ describe('lint: a bucket is declared bare, and the self-hosted runtime does not 
       ['build', { build: './Dockerfile' }],
       ['port', { port: 9000 }],
       ['healthcheck', { healthcheck: '/' }],
+      // Its own row, because the managed branch returns before the web-service checks below it:
+      // adding the key to SERVICE_KEYS without adding it here let a managed service carry one.
+      ['healthcheckTimeout', { healthcheckTimeout: 60 }],
       ['volumeGib', { volumeGib: 10 }],
       ['alwaysOn', { alwaysOn: true }],
       ['command', { command: 'run' }],

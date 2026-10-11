@@ -340,6 +340,7 @@ export class TemplateExecutor {
         ...(svc.image !== undefined ? { image: svc.image } : {}),
         ...(svc.type === 'postgres' ? {} : { port: svc.port ?? 8080 }),
         ...(svc.healthcheck !== undefined ? { healthcheck: svc.healthcheck } : {}),
+        ...(svc.healthcheckTimeout !== undefined ? { healthcheckTimeout: svc.healthcheckTimeout } : {}),
         ...(prev?.volumeGib !== undefined ? { volumeGib: prev.volumeGib } : svc.volume ? { volumeGib: this.engine.cfg.templates.volumeGib } : {}),
         ...(svc.alwaysOn !== undefined ? { alwaysOn: svc.alwaysOn } : {}),
         env: prev?.env ?? {},
@@ -666,7 +667,9 @@ export class TemplateExecutor {
    *  failure the manifest field exists to catch. */
   private async awaitHealthy(projectId: string, branchName: string, entry: Entry): Promise<{ healthy: boolean; reason?: string }> {
     const cfg = this.engine.cfg
-    const timeout = cfg.templates.healthTimeoutMs
+    // The manifest's own number when it declared one, so a template that knows it is quick fails
+    // fast and one with migrations to run is not cut off at the shared default.
+    const timeout = entry.healthcheckTimeout !== undefined ? entry.healthcheckTimeout * 1000 : cfg.templates.healthTimeoutMs
     const deadline = Date.now() + timeout
     const probe = this.opts.httpProbe ?? defaultHttpProbe(cfg.port)
     let last = 'unknown'

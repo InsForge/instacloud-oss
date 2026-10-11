@@ -24,7 +24,7 @@ const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 // BARE_TYPES comes from manifest-refs.mjs, which already needs it: one definition, not two.
 const TYPES = ["web", "worker", ...BARE_TYPES];
 // Every key a service may carry. spec and volumeGib stay listed because the sizing checks below refuse them by name.
-const SERVICE_KEYS = ["type", "image", "build", "port", "healthcheck", "volume", "volumeGib", "spec", "alwaysOn", "command", "mountPath", "env", "pgVersion", "public"];
+const SERVICE_KEYS = ["type", "image", "build", "port", "healthcheck", "healthcheckTimeout", "volume", "volumeGib", "spec", "alwaysOn", "command", "mountPath", "env", "pgVersion", "public"];
 // The platform's HEALTHCHECK_RE, as in src/templates/manifest.ts: one slash, no scheme or host.
 const HEALTHCHECK_RE = /^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]*$/;
 // Images this repo builds for itself; templates-build-images derives their tag from `version:`.
@@ -247,11 +247,22 @@ for (const dir of dirs) {
     if (svc.type === "web" && svc.healthcheck !== undefined && !(typeof svc.healthcheck === "string" && HEALTHCHECK_RE.test(svc.healthcheck))) {
       err(dir, `${name}: healthcheck must be a path starting with / (one slash, no '//host' or scheme), or leave it out`);
     }
+    // Same bounds the platform parses, and the same refusal when there is no probe to time.
+    if (svc.healthcheckTimeout !== undefined) {
+      const s = svc.healthcheckTimeout;
+      if (!Number.isInteger(s) || s < 1 || s > 900) {
+        err(dir, `${name}: healthcheckTimeout must be a whole number of seconds from 1 to 900`);
+      }
+      if (svc.healthcheck === undefined) {
+        err(dir, `${name}: healthcheckTimeout has no healthcheck to time, declare one or drop it`);
+      }
+    }
     // A worker is portless (insta-platform#490): the platform runs it as its own port-0 service, so
     // nothing is routed to it and nothing probes it. The server refuses these three shapes; say so here.
     if (svc.type === "worker") {
       if (svc.port !== undefined) err(dir, `${name}: a worker has no routed port, remove port (or declare type: web to serve HTTP)`);
       if (svc.healthcheck !== undefined) err(dir, `${name}: a worker has no HTTP endpoint to probe, remove healthcheck (its health is the machine's state)`);
+      if (svc.healthcheckTimeout !== undefined) err(dir, `${name}: a worker has no HTTP endpoint to probe, remove healthcheckTimeout`);
       if (svc.alwaysOn === false) err(dir, `${name}: a worker cannot scale to zero, nothing is routed to it so nothing would wake it: remove alwaysOn or set it true`);
     }
     // Same message the platform uses. Catches the shape only: a misspelled key is the unknown-key check above.

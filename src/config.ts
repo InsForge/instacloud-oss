@@ -81,7 +81,7 @@ export interface Config {
   services: { maxPerType: number } // INSTA_OSS_MAX_SERVICES_PER_TYPE 5
   templates: {
     volumeGib: number             // INSTA_OSS_TEMPLATE_VOLUME_GIB 10
-    healthTimeoutMs: number       // INSTA_OSS_TEMPLATE_HEALTH_TIMEOUT_MS 90000
+    healthTimeoutMs: number       // INSTA_OSS_TEMPLATE_HEALTH_TIMEOUT_MS 300000
     healthPollMs: number          // INSTA_OSS_TEMPLATE_HEALTH_POLL_MS 3000
   }
 }
@@ -281,7 +281,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: readonly 
     services: { maxPerType: int(env, 'INSTA_OSS_MAX_SERVICES_PER_TYPE', 5, 1) },
     templates: {
       volumeGib: int(env, 'INSTA_OSS_TEMPLATE_VOLUME_GIB', 10, 1),
-      healthTimeoutMs: int(env, 'INSTA_OSS_TEMPLATE_HEALTH_TIMEOUT_MS', 90000, 1),
+      // 90s used to be the ceiling and it failed Superset, whose own first boot runs 37s of
+      // Alembic migrations and only listens at 44s: the gate gave up at 90 while the deploy went
+      // on to pass at 102. This is a DEADLINE, not a wait, so a service that answers in 10s still
+      // finishes in 10s; what a larger number costs is how long a template that will never come
+      // up takes to say so. 300 is what Railway gives the same application.
+      healthTimeoutMs: int(env, 'INSTA_OSS_TEMPLATE_HEALTH_TIMEOUT_MS', 300000, 1),
       healthPollMs: int(env, 'INSTA_OSS_TEMPLATE_HEALTH_POLL_MS', 3000, 1),
     },
   }

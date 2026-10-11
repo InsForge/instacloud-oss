@@ -41,6 +41,12 @@ IS the template code. Copying the closest existing template is the fastest way t
   copied is the mistake that check exists for. The publish step removes the line on the way to
   the catalog, so the gallery does not show a second copy of the call to action its own rail
   already carries. The asset and the snippet live in [assets/README.md](../assets/README.md).
+- `healthcheckTimeout`, optional, beside `healthcheck` on a web service: the seconds the health
+  gate waits before calling the deploy failed, 1 to 900. Leave it out and the daemon's default
+  applies, which is generous enough for an app that runs migrations on first boot. It is a
+  deadline and not a wait, so a service that answers in ten seconds still finishes in ten: what a
+  number buys is how long a deploy that will never come up takes to say so. Declare a small one
+  when the service is known to be quick, and a large one when first boot has real work to do.
 - `logo.svg`: the template's mark, and a **hard requirement for a publishable template**. CI
   rejects a non-draft template without one. Declare the path as `meta.logo: ./logo.svg` and CI
   checks that it resolves. Details and the reasoning are under [Logos](#logos).

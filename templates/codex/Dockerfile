@@ -48,18 +48,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude Code's channel plugins are Bun scripts, so without bun they cannot be installed at all.
-RUN arch="$(dpkg --print-architecture)"; \
-    case "$arch" in \
-        amd64) bun_arch=x64 ;; \
-        arm64) bun_arch=aarch64 ;; \
-        *)     echo "unsupported arch: $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/oven-sh/bun/releases/latest/download/bun-linux-${bun_arch}.zip" \
-        -o /tmp/bun.zip \
-    && unzip -q /tmp/bun.zip -d /tmp \
-    && install -m 0755 "/tmp/bun-linux-${bun_arch}/bun" /usr/local/bin/bun \
-    && ln -s bun /usr/local/bin/bunx \
-    && rm -rf /tmp/bun.zip "/tmp/bun-linux-${bun_arch}"
+# bun's own npm package fetches the binary for this architecture; npm 11 blocks that postinstall
+# by default, and without it bun installs as a shell with no binary behind it.
+RUN npm install -g --allow-scripts=bun bun && npm cache clean --force
 
 # upstream pin: keep in sync with insta.template.yaml (upstream.pinned)
 RUN npm install -g @openai/codex@0.148.0

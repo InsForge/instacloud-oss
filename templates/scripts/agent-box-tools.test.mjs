@@ -56,12 +56,10 @@ describe('the agent boxes carry the same tools', () => {
     expect(dockerfile).toMatch(/apt-get install -y --no-install-recommends gh\b/)
   })
 
-  // Claude Code's channel plugins are Bun scripts: no bun, no channels.
-  it.each(boxes)('$code installs bun for both architectures', ({ dockerfile }) => {
-    expect(dockerfile).toMatch(/bun-linux-\$\{bun_arch\}\.zip/)
-    expect(dockerfile).toContain('bun_arch=x64')
-    expect(dockerfile).toContain('bun_arch=aarch64')
-    expect(dockerfile).toContain('/usr/local/bin/bunx')
+  // Claude Code's channel plugins are Bun scripts: no bun, no channels. --allow-scripts is what
+  // fetches the binary, and without it the install leaves a bun that cannot run.
+  it.each(boxes)('$code installs bun with its postinstall allowed', ({ dockerfile }) => {
+    expect(dockerfile).toMatch(/npm install -g --allow-scripts=bun bun\b/)
   })
 
   // ~/.local/bin is on the volume, so an install there survives a restart; the toolbox is last.

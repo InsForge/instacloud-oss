@@ -13,9 +13,10 @@ that runs in your terminal; this template gives that terminal a URL and a disk.
 
 The image is built from the Dockerfile in this directory: `node:24-bookworm-slim` (pinned by digest)
 plus [ttyd](https://github.com/tsl0922/ttyd) 1.7.7 (verified against a pinned SHA-256) and
-`@openai/codex` pinned to an exact version. Those are pinned, so a restart gives you the same
-environment. Two things are not: `gh` and `bun` are installed from their own upstreams and follow
-them, so the template version does not tell you which release of either you have. In front of ttyd
+`@openai/codex` pinned to an exact version. The base image, ttyd and the agent CLI are fixed, so
+the CLI you get is the one the template version names. The rest is not: every Debian package is installed by name from
+Debian's live bookworm repositories, `gh` from upstream's rolling apt repository and `bun` from
+npm, so all of them can move between two builds of the same template version. In front of ttyd
 sits the InstaCloud sign-in page, `insta-gate` from this
 repository's `gate/`, also verified against a pinned SHA-256. ttyd listens only inside the container
 and never receives your credentials. Template versions before 0.8.3 logged the credential on every start, and

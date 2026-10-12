@@ -7,7 +7,7 @@
 // that from coming back is the ORDER, which is what these tests pin.
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,6 +67,7 @@ function run({ owner, password = 'house-secret' } = {}) {
     stderr: r.stderr,
     calls: read(env.NB_CALLS),
     volumeAtDrop: read(env.NB_AT_DROP).trim(),
+    volume: readdirSync(home),
     config: join(home, '.nanobot', 'config.json'),
   };
 }
@@ -105,6 +106,9 @@ describe('nanobot entrypoint', () => {
     const r = run({ owner: 0, password: null });
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain('ADMIN_PASSWORD is required');
+    // The whole volume, not just the config: the instance root is written to it too, and the
+    // claim this case makes is that the refusal happens before any of it.
+    expect(r.volume).toEqual([]);
     expect(existsSync(r.config)).toBe(false);
     expect(r.calls).toBe('');
   });

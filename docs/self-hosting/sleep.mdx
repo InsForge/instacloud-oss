@@ -3,7 +3,7 @@ title: "Sleep and wake"
 description: "Idle services stop, traffic starts them again, and one box holds far more projects than it has memory for."
 ---
 
-A self-hosted box follows the hosted platform's defaults. Compute on a project's default branch is
+A self-hosted box has its own defaults. Compute on a project's default branch is
 always-on, so production never waits for a cold start, and managed Redis, MySQL and MongoDB follow
 the same default. Postgres, and every service on the other branches, scale to zero. Compute,
 Postgres and managed databases can each be switched either way: compute and Postgres from the CLI,
@@ -152,9 +152,10 @@ insta compute limits web --memory 512mb
 ```
 
 <Note>
-The defaults match the hosted platform: compute on the default branch is always-on and
-scale-to-zero is opt-in, managed Redis, MySQL and MongoDB follow the same default, and Postgres
-scales to zero. The one addition for a single box is that branch clones scale to zero unless a
+On a single box, compute on the default branch is always-on and scale-to-zero is opt-in, managed
+Redis, MySQL and MongoDB follow the same default, and Postgres scales to zero. (The hosted platform
+differs: new compute scales to zero there, and every new database, Postgres included, is always-on.)
+The one addition for a single box is that branch clones scale to zero unless a
 service is explicitly always-on, so forking a project does not start every app it has. Switch a
 service off with `insta compute always-on off web`; send `{"enabled": null}` to
 `PUT /projects/<id>/services/<sid>/always-on` to put it back on the default; or set

@@ -1,0 +1,129 @@
+code: hindsight
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/instacloud-oss
+
+# Upstream publishes the two halves as separate images from one Dockerfile (`--target api-only`
+# and `--target cp-only`), both public on ghcr and both tagged with the release version. Nothing
+# is rebuilt here, so there is no Dockerfile in this directory. `image` names the dataplane, the
+# half that holds the data and answers the SDKs; the control plane below moves with the same tag.
+upstream:
+  repo: vectorize-io/hindsight
+  image: ghcr.io/vectorize-io/hindsight-api
+  pinned: "0.10.3"
+  license: MIT
+
+services:
+  # The memory server itself: FastAPI on 8888, the embedded pg0 PostgreSQL it starts as a child
+  # process, and the MCP endpoint. This is what an agent SDK points at.
+  api:
+    type: web
+    image: ghcr.io/vectorize-io/hindsight-api:0.10.3
+    port: 8888
+    # Readiness, not liveness: 200 once the API can reach its database, 503 while it cannot. It is
+    # declared before any authentication dependency, so it answers 200 with no Authorization
+    # header even though every /v1 route below it is behind the API key. `/` is a 404 on this app
+    # and `/docs` is the Swagger page rather than a statement about the server.
+    healthcheck: /health
+    # Not a preference. Retain answers immediately with an operation id and does the extraction,
+    # consolidation and embedding afterwards on this machine, and the maintenance sweeps
+    # (retention, operation cleanup, mental-model refresh) are in-process timers. A machine that
+    # scaled to zero the moment a retain returned would drop the work the caller was promised, and
+    # nothing inbound would wake it to finish. Same call n8n makes about its schedule triggers.
+    alwaysOn: true
+    # pg0 writes the whole PostgreSQL cluster under $HOME/.pg0, so this volume IS the database.
+    volume: true
+    env:
+      fixed:
+        # pg0 resolves its data directory as `Path.home() / ".pg0"` and start-all.sh checks the
+        # same path, so HOME is the knob that moves the database onto the volume. Upstream's own
+        # docker run mounts /home/hindsight/.pg0 instead; this is the same directory reached from
+        # the other side, and it keeps the mount at the platform's /data.
+        HOME: /data
+        # HOME moved, so the Hugging Face cache would move with it and the image's preloaded
+        # BAAI/bge-small-en-v1.5 embedder and ms-marco-MiniLM cross-encoder would be re-downloaded
+        # on every fresh machine. Pinned back at the path the image build cached them under, which
+        # is on the image and not on the volume.
+        HF_HOME: /home/hindsight/.cache/huggingface
+        HINDSIGHT_API_HOST: 0.0.0.0
+        HINDSIGHT_API_PORT: "8888"
+        # The async task poller leases work under a worker id, and unset it defaults to the
+        # container hostname. The first boot here logged that default and upstream's own warning
+        # with it: a machine is recreated on every deploy and every restart, so a task left
+        # `processing` under the old hostname is never reclaimed, and consolidation quietly stops
+        # finishing. Pinned to a constant, which is what makes the lease survive the machine.
+        HINDSIGHT_API_WORKER_ID: hindsight-api
+        # Only the dataplane runs in this machine; the control plane is its own service below.
+        HINDSIGHT_ENABLE_CP: "false"
+        # Turns on upstream's built-in bearer-token auth. Without it every /v1 and /mcp route on
+        # this URL is open to anyone who has the URL: reading the memories, writing new ones, and
+        # spending the LLM key below. The extension loader reads its own settings from the
+        # HINDSIGHT_API_TENANT_* prefix, which is where the key under `required` lands.
+        HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
+      required:
+        # Neither a `default:` nor a `generate:`: the caller has to send this exact string back as
+        # `Authorization: Bearer <key>` on every request, and a template variable is stored
+        # write-only, so a generated one would be a key nobody could ever read. Same case as
+        # whisper-turbo's WHISPER_API_KEY.
+        HINDSIGHT_API_TENANT_API_KEY:
+          description: "Bearer token every client sends as `Authorization: Bearer <key>` to this API, and the token the dashboard service below is given. Pick your own strong random string and keep a copy: it cannot be read back after deploy"
+        # Hindsight calls an LLM to extract facts on retain and to answer reflect. Embeddings and
+        # reranking are local to this image, so this is the only model credential it needs.
+        HINDSIGHT_API_LLM_API_KEY:
+          description: "API key for the LLM provider that extracts facts and answers reflect. An OpenAI key (platform.openai.com/api-keys) with the default provider; the matching key for whichever HINDSIGHT_API_LLM_PROVIDER you choose"
+      optional:
+        HINDSIGHT_API_LLM_PROVIDER:
+          description: "LLM provider: openai (the default), anthropic, gemini, groq, deepseek, bedrock, vertexai, ollama, litellm and about twenty more. Leave blank for openai"
+        HINDSIGHT_API_LLM_MODEL:
+          description: "Model id for that provider, e.g. gpt-5-mini or claude-sonnet-4-5. Leave blank for the provider's own default"
+        HINDSIGHT_API_LLM_BASE_URL:
+          description: "Base URL of an OpenAI-compatible endpoint, for a gateway or a self-hosted model. Leave blank to call the provider directly"
+
+  # Upstream's Control Plane: the Next.js dashboard that browses banks, memories, entities and the
+  # knowledge base. It holds no data of its own; every page is a server-side call to the API
+  # service above, which is why it has no volume.
+  console:
+    type: web
+    image: ghcr.io/vectorize-io/hindsight-control-plane:0.10.3
+    port: 9999
+    # The dashboard's own health route, and the only /api path its middleware leaves unauthenticated.
+    # It answers 200 whether or not the dataplane is reachable (the dataplane's state is a field in
+    # the body), so this gate reports on the dashboard alone and does not go red while the API
+    # machine is still coming up. `/` cannot be used: with an access key set it is a redirect to
+    # /login, which is not a 2xx.
+    healthcheck: /api/health
+    # Nothing here runs on a timer. Every render is an inbound page request, which is the same
+    # request that wakes the machine.
+    alwaysOn: false
+    env:
+      fixed:
+        # Server-side only: the browser never talks to the dataplane directly, so the API key below
+        # stays on this machine.
+        HINDSIGHT_CP_DATAPLANE_API_URL: ${services.api.url}
+        HINDSIGHT_ENABLE_API: "false"
+      required:
+        # The dashboard's own login. With it set, every page and every /api route except /api/health
+        # redirects to a login form until the key is entered; the session is an HMAC of this value,
+        # so changing it signs everyone out. No `default:` and no `generate:`: this is typed into a
+        # form by a person, and the platform cannot show back a value it minted.
+        HINDSIGHT_CP_ACCESS_KEY:
+          description: "Password for the dashboard login page. Pick your own; there is no default and nothing is generated for you"
+        # The same string as HINDSIGHT_API_TENANT_API_KEY on the API service, which the dashboard
+        # sends as its bearer token. It is asked for a second time rather than shared because a
+        # template variable IS its environment variable name, and these two services spell the same
+        # secret differently.
+        HINDSIGHT_CP_DATAPLANE_API_KEY:
+          description: "The same value you entered for HINDSIGHT_API_TENANT_API_KEY. The dashboard sends it to the API as a bearer token; with a different value every page shows a 401"
+
+meta:
+  name: Hindsight
+  tagline: Agent memory server with retain, recall and reflect
+  category: ai-agent
+  tags: [ai-agent, ai, memory]
+  # Upstream builds both images for linux/amd64 and linux/arm64 in one buildx push
+  # (.github/workflows/release.yml), and nothing is rebuilt here.
+  architectures: [amd64, arm64]
+  logo: ./logo.png
+  links:
+    upstream: https://github.com/vectorize-io/hindsight
+    documentation: https://hindsight.vectorize.io

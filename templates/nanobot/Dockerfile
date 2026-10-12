@@ -12,12 +12,14 @@
 # per-architecture children), so the FROM resolves on both declared architectures.
 FROM python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258
 
-# The runtime binaries nanobot reaches for, matching upstream's own image list:
+# The runtime binaries nanobot reaches for. The first four are upstream's own image list:
 #   git             the agent's git tooling, and how skills are installed
 #   openssh-client  git over ssh
 #   libmagic1       file-type detection on uploads and attachments
-#   ripgrep         the `rg` tool registers only when the binary is present (agent/tools/rg.py)
 #   ca-certificates every outbound provider call
+# and the last two are this image's additions, for an agent whose tools are a shell:
+#   ripgrep         the `rg` tool registers only when the binary is present (agent/tools/rg.py)
+#   procps          `ps` for the agent's own shell work, the call `claude-code` and `dsh` make
 # Upstream also installs bubblewrap. It is left out here: tools.exec.sandbox is opt-in and off by
 # default, and upstream's own compose file shows bwrap needs cap_add SYS_ADMIN plus an unconfined
 # seccomp profile, neither of which a compute machine grants. Shipping it would be a sandbox that
@@ -68,6 +70,13 @@ RUN chmod +x /entrypoint.sh
 # not have, a channel that refuses to bind, a privilege drop that cannot write its own data dir.
 # HOME is overridden to /tmp so the build never writes where the volume will mount, which is also
 # what proves the entrypoint derives everything from HOME rather than from a hardcoded path.
+#
+# `kill "$pid"` is the whole of the cleanup, and it reaches the gateway because the entrypoint's
+# `exec setpriv ... /entrypoint.sh` and `exec nanobot gateway` chain keeps the original PID. A
+# `pkill -f "nanobot gateway"` sweep stood here and did nothing twice over: the gateway renames
+# itself `nanobot-gateway`, so the pattern never matched it, while docker runs this step as
+# `/bin/sh -c '<script>'`, so it DID match the build shell's own command line. That only passed
+# because a RUN shell is PID 1, where the kernel discards a default-disposition SIGTERM.
 RUN set -eu; \
     HOME=/tmp/smoke ADMIN_PASSWORD=smoke-test-only /entrypoint.sh & \
     pid=$!; \
@@ -77,7 +86,6 @@ RUN set -eu; \
       i=$((i + 1)); sleep 1; \
     done; \
     kill "$pid" 2>/dev/null || true; \
-    pkill -f "nanobot gateway" 2>/dev/null || true; \
     sleep 1; \
     rm -rf /tmp/smoke; \
     [ -n "$ok" ] || { echo "the gateway did not answer / on 8765 through entrypoint.sh" >&2; exit 1; }; \

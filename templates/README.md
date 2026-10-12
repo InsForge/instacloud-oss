@@ -67,7 +67,7 @@ Where the record stands, and what each row rests on:
 | `lev` | yes | **no** | amd64 only by declaration rather than by upstream limit, the same call `laya` made. The `python:3.12-slim-bookworm` base and the CPU torch wheels both exist for aarch64, but what this image is for is a 4B bf16 forward pass, and its kernels are exactly the part nobody has run on arm64. Adding the row means running one there, not editing this one |
 | `miniflux` | yes | yes | The official `miniflux/miniflux:2.3.3` index carries both, alongside arm/v6, arm/v7 and riscv64. Nothing is rebuilt here, so like `n8n` the row rests on upstream's published index rather than a local arm64 run |
 | `n8n` | yes | yes | The official `n8nio/n8n:2.43.3` index carries both. Nothing is rebuilt here |
-| `nanobot` | yes | **built, not run** | `python:3.12-slim-bookworm` is a multi-arch index and the FROM pins that index digest rather than a child. Upstream publishes a `manylinux_2_17_aarch64` wheel beside the `x86_64` one (its wheels are architecture-tagged because they bundle a native TUI binary this image never runs), and every dependency resolves to a prebuilt wheel, so nothing in the image compiles. This workflow cross-built both legs and its own index check passed, and the build-time smoke test starts the real gateway and waits for the manifest's health path on each. What has NOT happened is anyone deploying the arm64 image: only the amd64 half has been started on a machine and used. The `gitea` row's standard |
+| `nanobot` | yes | yes | `python:3.12-slim-bookworm` is a multi-arch index and the FROM pins that index digest rather than a child. Upstream publishes a `manylinux_2_17_aarch64` wheel beside the `x86_64` one (its wheels are architecture-tagged because they bundle a native TUI binary this image never runs), and every dependency resolves to a prebuilt wheel, so nothing in the image compiles. The arm64 leg was built natively on an arm64 machine and started there with a volume: the gateway answered the manifest's health path, served the WebUI, and came back after a restart with its instance root intact and owned by uid 1000 |
 | `open-slide` | yes | **no** | amd64 only by declaration rather than by upstream limit. The `node:24-bookworm-slim` base carries both and everything installed is npm packages, but the install resolves the per-platform native bindings Vite 8 (rolldown) and Tailwind 4 (oxide) ship as optional dependencies, and nobody has run it under QEMU or on an arm64 machine. Adding the row means doing that, not editing this one |
 | `open-webui` | yes | yes | The official `ghcr.io/open-webui/open-webui:v0.11.4` index carries both, read off the registry: an OCI index with one `amd64` and one `arm64` manifest. Nothing is rebuilt here, so like `n8n` and `miniflux` the row rests on upstream's published index. One step weaker than the rows started on an arm64 machine: only the amd64 half has been deployed and used |
 | `openbot` | yes | **no** | amd64 only by upstream's limit. The release workflow builds `ghcr.io/copilotkit/openbot` on `ubuntu-latest` with no `platforms:`, so the published `v0.0.15` index carries exactly one manifest, `linux/amd64`. (The per-framework agent images beside it are two-arch; this one is not.) Nothing in this overlay could add the other half, so the row says one and the Dockerfile refuses any other `dpkg --print-architecture` rather than building something that cannot run |
@@ -82,11 +82,16 @@ Where the record stands, and what each row rests on:
 | `umami` | yes | yes | Upstream's `3.4.0` index carries both, and the FROM pins that index digest rather than a child. The overlay adds two scripts and a `pnpm add` of `pg` and `bcryptjs`, both pure JavaScript with no install script, so nothing in it is architecture-specific. The same strength as the `clickhouse` row: the arm64 half rests on the workflow's buildx push and its index check, not on anyone having started the image on an arm64 machine |
 | `whisper-turbo` | yes | **no** | `debian:bookworm-slim` carries both, but upstream's `make server` target compiles `-DWHISPER_X86` against the AVX2/AVX-512/VNNI kernels in `src/x86`. The generic C fallback in the tree is not wired into that target, so there is nothing to build for arm64 and the row says so rather than shipping a broken index |
 
-Every row above except `clickhouse`, which says what it rests on instead, was checked by building
-the template for `linux/arm64` on an arm64 machine and starting the resulting image until it
-answered its own manifest healthcheck. Re-check a row the same way rather than trusting it after a
-base image or upstream version moves. The `no` rows are the other half of the same rule: an upstream that genuinely builds for one architecture declares
-one, and a user on the other is refused before the deploy creates anything.
+The standard behind a `yes` in the `arm64` column is the one [AGENTS.md](AGENTS.md#architectures)
+sets: build the template for `linux/arm64` on an arm64 machine and start the resulting image until
+it answers its own manifest healthcheck. A row resting on anything weaker says so in its own
+Evidence cell, and most of those rest on upstream's published index plus the workflow's own index
+check rather than on anyone having started the image. A **built, not run** row is weaker still and
+names work left to do: this registry cross-built the arm64 leg and its index check passed, but
+nobody has started that half, so run it before the template is published. Re-check a row the same
+way rather than trusting it after a base image or upstream version moves. The `no` rows are the
+other half of the same rule: an upstream that genuinely builds for one architecture declares one,
+and a user on the other is refused before the deploy creates anything.
 
 ## Logo attribution
 

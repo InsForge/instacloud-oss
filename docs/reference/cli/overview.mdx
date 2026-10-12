@@ -202,7 +202,7 @@ Custom domains attach through [`domain`](#domain), not `compute`.
 
 ### postgres
 
-Postgres service controls: connection string, psql session, limits, volume, scale-to-zero. Every verb takes an optional `[service]` name.
+Postgres service controls: connection string, psql session, limits, volume, always-on (the default for new databases). Every verb takes an optional `[service]` name.
 
 ```bash
 insta postgres url

@@ -135,7 +135,7 @@ curl -s -X DELETE $API/projects/$PROJECT/services/$SERVICE \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-`.../suspend` also takes an app down, but it may wake on the next request; only stop guarantees it stays off. A whole project stops by stopping its compute services: its [Postgres suspends when idle](/postgres/overview) on its own and bills only for storage.
+`.../suspend` also takes an app down, but it may wake on the next request; only stop guarantees it stays off. A whole project stops by stopping its compute services. Its [Postgres](/postgres/overview) is always-on by default; switch it to scale-to-zero with `insta postgres always-on off` and an idle database suspends on its own and bills only for storage.
 
 Offboarding a project-per-customer tenant for good is two calls with the master token, using the `$TOKEN_ID` captured at mint in section 2. This deletes that customer's entire project, so it has no place in the shared shape:
 

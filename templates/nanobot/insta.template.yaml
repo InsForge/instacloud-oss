@@ -1,0 +1,75 @@
+code: nanobot
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/instacloud-oss
+
+upstream:
+  repo: HKUDS/nanobot
+  # nanobot publishes no container image: the repository ships a Dockerfile, not an artifact, and
+  # neither Docker Hub nor ghcr carries one. Its only published artifact is the PyPI wheel, so the
+  # pin is that wheel's version and ./Dockerfile installs exactly it. The two must move together.
+  #
+  # No `package:` key, deliberately. `kindOf` in scripts/upstream-check.mjs reads that field as an
+  # NPM name, and `nanobot-ai` is a PyPI name; declaring it would point the upstream checker at the
+  # wrong registry. With neither `package` nor `image` nor a commit it answers `unknown` and
+  # proposes nothing, which is the honest result until that script learns PyPI. The package is
+  # named in README.md under Links.
+  pinned: "0.3.5"
+  license: MIT
+
+services:
+  nanobot:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/nanobot:1.0.0   # built from ./Dockerfile by templates-build-images.yml
+    # nanobot's own default for the WebSocket channel, which is the process that serves the WebUI
+    # and the only one reachable from outside. The gateway's own control port (18790) stays on
+    # loopback, where upstream puts it.
+    port: 8765
+    # The WebUI's SPA shell, served unauthenticated at 200 before the password screen appears, and
+    # the same path upstream's own Render blueprint uses as its health check. Every /api/ route is
+    # behind the password and answers 401, so none of them could serve as the gate.
+    healthcheck: /
+    # Not scale-to-zero. Automations (nanobot's cron) and chat-app channels (Telegram, Discord,
+    # Slack, email, ...) run inside this one process and fire without an inbound HTTP request, so
+    # an idle machine would miss them with nothing to wake it. Same call openclaw makes, for the
+    # same reason. It bills around the clock; the README says so.
+    alwaysOn: true
+    # Everything durable lives on it, under /data/.nanobot: config.json, sessions, long-term memory,
+    # the WebUI's chat transcripts, automations, media and the agent's workspace. The image sets
+    # HOME=/data, which is what moves nanobot's instance root (~/.nanobot) onto the volume; 0.3.5
+    # has no flag that would do it, and the path helpers that fall back to Path.home() make HOME
+    # the only setting that catches all of them.
+    volume: true
+    env:
+      required:
+        # One variable, not the usual pair, and that is upstream's shape rather than an omission:
+        # nanobot's WebUI sign-in asks for a "WebUI password" and has no username field. The value
+        # becomes channels.websocket.tokenIssueSecret, which is the whole gate in front of an agent
+        # that runs shell commands and holds your provider keys.
+        #
+        # Neither a `default:` nor a `generate:`, on purpose. A template variable is stored
+        # write-only (minted = false, and no endpoint reads it back), so a generated password would
+        # be one nobody could retrieve, leaving a running instance that refuses its owner. A default
+        # would be the same password on every deploy in the world. nanobot also refuses to bind the
+        # channel to 0.0.0.0 with this empty, so an unset value fails the deploy rather than
+        # publishing an open agent.
+        ADMIN_PASSWORD:
+          description: "Password for the nanobot WebUI sign-in screen. Pick your own and keep a copy: there is no username, this is the whole credential, and it cannot be read back after deploy"
+      # Nothing else. Providers, models, chat channels, MCP servers, skills and automations are all
+      # configured in the WebUI's own Settings pages after deploy, which is where nanobot keeps
+      # them; a deploy-form copy would be a second place for the same value to drift from.
+
+meta:
+  name: nanobot
+  tagline: Self-hosted personal AI agent with a browser workbench
+  category: ai-agent
+  tags: [ai-agent, ai]
+  # Both, and the FROM pins the INDEX digest of python:3.12-slim-bookworm rather than a child, so
+  # it resolves on either. Every dependency installs from a prebuilt wheel: upstream publishes a
+  # manylinux_2_17_aarch64 wheel beside the x86_64 one, and nothing in this image compiles. See the
+  # architectures table in templates/README.md for what the arm64 half rests on.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/HKUDS/nanobot
+    documentation: https://nanobot.wiki/docs/latest/getting-started/nanobot-overview

@@ -70,6 +70,17 @@ describe('the agent boxes carry the same tools', () => {
     expect(entrypoint.replace(/\\\n\s*/g, ' ')).toMatch(/tmux -u new-session -A -s main/)
   })
 
+  // A token in the deploy form has to be enough on its own: gh signed in, git pointed at gh, and
+  // a committer identity, or the first commit on a fresh box fails on something the form offered.
+  it.each(boxes)('$code turns a GH_TOKEN into working git', ({ code, entrypoint }) => {
+    expect(entrypoint).toContain('gh auth setup-git')
+    expect(entrypoint).toMatch(/git config --global user\.name/)
+    expect(entrypoint).toMatch(/git config --global user\.email/)
+    // Guarded, so a name the user set themselves is never overwritten on the next boot.
+    expect(entrypoint).toMatch(/git config --global --get user\.email/)
+    expect(read(code, 'insta.template.yaml')).toMatch(/^\s+GH_TOKEN:$/m)
+  })
+
   // tmux takes the mouse, so without this config a Mac cannot select text in the terminal. Only
   // the comments differ between boxes, where they name the agent, so compare the settings alone.
   it.each(boxes)('$code ships the same tmux settings', ({ code, dockerfile }) => {

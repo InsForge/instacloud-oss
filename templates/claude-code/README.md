@@ -59,7 +59,9 @@ upgrade.
   [Anthropic API key](https://console.anthropic.com/), or a subscription token you print by running
   `claude setup-token` on your own computer. Otherwise you sign in from inside the terminal with
   `claude login`, which is the normal path for a Claude subscription.
-- Optionally, a GitHub token for `gh`, such as the output of `gh auth token` on your own computer.
+- Optionally, a GitHub token, from https://github.com/settings/tokens with `repo` ticked, or
+  from `gh auth token` if you already use `gh`. It is what makes `git` and `gh` work on the
+  box without signing in there.
 
 ## Configuration
 
@@ -69,7 +71,7 @@ upgrade.
 | `ADMIN_PASSWORD` | yes | Password for the InstaCloud sign-in page in front of the terminal. You choose it. |
 | `ANTHROPIC_API_KEY` | no | Authenticates the CLI without an interactive login. Leave blank to run `claude login` in the terminal instead. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | no | Signs the CLI in to your Claude subscription. Print one by running `claude setup-token` on your own computer: it lasts a year and works on every box you deploy. It only makes model requests, so it cannot start Remote Control. Leave blank if you want that, and run `claude login` instead. |
-| `GH_TOKEN` | no | Authenticates `gh`, for example with the output of `gh auth token`. Run `gh auth setup-git` once to use it for git over HTTPS too. Leave blank to run `gh auth login` in the terminal instead. |
+| `GH_TOKEN` | no | A GitHub token, so git and `gh` work on the box without signing in there. Make one at [github.com/settings/tokens](https://github.com/settings/tokens) and tick `repo`, or run `gh auth token` if you already use `gh`. The box configures git with it and takes your committer name and GitHub noreply address from the same token, both saved in `~/.gitconfig` on the volume. A name you set yourself is left alone. Leave blank to run `gh auth login` in the terminal instead. |
 
 When both `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` are set, the CLI uses the API key.
 

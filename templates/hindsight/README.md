@@ -37,8 +37,10 @@ dashboard is upstream's, not one written here.
   upstream's providers works: OpenAI, Anthropic, Gemini, Groq, Bedrock, Vertex AI, DeepSeek, a
   LiteLLM gateway, or a local Ollama or LM Studio endpoint.
 - A bearer token in front of the API. The built-in API-key tenant extension is switched on by this
-  template, so the public URL answers 401 to anyone without the key rather than handing out the
-  memories and the LLM spend.
+  template, so every `/v1` and `/mcp` route answers 401 without the key rather than handing out the
+  memories and the LLM spend. The four routes that carry no memories stay open as upstream ships
+  them: `/health`, which is what the platform's deploy gate probes, plus `/version`, `/metrics` and
+  the `/docs` API reference.
 - The dashboard behind its own password, on its own URL, scaling to zero when nobody is looking at
   it.
 - An MCP endpoint per bank, so a coding agent or a chat client can read and write memory with no
@@ -47,7 +49,11 @@ dashboard is upstream's, not one written here.
 ## What you need before deploying
 
 - An API key for the LLM provider that will do the fact extraction. An OpenAI key works with the
-  defaults; any other provider needs its own key plus `HINDSIGHT_API_LLM_PROVIDER`.
+  defaults; any other provider needs its own key plus `HINDSIGHT_API_LLM_PROVIDER`. The field is
+  required whichever provider you pick, because the common ones all need it and an instance that
+  cannot extract a fact looks healthy until the first retain. For a provider that authenticates some
+  other way (`ollama`, `lmstudio`, `llamacpp`, or a subscription provider such as `claude-code`),
+  put a placeholder in it.
 - A token of your own choosing for the API, and a password of your own choosing for the dashboard.
   Neither has a default and neither is generated for you, so keep a copy of both: variable values
   cannot be read back after deploy.
@@ -57,7 +63,7 @@ dashboard is upstream's, not one written here.
 | Variable | Required | Description |
 | --- | --- | --- |
 | `HINDSIGHT_API_TENANT_API_KEY` | yes | Bearer token every client sends as `Authorization: Bearer <key>` to the API, including the SDKs and MCP clients. Pick your own strong random string. |
-| `HINDSIGHT_API_LLM_API_KEY` | yes | Key for the LLM provider that extracts facts on retain and answers reflect. An OpenAI key with the defaults. |
+| `HINDSIGHT_API_LLM_API_KEY` | yes | Key for the LLM provider that extracts facts on retain and answers reflect. An OpenAI key with the defaults. Required for every provider, so a provider that authenticates some other way takes a placeholder here. |
 | `HINDSIGHT_CP_ACCESS_KEY` | yes | Password for the dashboard's login page. Independent of the API token, because one is typed by a person and the other is pasted into agent config. |
 | `HINDSIGHT_CP_DATAPLANE_API_KEY` | yes | The same value as `HINDSIGHT_API_TENANT_API_KEY`. The dashboard sends it to the API as its bearer token; asked for separately because a template variable is its environment variable name, and the two services spell the same secret differently. |
 | `HINDSIGHT_API_LLM_PROVIDER` | no | `openai` (the default), `anthropic`, `gemini`, `groq`, `deepseek`, `bedrock`, `vertexai`, `ollama`, `litellm` and about twenty more. |
@@ -86,8 +92,9 @@ service variable afterwards.
    ```
 
    The first `retain` creates the bank; there is no separate create step.
-3. Watch it land in the dashboard. A retained memory shows up under Banks > `my-bank` as a document
-   with the facts and entities extracted from it, which is the second route on the same data.
+3. Watch it land in the dashboard. Banks > `my-bank` > Documents lists what you retained with the
+   count of memory units the server made from it, and Memories and Entities show those units and
+   the entities they resolved to. Same data, read back through a different route.
 4. For an MCP client, use `https://<your-api-url>/mcp/<bank-id>/` with the same bearer token.
    `retain`, `recall` and `reflect` arrive as tools.
 

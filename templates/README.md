@@ -82,9 +82,9 @@ Where the record stands, and what each row rests on:
 | `umami` | yes | yes | Upstream's `3.4.0` index carries both, and the FROM pins that index digest rather than a child. The overlay adds two scripts and a `pnpm add` of `pg` and `bcryptjs`, both pure JavaScript with no install script, so nothing in it is architecture-specific. The same strength as the `clickhouse` row: the arm64 half rests on the workflow's buildx push and its index check, not on anyone having started the image on an arm64 machine |
 | `whisper-turbo` | yes | **no** | `debian:bookworm-slim` carries both, but upstream's `make server` target compiles `-DWHISPER_X86` against the AVX2/AVX-512/VNNI kernels in `src/x86`. The generic C fallback in the tree is not wired into that target, so there is nothing to build for arm64 and the row says so rather than shipping a broken index |
 
-Every row above except `clickhouse`, which says what it rests on instead, was checked by building
-the template for `linux/arm64` on an arm64 machine and starting the resulting image until it
-answered its own manifest healthcheck. Re-check a row the same way rather than trusting it after a
+Every row above except the ones whose own Evidence cell says what they rest on instead was checked
+by building the template for `linux/arm64` on an arm64 machine and starting the resulting image
+until it answered its own manifest healthcheck. Re-check a row the same way rather than trusting it after a
 base image or upstream version moves. The `no` rows are the other half of the same rule: an upstream that genuinely builds for one architecture declares
 one, and a user on the other is refused before the deploy creates anything.
 

@@ -58,7 +58,9 @@ services:
         # Turns on upstream's built-in bearer-token auth. Without it every /v1 and /mcp route on
         # this URL is open to anyone who has the URL: reading the memories, writing new ones, and
         # spending the LLM key below. The extension loader reads its own settings from the
-        # HINDSIGHT_API_TENANT_* prefix, which is where the key under `required` lands.
+        # HINDSIGHT_API_TENANT_* prefix, which is where the key under `required` lands. It does not
+        # cover /health, /version, /metrics or /docs, which upstream declares before the auth
+        # dependency and which carry no memories; /health being open is what the deploy gate needs.
         HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
       required:
         # Neither a `default:` nor a `generate:`: the caller has to send this exact string back as
@@ -68,9 +70,13 @@ services:
         HINDSIGHT_API_TENANT_API_KEY:
           description: "Bearer token every client sends as `Authorization: Bearer <key>` to this API, and the token the dashboard service below is given. Pick your own strong random string and keep a copy: it cannot be read back after deploy"
         # Hindsight calls an LLM to extract facts on retain and to answer reflect. Embeddings and
-        # reranking are local to this image, so this is the only model credential it needs.
+        # reranking are local to this image, so this is the only model credential it needs. Required
+        # rather than optional even though a handful of providers (ollama, lmstudio, llamacpp, the
+        # subscription ones) authenticate some other way: the default provider and every hosted one
+        # need it, /health only reports on the database, so a blank field would deploy green and
+        # then fail on the first retain. The description says what to type for the keyless few.
         HINDSIGHT_API_LLM_API_KEY:
-          description: "API key for the LLM provider that extracts facts and answers reflect. An OpenAI key (platform.openai.com/api-keys) with the default provider; the matching key for whichever HINDSIGHT_API_LLM_PROVIDER you choose"
+          description: "API key for the LLM provider that extracts facts and answers reflect. An OpenAI key (platform.openai.com/api-keys) with the default provider; the matching key for whichever HINDSIGHT_API_LLM_PROVIDER you choose. For a provider that authenticates some other way (ollama, lmstudio, llamacpp, claude-code), put a placeholder here"
       optional:
         HINDSIGHT_API_LLM_PROVIDER:
           description: "LLM provider: openai (the default), anthropic, gemini, groq, deepseek, bedrock, vertexai, ollama, litellm and about twenty more. Leave blank for openai"

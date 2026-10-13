@@ -1,9 +1,9 @@
 ---
 title: "Postgres"
-description: "A real, isolated Postgres server per project that scales to zero and branches in seconds."
+description: "A real, isolated Postgres server per project that stays warm or scales to zero, and branches in seconds."
 ---
 
-Every project gets real Postgres: its own server, not a schema in a shared one. It scales to zero when idle, wakes on the first connection, and branches with your environment — a branch's database opens with the parent's data and its own connection string.
+Every project gets real Postgres: its own server, not a schema in a shared one. It starts always-on, can scale to zero when idle and wake on the first connection, and branches with your environment — a branch's database opens with the parent's data and its own connection string.
 
 ```bash
 insta services add postgres db
@@ -12,7 +12,7 @@ insta services add postgres db
 ## What you get
 
 - **Isolation.** Your own Postgres instance per project, and another per branch. Connection limits, extensions, and load are yours alone.
-- **Scale to zero.** By default an idle instance suspends and the first connection cold-starts it — a suspended database bills only for the data it stores. Keep it warm with `insta postgres always-on on`.
+- **Always-on or scale to zero.** A new database is born always-on, so an app waking from scale-to-zero never also waits on a database cold start. Billing is actual usage either way, but an always-on instance bills its resident memory while idle. `insta postgres always-on off` opts into scale-to-zero: an idle instance suspends, the first connection cold-starts it, and a suspended database bills only for the data it stores. `insta postgres always-on` with no mode prints the current setting. The CLI can't choose the mode at create time for postgres yet (`services add --always-on` is compute-only), so switch it after creation.
 - **Branching.** `insta branch create` clones the database copy-on-write with the parent's data. See [branching](/postgres/branching).
 - **A standard connection string.** `insta postgres url` prints the DSN (bare on stdout, so `psql "$(insta postgres url)"` works); bind it into a service with `insta secrets bind DATABASE_URL postgres/db --to compute/app`.
 - **Named credentials.** Every postgres service mints `DATABASE_URL_<NAME>` (`DATABASE_URL_ANALYTICS`), and the oldest service of the type also holds the unsuffixed `DATABASE_URL`. Storage and the managed databases follow the same rule (`BUCKET_NAME_ASSETS`, `REDIS_URL_CACHE`). Remove the oldest service and the unsuffixed keys move to the next one, so `insta secrets` always has a `DATABASE_URL` while any postgres service exists.

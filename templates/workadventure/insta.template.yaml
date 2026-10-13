@@ -1,0 +1,114 @@
+code: workadventure
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+upstream:
+  repo: workadventure/workadventure
+  image: docker.io/thecodingmachine/workadventure-play
+  pinned: v1.34.1
+  # AGPL-3.0 with the Commons Clause, as stated in play/LICENSE.txt and back/LICENSE.txt upstream.
+  # The clause removes the right to "Sell the Software", so this is not an OSS licence and SPDX has
+  # no identifier for the pair. See ./README.md.
+  license: LicenseRef-AGPL-3.0-only-with-Commons-Clause
+
+# Shared by play, back and map-storage, which all sign or check the same tokens. Nobody needs to
+# read either one back, so they are generated rather than asked for.
+generated:
+  secret_key: secret:64
+  map_storage_api_token: secret:48
+
+services:
+  wa:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/workadventure:0.1.0   # built from ./Dockerfile
+    port: 8080
+    # nginx proxies this to play's own /ping, and the entrypoint binds nginx only once play
+    # answers there, so a 200 means the pusher is serving rather than that a proxy started.
+    healthcheck: /ping
+    # A virtual office is woken by someone opening it, and the platform holds an HTTP request and a
+    # WebSocket open while the machine starts. Nothing here runs on a schedule.
+    alwaysOn: false
+    # /data/maps holds the maps the map editor writes, /data/redis the Scripting API's variables.
+    volume: true
+    env:
+      fixed:
+        # One origin and one routed port, split by path the way upstream's Traefik splits it.
+        PLAY_URL: ${services.wa.url}
+        PUSHER_URL: ${services.wa.url}/
+        FRONT_URL: ${services.wa.url}
+        ALLOWED_CORS_ORIGIN: ${services.wa.url}
+        PUBLIC_MAP_STORAGE_URL: ${services.wa.url}/map-storage
+        # Fetched by map-storage itself when a map is uploaded, and written into the resulting .wam
+        # for the browser to load later, so it has to be the public address rather than loopback.
+        # nginx serves /collections/ without the password for exactly that first fetch.
+        ENTITY_COLLECTION_URLS: ${services.wa.url}/collections/FurnitureCollection.json,${services.wa.url}/collections/OfficeCollection.json
+
+        # Everything below is inside the container. play reaches back over gRPC, back reaches
+        # map-storage over gRPC, and neither crosses the network.
+        API_URL: 127.0.0.1:50051
+        MAP_STORAGE_URL: 127.0.0.1:50053
+        INTERNAL_MAP_STORAGE_URL: http://127.0.0.1:3000
+        REDIS_HOST: 127.0.0.1
+        REDIS_PORT: "6379"
+
+        # map-storage listens on 3000 and 50053 and neither is configurable, so play and back move.
+        PUSHER_HTTP_PORT: "3100"
+        PUSHER_WS_PORT: "3101"
+        # play's Room API gRPC server defaults to 50051, which is back's port in this container.
+        ROOM_API_PORT: "50052"
+        HTTP_PORT: "8081"
+        GRPC_PORT: "50051"
+
+        # map-storage: the maps live on the volume, and PATH_PREFIX is what tells it that nginx
+        # reaches it under /map-storage.
+        STORAGE_DIRECTORY: /data/maps
+        PATH_PREFIX: /map-storage
+
+        ICON_URL: /icon
+        # Required by play's validator, and unused: the uploader container is not part of this
+        # image and ENABLE_CHAT_UPLOAD is off. nginx answers 501 there rather than proxying.
+        UPLOADER_URL: /uploader
+        ENABLE_CHAT_UPLOAD: "false"
+
+        # The map editor is the reason map-storage is here. Everyone past the password may edit.
+        ENABLE_MAP_EDITOR: "true"
+        MAP_EDITOR_ALLOW_ALL_USERS: "true"
+      generated:
+        SECRET_KEY: ${secret_key}
+        MAP_STORAGE_API_TOKEN: ${map_storage_api_token}
+      required:
+        ADMIN_USERNAME:
+          description: "Username for the password prompt in front of the whole site. WorkAdventure itself has no password login, so this gate is what keeps your office off the open internet. Letters, digits and . _ @ - only"
+        ADMIN_PASSWORD:
+          description: "Password for that prompt, shared with everyone you invite into the office. Pick a strong one: anyone holding it can enter, talk and edit maps"
+      optional:
+        START_ROOM_URL:
+          description: "The room a visitor lands in, as /_/global/<host>/<path to a .tmj or .wam>. Defaults to upstream's public starter office, workadventure.github.io/map-starter-kit/office.tmj. Point it at /~/<dir>/<file>.wam once you have uploaded a map of your own"
+        ENABLE_TELEMETRY:
+          description: "Upstream sends a daily ping with the version and a rough user count to stats.workadventu.re, and asks installs to leave it on. Set to false to turn it off"
+        SECURITY_EMAIL:
+          description: "Address upstream notifies if this WorkAdventure version is found to carry a security flaw. Needs ENABLE_TELEMETRY left on"
+        STUN_SERVER:
+          description: "Comma separated STUN URLs for WebRTC, e.g. stun:stun.l.google.com:19302. Unset means the browsers try a direct connection only"
+        TURN_SERVER:
+          description: "TURN URL for users whose networks refuse a direct WebRTC connection, e.g. turn:turn.example.com:3478. No TURN server is included here"
+        TURN_USER:
+          description: "Username for TURN_SERVER, when it uses static credentials"
+        TURN_PASSWORD:
+          description: "Password for TURN_SERVER, when it uses static credentials"
+        JITSI_URL:
+          description: "Jitsi Meet host used by map areas that open a meeting room, e.g. meet.jit.si. Unset disables those areas"
+        MAX_PER_GROUP:
+          description: "How many people may stand in one conversation bubble before it stops accepting more. Upstream's default is 4"
+
+meta:
+  name: WorkAdventure
+  tagline: Virtual office where avatars meet and talk by walking up
+  category: communication
+  tags: [collaboration, video, remote-work]
+  architectures: [amd64]
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/workadventure/workadventure
+    documentation: https://docs.workadventu.re/

@@ -64,6 +64,13 @@ Two things worth knowing before you decide:
 - **Text chat is proximity chat only.** Upstream's persistent chat is backed by a Matrix homeserver,
   and no Matrix stack ships here, so the `MATRIX_*` settings are unset. File upload in chat is off
   for the same reason: the uploader container is not part of this image.
+- **A map you host here has one rough edge behind the password.** The container asking its own
+  public `/map-storage/` path with no credentials gets a 401, measured on a deploy. Reading
+  upstream's `MapFetcher`, `back` fetches a self-hosted map's `.wam` over loopback but the `.tmj`
+  that `.wam` points at over the public URL, which is that same path. Your browser loads the map
+  either way, because it holds the password; what `back` would not be able to read is the map's own
+  layers, where Scripting API variables are declared. The end-to-end consequence has not been
+  measured, and the default start room is an external map, so a fresh deploy does not touch this.
 
 ## Configuration
 

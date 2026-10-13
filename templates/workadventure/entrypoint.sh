@@ -72,7 +72,13 @@ fi
 # message rather than leaving five node processes up behind a dead port.
 nginx -t -c /run/workadventure/nginx.conf
 
-# Nothing below needs the plaintext, and none of the apps ever did.
+# map-storage's basic strategy, turned on by ENABLE_BASIC_AUTHENTICATION in the manifest, which
+# says why. One pair for both gates: the browser already holds these for nginx and sends them on,
+# and nginx forwards the header rather than clearing it.
+export AUTHENTICATION_USER="$ADMIN_USERNAME"
+export AUTHENTICATION_PASSWORD="$ADMIN_PASSWORD"
+
+# Nothing below needs the plaintext, and the three node apps read it only as the two lines above.
 unset ADMIN_USERNAME ADMIN_PASSWORD GATE_TOKEN
 
 stopping=0

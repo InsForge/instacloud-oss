@@ -64,6 +64,14 @@ services:
         # reaches it under /map-storage.
         STORAGE_DIRECTORY: /data/maps
         PATH_PREFIX: /map-storage
+        # map-storage guards its write API (upload, delete, move, and the map list its own UI
+        # reads) with passport, and with no strategy enabled `passport.authenticate([])` refuses
+        # every request: measured as a 401 on an upload from a fully authenticated session, with
+        # no way for an operator to get past it. The entrypoint gives its basic strategy the same
+        # pair as the gate, so the credentials a browser already holds are the ones it sends here.
+        # Serving a map file is not behind this, which is why `back` can still fetch one on
+        # loopback.
+        ENABLE_BASIC_AUTHENTICATION: "true"
 
         ICON_URL: /icon
         # Required by play's validator, and unused: the uploader container is not part of this

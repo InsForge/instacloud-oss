@@ -90,7 +90,8 @@ processes that sign and check the same tokens, and nobody needs to read either o
 3. Open the same URL in a second browser, or send it to someone with the password, and walk the two
    avatars together: the video call starts when they are close enough.
 4. To make the office your own, open `/map-storage/ui/` and upload a map, then point
-   `START_ROOM_URL` at it as `/~/<directory>/<file>.wam`. Upstream's
+   `START_ROOM_URL` at it as `/~/<directory>/<file>.wam`. The map store asks for the same username
+   and password as the site, so the browser is already holding them. Upstream's
    [map starter kit](https://github.com/workadventure/map-starter-kit) is the usual beginning, and
    the map editor inside the game edits a map once it lives here.
 

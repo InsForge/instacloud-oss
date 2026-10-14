@@ -46,9 +46,17 @@ services:
         # The image's entrypoint chowns its writable paths and then drops to PUID:PGID with gosu,
         # defaulting to 1000:1000. That default is for bind mounts on a developer's own machine. Here
         # the volume at /data is created owned by the image's user, which is root, and the entrypoint
-        # does not chown /data because it only knows about /app/data. A uid 1000 process would then
-        # fail to write its own database. 0:0 keeps the process as root, which is the uid that owns
-        # the volume; the entrypoint takes the value as-is because root already exists in /etc/passwd.
+        # never chowns it because it only knows about the paths under /app. Measured rather than
+        # reasoned: the same manifest with these two lines removed and nothing else changed fails the
+        # deploy outright, with `sqlite3.OperationalError: unable to open database file` raised first
+        # in setup.py and then fatally while uvicorn imports the app, so the machine never reaches
+        # the health check. 0:0 keeps the process as the uid that owns the volume, and the entrypoint
+        # takes the value as-is because root already exists in /etc/passwd.
+        #
+        # The cost is that the app's shell tool and its agents run as root inside the container. The
+        # alternative is `mountPath: /app/data`, which would let the entrypoint chown the volume and
+        # keep the non-root default, but AGENTS.md rule 15 makes mountPath cloud-only: the
+        # self-hosted runtime refuses it. See the PR's Open questions.
         PUID: "0"
         PGID: "0"
         # Upstream's two security switches, both at the value its README asks for on anything
@@ -76,7 +84,7 @@ services:
         ODYSSEUS_ADMIN_USER:
           description: Username for the first admin account, created on first boot. Lowercase, and not one of the names the app reserves (admin is fine)
         ODYSSEUS_ADMIN_PASSWORD:
-          description: Password for that account, at least 8 characters. Left empty the app generates one and prints it to the container log instead
+          description: Password for that account, at least 8 characters. Pick one now; the app has no way to show it to you later
       optional:
         # Odysseus keeps provider keys in its own encrypted vault, set under Settings > Integrations,
         # so this is a convenience for the first boot rather than the only way in.

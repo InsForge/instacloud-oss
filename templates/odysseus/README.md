@@ -36,8 +36,11 @@ point it at.
 
 ## What you need before deploying
 
-- A username and a password for the first admin account. Both are deploy-form fields, and the
-  password has to be at least 8 characters.
+- A username and a password for the first admin account. Both are deploy-form fields, neither has a
+  default or a generator, and the password has to be at least 8 characters. Upstream does mint a
+  random password when the variable is absent and print it to the container log, but you will not
+  reach that path here: the variable is required, so an empty field stops the deploy before anything
+  starts. Choose a password at the prompt and keep it, because nothing can read it back afterwards.
 - An API key for whichever model provider you want to chat with, if you want the first chat to work
   straight away. `OPENAI_API_KEY` is optional and keys for any provider can be added in the app
   afterwards.
@@ -52,7 +55,7 @@ point it at.
 | Variable | Required | Description |
 | --- | --- | --- |
 | `ODYSSEUS_ADMIN_USER` | yes | Username for the first admin account, created on first boot. Lowercased by the app, and not one of the names it reserves; `admin` is fine. |
-| `ODYSSEUS_ADMIN_PASSWORD` | yes | Password for that account, at least 8 characters. Left empty the app generates one and prints it to the container log instead, so set it. |
+| `ODYSSEUS_ADMIN_PASSWORD` | yes | Password for that account, at least 8 characters. Pick one now; the app has no way to show it to you later. |
 | `OPENAI_API_KEY` | no | OpenAI API key, so the first chat works without a settings visit. Seeds the first boot; afterwards keys live in the app's own encrypted vault under Settings > Integrations. |
 | `OLLAMA_BASE_URL` | no | Base URL of an Ollama server to use for local models, reachable from this instance. Leave blank unless you run one. |
 | `SEARXNG_INSTANCE` | no | Base URL of a SearXNG instance for web search and Deep Research. Leave blank to configure a key-based search provider in the app instead. |
@@ -71,8 +74,12 @@ Fixed by the template:
 - `PUID=0` and `PGID=0`. The image's entrypoint drops privileges with `gosu` and defaults to
   `1000:1000`, which is the right answer for a bind mount on a developer's laptop. Here the volume
   is created owned by the image's user, which is root, and the entrypoint repairs ownership only on
-  the paths it knows about inside `/app`, so a uid 1000 process could not write its own database.
-  Running as the uid that owns the volume is the escape hatch upstream already provides.
+  the paths it knows about inside `/app`, so a uid 1000 process cannot write its own database. That
+  is measured, not assumed: the same manifest with these two lines removed fails the deploy with
+  `sqlite3.OperationalError: unable to open database file` and never reaches the health check.
+  Running as the uid that owns the volume is the escape hatch upstream already provides. The cost is
+  that the app's shell tool and its agents run as root inside the container; the container is the
+  boundary either way, but it is worth knowing before you share the instance.
 - `AUTH_ENABLED=true` and `LOCALHOST_BYPASS=false`, the values upstream's own security notes ask for
   on anything network-accessible. The workspace includes a shell tool, so an instance with auth off
   hands a shell to whoever has the URL.

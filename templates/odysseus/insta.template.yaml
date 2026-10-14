@@ -1,0 +1,100 @@
+code: odysseus
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/instacloud-oss
+
+# Upstream's official multi-arch image, unmodified. There is no overlay Dockerfile in this
+# directory: the entrypoint reads its data path from ODYSSEUS_DATA_DIR and the uid it drops to from
+# PUID/PGID, so both things that would otherwise need patching are already environment variables.
+#
+# The tag carries the index digest because upstream says in its own README that `:latest` and bare
+# `:X.Y.Z` both move on every push to main. 1.0.3 is the curated main build; the digest is the
+# top-level OCI index, not one of its children, so both architectures still resolve.
+upstream:
+  repo: odysseus-dev/odysseus
+  image: ghcr.io/odysseus-dev/odysseus
+  pinned: "1.0.3@sha256:4aa6e607d2108bd7b5f37ee1a0841dc56e6bbac36e9ccd5e1705aff7ea36fb04"
+  license: AGPL-3.0-or-later
+
+services:
+  odysseus:
+    type: web
+    image: ghcr.io/odysseus-dev/odysseus:1.0.3@sha256:4aa6e607d2108bd7b5f37ee1a0841dc56e6bbac36e9ccd5e1705aff7ea36fb04
+    port: 7000
+    # The app's own liveness endpoint. It is one of the handful of paths AuthMiddleware exempts, so
+    # it answers 200 with auth on. `/` does not: an unauthenticated request there is redirected to
+    # /login with a 302, which an HTTP health gate reads as a failure.
+    healthcheck: /api/health
+    # Chat, research, documents and the editor are all driven by an inbound request, which is itself
+    # what wakes the machine. The app does run a task scheduler in-process, and it seeds a set of
+    # housekeeping jobs active on the first boot rather than paused, but missing one is a delay
+    # rather than a loss: the scheduler's startup path pushes an overdue active task's next run
+    # forward by 60 seconds, so anything skipped while the machine was down fires a minute after it
+    # wakes. What an idle machine genuinely misses is the time-sensitive work: IMAP mail polling,
+    # note and calendar reminders, and any scheduled agent task of your own. Set this to true if you
+    # configure any of those.
+    alwaysOn: false
+    volume: true
+    env:
+      fixed:
+        # Every persisted file the app has lives under this one directory: the SQLite database, the
+        # auth file, uploads, the gallery, skills, the fastembed cache and the per-feature caches.
+        # src/constants.py is the only place that reads it and everything else derives from there,
+        # so this single variable is enough to move the whole data tree onto the volume. DATABASE_URL
+        # is deliberately not set: it defaults to sqlite:///<data dir>/app.db and follows this.
+        ODYSSEUS_DATA_DIR: /data
+        # The image's entrypoint chowns its writable paths and then drops to PUID:PGID with gosu,
+        # defaulting to 1000:1000. That default is for bind mounts on a developer's own machine. Here
+        # the volume at /data is created owned by the image's user, which is root, and the entrypoint
+        # does not chown /data because it only knows about /app/data. A uid 1000 process would then
+        # fail to write its own database. 0:0 keeps the process as root, which is the uid that owns
+        # the volume; the entrypoint takes the value as-is because root already exists in /etc/passwd.
+        PUID: "0"
+        PGID: "0"
+        # Upstream's two security switches, both at the value its README asks for on anything
+        # network-accessible. AUTH_ENABLED=false would serve the whole workspace, including the shell
+        # tool, to anyone with the URL.
+        AUTH_ENABLED: "true"
+        LOCALHOST_BYPASS: "false"
+        # Marks the session cookie Secure. Left unset the app follows the request scheme, and the app
+        # sees plain HTTP from the edge proxy rather than the HTTPS the browser used, so the cookie
+        # would not be marked. The service is only ever reached over HTTPS.
+        SECURE_COOKIES: "true"
+        # CORS. The default is a localhost pair, which is right for the compose file upstream ships
+        # and wrong here. The UI is served from this same origin, so nothing it does is cross-origin;
+        # this is what lets a mobile or WebView client call the API. Edit it on the service and
+        # restart if you put the instance behind your own domain.
+        ALLOWED_ORIGINS: ${services.odysseus.url}
+        # The callback origin handed to a remote MCP server during its OAuth flow. The container
+        # listens on 7000 and cannot know the address the browser reached it on, so without this the
+        # redirect would come back to http://localhost:7000 and fail.
+        OAUTH_REDIRECT_BASE_URL: ${services.odysseus.url}
+      required:
+        # Read once, by setup.py, on the first boot only: it writes the bcrypt hash into auth.json on
+        # the volume and never looks at the variable again. Changing either one afterwards does
+        # nothing; change the password in the app under Settings.
+        ODYSSEUS_ADMIN_USER:
+          description: Username for the first admin account, created on first boot. Lowercase, and not one of the names the app reserves (admin is fine)
+        ODYSSEUS_ADMIN_PASSWORD:
+          description: Password for that account, at least 8 characters. Left empty the app generates one and prints it to the container log instead
+      optional:
+        # Odysseus keeps provider keys in its own encrypted vault, set under Settings > Integrations,
+        # so this is a convenience for the first boot rather than the only way in.
+        OPENAI_API_KEY:
+          description: "OpenAI API key (platform.openai.com/api-keys), so the first chat works without a settings visit. Leave blank and add a key for any provider later under Settings > Integrations"
+        OLLAMA_BASE_URL:
+          description: "Base URL of an Ollama server to use for local models, reachable from this instance (e.g. https://ollama.example.com). Leave blank unless you run one"
+        SEARXNG_INSTANCE:
+          description: "Base URL of a SearXNG instance for web search and Deep Research (e.g. https://searxng.example.com). Leave blank to use a key-based provider instead"
+
+meta:
+  name: Odysseus
+  tagline: Self-hosted AI workspace for chat, agents and research
+  category: llm
+  tags: [llm, ai, chat, agents]
+  # Upstream publishes a two-architecture OCI index for this digest and nothing is rebuilt here.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/odysseus-dev/odysseus
+    documentation: https://github.com/odysseus-dev/odysseus/blob/main/website/setup.md

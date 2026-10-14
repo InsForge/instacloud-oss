@@ -403,7 +403,7 @@
         "tags": [
           "Catalog"
         ],
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nList the template categories, in the order galleries show them. Public — no auth required.\n\nThe one list the console, the marketing site and insta-oss label categories from. A community template's category must be one of these slugs.",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nList the template categories, in the order galleries show them. Public — no auth required.\n\nThe one list the console, the marketing site and InstaCloud OSS label categories from. A community template's category must be one of these slugs.",
         "security": [],
         "responses": {
           "200": {

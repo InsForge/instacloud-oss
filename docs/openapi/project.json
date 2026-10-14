@@ -248,6 +248,7 @@
           "Projects"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -263,8 +264,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -560,16 +560,22 @@
                           "additionalProperties": {
                             "anyOf": [
                               {
-                                "const": "allow",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "allow"
+                                ]
                               },
                               {
-                                "const": "deny",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "deny"
+                                ]
                               },
                               {
-                                "const": "approve",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "approve"
+                                ]
                               }
                             ]
                           }
@@ -580,16 +586,22 @@
                           "additionalProperties": {
                             "anyOf": [
                               {
-                                "const": "allow",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "allow"
+                                ]
                               },
                               {
-                                "const": "deny",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "deny"
+                                ]
                               },
                               {
-                                "const": "approve",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "approve"
+                                ]
                               }
                             ]
                           }
@@ -667,7 +679,14 @@
                                 ]
                               },
                               {
-                                "type": "null"
+                                "type": [
+                                  "object",
+                                  "null"
+                                ],
+                                "enum": [
+                                  null,
+                                  null
+                                ]
                               }
                             ]
                           }
@@ -691,16 +710,22 @@
                           "additionalProperties": {
                             "anyOf": [
                               {
-                                "const": "allow",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "allow"
+                                ]
                               },
                               {
-                                "const": "deny",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "deny"
+                                ]
                               },
                               {
-                                "const": "approve",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "approve"
+                                ]
                               }
                             ]
                           }
@@ -710,16 +735,22 @@
                           "additionalProperties": {
                             "anyOf": [
                               {
-                                "const": "allow",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "allow"
+                                ]
                               },
                               {
-                                "const": "deny",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "deny"
+                                ]
                               },
                               {
-                                "const": "approve",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "approve"
+                                ]
                               }
                             ]
                           }
@@ -729,16 +760,22 @@
                           "additionalProperties": {
                             "anyOf": [
                               {
-                                "const": "allow",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "allow"
+                                ]
                               },
                               {
-                                "const": "deny",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "deny"
+                                ]
                               },
                               {
-                                "const": "approve",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "approve"
+                                ]
                               }
                             ]
                           }
@@ -758,16 +795,22 @@
                           "additionalProperties": {
                             "anyOf": [
                               {
-                                "const": "allow",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "allow"
+                                ]
                               },
                               {
-                                "const": "deny",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "deny"
+                                ]
                               },
                               {
-                                "const": "approve",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "approve"
+                                ]
                               }
                             ]
                           }
@@ -777,16 +820,22 @@
                           "additionalProperties": {
                             "anyOf": [
                               {
-                                "const": "allow",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "allow"
+                                ]
                               },
                               {
-                                "const": "deny",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "deny"
+                                ]
                               },
                               {
-                                "const": "approve",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "approve"
+                                ]
                               }
                             ]
                           }
@@ -796,16 +845,22 @@
                           "additionalProperties": {
                             "anyOf": [
                               {
-                                "const": "allow",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "allow"
+                                ]
                               },
                               {
-                                "const": "deny",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "deny"
+                                ]
                               },
                               {
-                                "const": "approve",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "approve"
+                                ]
                               }
                             ]
                           }
@@ -868,6 +923,7 @@
           "Governance"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -920,16 +976,22 @@
                     "additionalProperties": {
                       "anyOf": [
                         {
-                          "const": "allow",
-                          "type": "string"
+                          "type": "string",
+                          "enum": [
+                            "allow"
+                          ]
                         },
                         {
-                          "const": "deny",
-                          "type": "string"
+                          "type": "string",
+                          "enum": [
+                            "deny"
+                          ]
                         },
                         {
-                          "const": "approve",
-                          "type": "string"
+                          "type": "string",
+                          "enum": [
+                            "approve"
+                          ]
                         }
                       ]
                     }
@@ -940,16 +1002,22 @@
                     "additionalProperties": {
                       "anyOf": [
                         {
-                          "const": "allow",
-                          "type": "string"
+                          "type": "string",
+                          "enum": [
+                            "allow"
+                          ]
                         },
                         {
-                          "const": "deny",
-                          "type": "string"
+                          "type": "string",
+                          "enum": [
+                            "deny"
+                          ]
                         },
                         {
-                          "const": "approve",
-                          "type": "string"
+                          "type": "string",
+                          "enum": [
+                            "approve"
+                          ]
                         }
                       ]
                     }
@@ -967,8 +1035,7 @@
                 ]
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -1032,16 +1099,22 @@
                           "additionalProperties": {
                             "anyOf": [
                               {
-                                "const": "allow",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "allow"
+                                ]
                               },
                               {
-                                "const": "deny",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "deny"
+                                ]
                               },
                               {
-                                "const": "approve",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "approve"
+                                ]
                               }
                             ]
                           }
@@ -1052,16 +1125,22 @@
                           "additionalProperties": {
                             "anyOf": [
                               {
-                                "const": "allow",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "allow"
+                                ]
                               },
                               {
-                                "const": "deny",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "deny"
+                                ]
                               },
                               {
-                                "const": "approve",
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                  "approve"
+                                ]
                               }
                             ]
                           }
@@ -1272,6 +1351,7 @@
           "Secrets"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -1387,8 +1467,7 @@
                 ]
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -1531,6 +1610,16 @@
             }
           },
           "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
             "description": "Default Response",
             "content": {
               "application/json": {
@@ -2320,6 +2409,7 @@
           "Branches"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -2346,8 +2436,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -2452,6 +2541,16 @@
             }
           },
           "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
             "description": "Default Response",
             "content": {
               "application/json": {
@@ -2646,6 +2745,7 @@
           "Branches"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -2661,8 +2761,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -2807,6 +2906,7 @@
           "Branches"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -2822,8 +2922,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -2965,6 +3064,7 @@
           "Cron"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -3113,8 +3213,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -3346,7 +3445,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "invalid expression, target or name",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -3385,7 +3483,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "a job of this name already exists on the branch",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -3661,6 +3758,7 @@
           "Cron"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -3677,8 +3775,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -4043,6 +4140,7 @@
           "Cron"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -4435,7 +4533,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "missing/invalid If-Match, an invalid expression or target, or a new target without `request` on a POST job or one that sends headers",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -4474,7 +4571,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the job changed since that revision — re-read it and retry",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -4645,7 +4741,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "missing, blank, or over-255-character Idempotency-Key (a paused job is still triggerable: pause stops the clock, not a manual run)",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -4684,7 +4779,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "a run with this Idempotency-Key is still being created — retry",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -5643,6 +5737,7 @@
           "Database"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -5658,8 +5753,7 @@
                 ]
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -6088,6 +6182,7 @@
           "Database"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -6558,6 +6653,7 @@
           "Database"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -6665,7 +6761,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "code credential_change_in_progress: another credential change for this database (a rotation or a private-access toggle) is in flight — nothing was changed and the password is not rotated; retry in a moment",
                   "$ref": "#/components/schemas/CodedError"
                 }
               }
@@ -6699,6 +6794,7 @@
           "Database"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -6725,8 +6821,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -6809,7 +6904,14 @@
                     },
                     "queryId": {
                       "description": "reserved for future cancellation",
-                      "type": "null"
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "enum": [
+                        null,
+                        null
+                      ]
                     }
                   },
                   "required": [
@@ -6876,7 +6978,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "code public_access_closed: the database's public access is closed and the console has no private lane on this deployment yet",
                   "$ref": "#/components/schemas/CodedError"
                 }
               }
@@ -7032,6 +7133,131 @@
         }
       }
     },
+    "/projects/{projectId}/database/restart": {
+      "post": {
+        "operationId": "restartDatabase",
+        "summary": "Restart database",
+        "tags": [
+          "Database"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "branch",
+            "required": false,
+            "description": "branch name (default branch if omitted)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "description": "postgres service name (default: the sole postgres service)"
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "projectId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DbInstanceInfo"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nRestart the postgres server (insta-db only) so settings written with ALTER SYSTEM that need a restart (wal_level, max_wal_senders, max_replication_slots, …) take effect. Connections drop while it restarts. Waits for the restart to finish. `pending: true` means it was still in progress when the wait ran out — GET .../database/instance reads `running` throughout, so confirm with `SHOW <setting>` instead. A suspended database stays suspended — its next connection starts it with the new settings. Gated — deploy.",
+        "x-mint": {
+          "metadata": {
+            "title": "Restart database",
+            "sidebarTitle": "Restart database"
+          }
+        }
+      }
+    },
     "/projects/{projectId}/database/settings": {
       "patch": {
         "operationId": "updateDatabaseSettings",
@@ -7040,6 +7266,7 @@
           "Database"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -7211,7 +7438,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "code private_lane_disabled: private network access is not yet available on this deployment. code private_lane_unavailable_in_region: the database's region has no private network lane yet — privateAccess was turned back off and nothing was minted. code credential_change_in_progress (privateAccess only): another credential change for this database (a private-access toggle or a password rotation) is in flight — nothing was changed; retry in a moment",
                   "$ref": "#/components/schemas/CodedError"
                 }
               }
@@ -7317,13 +7543,9 @@
                                   "type": "string"
                                 },
                                 "default": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
+                                  "type": [
+                                    "string",
+                                    "null"
                                   ]
                                 },
                                 "identity": {
@@ -7445,7 +7667,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "code public_access_closed: the database's public access is closed and the console has no private lane on this deployment yet",
                   "$ref": "#/components/schemas/CodedError"
                 }
               }
@@ -7655,7 +7876,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "code public_access_closed: the database's public access is closed and the console has no private lane on this deployment yet",
                   "$ref": "#/components/schemas/CodedError"
                 }
               }
@@ -7689,6 +7909,7 @@
           "Deploy"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -7715,6 +7936,23 @@
                     "description": "compute only — omit to keep the service’s current setting; false turns it off",
                     "type": "boolean"
                   },
+                  "endpoint": {
+                    "description": "compute only — how the service is reached from this deploy on; omit to keep its current endpoint. tcp: raw TCP on `port` at the service’s own public IPv6 address (IPv6 clients only, no platform TLS); refuses a service with a custom domain, websocket, and ports that are commonly scanned, web (80/443) or reserved by the platform. http: back to the HTTPS domain. insta-compute provider only.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "http"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "tcp"
+                        ]
+                      }
+                    ]
+                  },
                   "replaceSource": {
                     "description": "when the service deploys from a repo: switch it to this image and remove the repo connection (admin+). Without it such a deploy is refused with 409.",
                     "type": "boolean"
@@ -7725,8 +7963,7 @@
                 ]
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -7765,7 +8002,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the app failed its deploy health gate (didn't answer on the routed port) — fix the app or its port and redeploy",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -7804,7 +8040,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the compute provider deliberately refused: the capability is not enabled on this deployment — retrying cannot help",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -7815,7 +8050,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the compute provider could not roll the deploy — the previous version keeps serving; safe to retry",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -7948,6 +8182,7 @@
           "Domains"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -8043,7 +8278,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the hostnames already serve this service, a previous move or sweep has not landed, or the domain is delegated to nameservers outside the registrar",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -8141,6 +8375,7 @@
           "Audit"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -8873,9 +9108,13 @@
                             "description": "insta-compute only — what the last activity was: inbound_http · inbound_tcp · inbound_ip · outbound (measured egress, e.g. a worker calling a model) · shell_session · ready (a readiness probe) · unknown (recorded before the plane kept provenance). Open vocabulary: the plane may add sources.",
                             "type": "string"
                           },
+                          "message": {
+                            "description": "insta-compute only — set when status is crashed: why the service failed, as the compute plane reported it",
+                            "type": "string"
+                          },
                           "desiredReplicas": {
                             "minimum": 1,
-                            "description": "compute only — configured same-region replica count",
+                            "description": "compute only — replicas the plane is converging to now (an autoscaled service moves this within its cap)",
                             "type": "integer"
                           },
                           "currentReplicas": {
@@ -9021,6 +9260,7 @@
           "Secrets"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -9049,8 +9289,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -9529,6 +9768,7 @@
           "Secrets"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -9552,8 +9792,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -9826,6 +10065,7 @@
           "Services"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -9918,8 +10158,25 @@
                     "description": "compute only — port the image listens on (default 8080)",
                     "type": "integer"
                   },
+                  "endpoint": {
+                    "description": "compute only — how the service is reached. http (default): HTTPS at the service domain. tcp: raw TCP on `port` at the service’s own public IPv6 address (IPv6 clients only, no platform TLS, no custom domain). tcp needs an explicit port, and refuses ports that are commonly scanned (21, 22, 23, 25, 53, 445, 3389), web ports (80, 443) or reserved by the platform. Available on the insta-compute provider only.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "http"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "tcp"
+                        ]
+                      }
+                    ]
+                  },
                   "alwaysOn": {
-                    "description": "compute only — idle mode at creation. Omitted: the platform default (INSTA_COMPUTE_ALWAYS_ON_DEFAULT; false on InstaCloud: scale-to-zero — a machine with no inbound or outbound traffic suspends and wakes on the next request). true = always-on: machines never scale to zero. A worker (port 0) is always-on regardless; false with port 0 is refused. All plans; billing is actual usage either way.",
+                    "description": "compute and databases (postgres, redis, mysql, mongodb) — idle mode at creation; not for storage. Omitted: the platform default per kind. Compute: INSTA_COMPUTE_ALWAYS_ON_DEFAULT (false on InstaCloud: scale-to-zero — a machine with no inbound or outbound traffic suspends and wakes on the next request). Databases: INSTA_DB_ALWAYS_ON_DEFAULT (true on InstaCloud: the database stays warm, so an app waking from scale-to-zero never waits on a database cold start too; false opts a new database into scale-to-zero — the idle instance suspends and its first connection after idling cold-starts). true = always-on: never scales to zero. A worker (port 0) is always-on regardless; false with port 0 is refused. For postgres the value is recorded on the database instance (GET /projects/{projectId}/database/instance, scaleToZero) and changed with PATCH .../database/settings; for the other types on the service row (always_on) and changed with PUT .../services/{serviceId}/always-on. All plans; billing is actual usage either way — an always-on database bills its resident memory while idle.",
                     "type": "boolean"
                   },
                   "volumeMountPath": {
@@ -9972,13 +10229,9 @@
                       },
                       "rootDir": {
                         "description": "subdirectory to build from (monorepo); relative, no leading / or ..; null/omitted = repo root. It also decides which pushes deploy this service: the build context is this directory, so a push that changed nothing under it is skipped",
-                        "anyOf": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
+                        "type": [
+                          "string",
+                          "null"
                         ]
                       },
                       "autoDeploy": {
@@ -9986,50 +10239,34 @@
                         "type": "boolean"
                       },
                       "buildCommand": {
-                        "anyOf": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
+                        "type": [
+                          "string",
+                          "null"
                         ]
                       },
                       "startCommand": {
-                        "anyOf": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
+                        "type": [
+                          "string",
+                          "null"
                         ]
                       },
                       "watchPaths": {
                         "description": "An include list of gitignore patterns, matched against paths RELATIVE TO THE REPOSITORY ROOT rather than to `rootDir` — e.g. [\"apps/web/**\", \"packages/ui/**\"]. A push deploys this service only when it changed a matching path; omit or null to fall back to the root-directory rule (a service with `rootDir` deploys when a push changed something under it, one building from the repo root deploys on every push). `!` narrows the list under git's own rule that a path cannot be re-included once an earlier pattern took its directory, so [\"apps/web/**\", \"!**/*.md\"] drops apps/web/README.md but not apps/web/docs/guide.md. Inert on a public repo, which cannot auto-deploy at all",
-                        "anyOf": [
-                          {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
+                        "type": [
+                          "array",
+                          "null"
+                        ],
+                        "items": {
+                          "type": "string"
+                        }
                       },
                       "port": {
                         "description": "the port the app listens on; written to the service",
-                        "anyOf": [
-                          {
-                            "minimum": 1,
-                            "maximum": 65535,
-                            "type": "integer"
-                          },
-                          {
-                            "type": "null"
-                          }
+                        "minimum": 1,
+                        "maximum": 65535,
+                        "type": [
+                          "integer",
+                          "null"
                         ]
                       }
                     }
@@ -10037,8 +10274,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -10146,12 +10382,21 @@
               }
             }
           },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "501": {
             "description": "the database provider cannot create the requested pgVersion yet — nothing was created",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the database provider cannot create the requested pgVersion yet — nothing was created",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -10162,7 +10407,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the provider could not provision the service — nothing was created; safe to retry",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -10295,6 +10539,7 @@
           "Services"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -10417,23 +10662,15 @@
                           "type": "string"
                         },
                         "id": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "appliedMountPath": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "pending": {
@@ -10543,6 +10780,7 @@
           "Services"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -10558,8 +10796,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -10657,7 +10894,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "postgres: code private_lane_disabled — closing public access needs the private network lane, which is not yet available on this deployment (re-opening is never refused)",
                   "$ref": "#/components/schemas/CodedError"
                 }
               }
@@ -10668,7 +10904,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the provider refused the change for the named bucket; the service flag is unchanged, and buckets earlier in the lineage may already have switched — retry",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -10722,7 +10957,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response",
+            "description": "What changing a service's public access will break. Advisory: the change is never blocked on it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10769,6 +11004,7 @@
           "Services"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -10784,8 +11020,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -11082,6 +11317,7 @@
           "Services"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -11108,8 +11344,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -11216,6 +11451,40 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "the command ran past timeoutSec; not retryable as-is — detach long work or raise timeoutSec",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "the command ran past timeoutSec; not retryable as-is — detach long work or raise timeoutSec",
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "exec_timeout"
+                      ]
+                    },
+                    "stdout": {
+                      "description": "what the command printed before the deadline; absent when the provider did not return it",
+                      "type": "string"
+                    },
+                    "stderr": {
+                      "description": "what the command printed to stderr before the deadline; absent when the provider did not return it",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }
@@ -11373,7 +11642,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nStop one named compute instance and run one fewer (paid plans only; free → 403). The last instance cannot be removed.",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nStop one named compute instance. The last instance cannot be removed.",
         "x-mint": {
           "metadata": {
             "title": "Remove service instance",
@@ -11513,6 +11782,7 @@
           "Services"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -11532,8 +11802,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -11963,6 +12232,7 @@
           "Storage"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -11983,8 +12253,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -12245,6 +12514,7 @@
           "Storage"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -12272,8 +12542,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -12404,6 +12673,7 @@
           "Services"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -12419,8 +12689,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -12588,7 +12857,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "not a compute service, nothing deployed yet, deliberately stopped/suspended, or the app did not answer on its port coming back up — in that last case the machines are rolled back to the config they were serving, best-effort: the message names any the provider could not put back",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -12627,7 +12895,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the compute provider could not roll the restart — safe to retry",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -12651,6 +12918,7 @@
           "Services"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -12662,6 +12930,7 @@
                   "machineCount": {
                     "minimum": 1,
                     "maximum": 10,
+                    "description": "replica cap: a scale-to-zero service runs 1 up to this many on demand; an always-on service runs exactly this many",
                     "type": "integer"
                   },
                   "region": {
@@ -12690,8 +12959,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -12819,7 +13087,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nSet a compute service's machine count (paid plans only; free → 403).",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nSet a compute service's replica cap (raising it needs a paid plan; free → 403).",
         "x-mint": {
           "metadata": {
             "title": "Scale service",
@@ -12978,6 +13246,7 @@
           "Services"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -13017,13 +13286,9 @@
                   },
                   "rootDir": {
                     "description": "subdirectory to build from (monorepo); relative, no leading / or ..; null/omitted = repo root. It also decides which pushes deploy this service: the build context is this directory, so a push that changed nothing under it is skipped",
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "autoDeploy": {
@@ -13031,57 +13296,40 @@
                     "type": "boolean"
                   },
                   "buildCommand": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "startCommand": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "watchPaths": {
                     "description": "An include list of gitignore patterns, matched against paths RELATIVE TO THE REPOSITORY ROOT rather than to `rootDir` — e.g. [\"apps/web/**\", \"packages/ui/**\"]. A push deploys this service only when it changed a matching path; omit or null to fall back to the root-directory rule (a service with `rootDir` deploys when a push changed something under it, one building from the repo root deploys on every push). `!` narrows the list under git's own rule that a path cannot be re-included once an earlier pattern took its directory, so [\"apps/web/**\", \"!**/*.md\"] drops apps/web/README.md but not apps/web/docs/guide.md. Inert on a public repo, which cannot auto-deploy at all",
-                    "anyOf": [
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
                   },
                   "port": {
                     "description": "the port the app listens on; written to the service",
-                    "anyOf": [
-                      {
-                        "minimum": 1,
-                        "maximum": 65535,
-                        "type": "integer"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "type": [
+                      "integer",
+                      "null"
                     ]
                   }
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -13250,6 +13498,7 @@
           "Services"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -13259,50 +13508,34 @@
                     "type": "string"
                   },
                   "rootDir": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "autoDeploy": {
                     "type": "boolean"
                   },
                   "buildCommand": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "startCommand": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "watchPaths": {
-                    "anyOf": [
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -13967,6 +14200,63 @@
                     "state": {
                       "description": "running|suspended|stopped|none|unknown",
                       "type": "string"
+                    },
+                    "lastFailure": {
+                      "description": "the newest deploy attempt's failure; omitted when the newest attempt succeeded",
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "description": "build: no image was produced; deploy: the image was built (or given) but did not go live",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "deploy"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "build"
+                              ]
+                            }
+                          ]
+                        },
+                        "at": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "reason": {
+                          "description": "tenant-safe: the same message the failing deploy or build already reported",
+                          "type": "string"
+                        },
+                        "buildId": {
+                          "format": "uuid",
+                          "description": "when the attempt was a build: `insta build logs <buildId> --source <buildSource>`",
+                          "type": "string"
+                        },
+                        "buildSource": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "github"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "archive"
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "at",
+                        "reason"
+                      ]
                     }
                   }
                 }
@@ -14283,6 +14573,7 @@
           "Services"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -14298,8 +14589,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -14463,49 +14753,37 @@
                   "properties": {
                     "volume": {
                       "description": "null = no volume attached (attach one any time with PUT …/volume)",
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "sizeGib": {
-                              "type": "integer"
-                            },
-                            "mountPath": {
-                              "description": "configured container mount path (defaults to /data for compute)",
-                              "type": "string"
-                            },
-                            "id": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "appliedMountPath": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "pending": {
-                              "type": "boolean"
-                            }
-                          },
-                          "required": [
-                            "sizeGib",
-                            "mountPath"
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sizeGib": {
+                          "type": "integer"
+                        },
+                        "mountPath": {
+                          "description": "configured container mount path (defaults to /data for compute)",
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
-                        {
-                          "type": "null"
+                        "appliedMountPath": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "pending": {
+                          "type": "boolean"
                         }
+                      },
+                      "required": [
+                        "sizeGib",
+                        "mountPath"
                       ]
                     },
                     "cap": {
@@ -14565,6 +14843,7 @@
           "Services"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -14625,23 +14904,15 @@
                           "type": "string"
                         },
                         "id": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "appliedMountPath": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "pending": {
@@ -14786,7 +15057,14 @@
                     },
                     "volume": {
                       "description": "always null — the service no longer has a volume",
-                      "type": "null"
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "enum": [
+                        null,
+                        null
+                      ]
                     },
                     "cap": {
                       "type": "object",
@@ -14858,7 +15136,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "service not found, or the service has no volume",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -14869,7 +15146,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the provider could not unmount/destroy the disk — nothing was deleted; the volume is still attached and billed, retry",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -14893,6 +15169,7 @@
           "Templates"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -15078,22 +15355,559 @@
             }
           },
           "409": {
-            "description": "the run is still in progress; the branch already holds the maximum number of copies of this template; or a service name is too long to suffix for another copy",
+            "description": "the run is still in progress; the branch already holds the maximum number of copies of this template; or a service name is too long to suffix for another copy. Also code template_version_changed: the template was republished since it was read, fetch it again.",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the run is still in progress; the branch already holds the maximum number of copies of this template; or a service name is too long to suffix for another copy",
+                  "$ref": "#/components/schemas/CodedError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
                   "$ref": "#/components/schemas/Error"
                 }
               }
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nDeploy a template onto a branch (async — poll GET /template-deployments/:id). Omit branch/branchId for a fresh branch named after the template. Deploying the same template into a branch that already runs it builds an INDEPENDENT copy — its services are named <name>-2, <name>-3 … and the existing copy is untouched — so the names in the response need not match the manifest. Gated — service.add + secrets.write + deploy, plus service.upgrade when the manifest declares a volume. Idempotent per (deploymentId, manifest): duplicate/mid-run re-invokes answer 202 with the current row.",
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nDeploy a template onto a branch (async — poll GET /template-deployments/:id). Omit branch/branchId for a fresh branch named after the template. Deploying the same template into a branch that already runs it builds an INDEPENDENT copy — its services are named <name>-2, <name>-3 … and the existing copy is untouched — so the names in the response need not match the manifest. Gated — service.add + secrets.write + deploy, plus service.upgrade when the manifest declares a volume and service.setAccess when it declares a public bucket. Idempotent per (deploymentId, manifest): duplicate/mid-run re-invokes answer 202 with the current row.",
         "x-mint": {
           "metadata": {
             "title": "Create template deployment",
             "sidebarTitle": "Create template deployment"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/template-deployments/{deploymentId}/rollback": {
+      "post": {
+        "operationId": "rollbackTemplateDeployment",
+        "summary": "Rollback template deployment",
+        "tags": [
+          "Templates"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "variables": {
+                    "description": "values for required variables the older version needs that the instance no longer holds — an upgrade to a version that stopped declaring a variable DELETES its value, and the older manifest still requires it. Everything the services still hold is recovered and need not be resent; a 400 missing_variables names exactly what to send here",
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "projectId",
+            "required": true
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "deploymentId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deploymentId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "deployment": {
+                      "$ref": "#/components/schemas/TemplateDeployment"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "approval_required"
+                      ]
+                    },
+                    "approvalId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "string"
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "nextActions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NextAction"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "key": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "key"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "code template_no_step_back: this instance was not upgraded from anything, or it is itself the result of a rollback and the version it came from is the newer one. code template_version_not_recorded: the manifest for that version is no longer recorded. code template_version_content_changed: that version was republished with different content after this instance ran it, so the recorded manifest is not what it was running. code template_no_services: the deployment owns nothing to roll back. code template_superseded: this instance already moved off this deployment — the message names the one to act on instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nReturn a deployed template instance to the version it was upgraded from — one step, from wherever it is now (async — poll GET /template-deployments/:id). Restores the image, start command, port, always-on, public access, the volume mount path and recorded variables from the older manifest. An existing volume is never resized. Public access on a STORAGE service is lineage-wide: it sets that bucket's access on every branch that has a copy. It does NOT restore data: an app that migrated its own database under the newer version cannot read it back, and a volume only grows.",
+        "x-mint": {
+          "metadata": {
+            "title": "Rollback template deployment",
+            "sidebarTitle": "Rollback template deployment"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/template-deployments/{deploymentId}/upgrade": {
+      "post": {
+        "operationId": "upgradeTemplateDeployment",
+        "summary": "Upgrade template deployment",
+        "tags": [
+          "Templates"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "variables": {
+                    "description": "values for required variables the new version adds; existing values are recovered and need not be resent",
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "expectedVersion": {
+                    "description": "the version the caller reviewed; a different one in the registry answers 409 template_version_changed",
+                    "type": "string"
+                  },
+                  "expectedDigest": {
+                    "description": "the to_digest from the preview; a different one answers 409 template_version_changed",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "projectId",
+            "required": true
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "deploymentId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deploymentId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "deployment": {
+                      "$ref": "#/components/schemas/TemplateDeployment"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "approval_required"
+                      ]
+                    },
+                    "approvalId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "string"
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "nextActions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NextAction"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "key": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "key"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "code template_version_changed: republished since the review. code template_up_to_date: already running this content. code template_not_served: off the catalog. code template_no_services: the deployment owns nothing to upgrade. code template_superseded: this instance already moved off this deployment — the message names the one to act on instead",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).\n\nMove a deployed template instance to the version the registry serves now (async — poll GET /template-deployments/:id). The SAME services are reused: image, port, start command, always-on, public access, the volume mount path and the variables are all rewritten from the new manifest, a service the new version adds is created, and a service it drops is left running. A volume the new version adds to an existing service is attached at this plan's size and mounted by the run's own deploy; an existing volume is never resized, because a manifest cannot declare a size. Public access on a STORAGE service is lineage-wide — it sets that bucket public on every branch that has a copy, not only this one, and the preview's row for the field says so. Send expectedVersion/expectedDigest from the preview so a republish between review and apply is refused rather than run.",
+        "x-mint": {
+          "metadata": {
+            "title": "Upgrade template deployment",
+            "sidebarTitle": "Upgrade template deployment"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/template-drafts": {
+      "post": {
+        "operationId": "createTemplateDraft",
+        "summary": "Generate a community template draft from this project's default environment",
+        "tags": [
+          "Templates"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "description": "The draft's name, trimmed, 1 to 80 characters. The template code is derived from it. Omitted: the project's name.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "projectId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "template": {
+                      "$ref": "#/components/schemas/CommunityTemplate"
+                    }
+                  },
+                  "required": [
+                    "template"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "approvalId": {
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "string"
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "approvalId",
+                    "action",
+                    "actions",
+                    "message",
+                    "url"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Generate a community template draft from this project's default environment",
+            "sidebarTitle": "Create template draft"
           }
         }
       }
@@ -15319,7 +16133,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response",
+            "description": "One server-side template deployment run and its progress.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15344,6 +16158,73 @@
           "metadata": {
             "title": "Get template deployment",
             "sidebarTitle": "Get template deployment"
+          }
+        }
+      }
+    },
+    "/template-deployments/{deploymentId}/upgrade": {
+      "get": {
+        "operationId": "previewTemplateUpgrade",
+        "summary": "Preview template upgrade",
+        "tags": [
+          "Templates"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "deploymentId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "plan": {
+                      "$ref": "#/components/schemas/TemplateUpgradePlan"
+                    }
+                  },
+                  "required": [
+                    "plan"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "code template_not_served: the registry no longer serves this template. code template_up_to_date: the instance already runs the content the registry publishes. code template_superseded: this instance already moved off this deployment — the message names the one to act on instead",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nWhat upgrading this deployment to the version the registry serves now would do: per-service field changes, which of them the upgrade writes and which it only reports, required variables with no value yet, and anything that makes the upgrade impossible. Each field row carries the label to show for it — render that label as given, because it is where a change states how far it reaches (public access on a storage service applies to that bucket on every branch). Reads only.",
+        "x-mint": {
+          "metadata": {
+            "title": "Preview template upgrade",
+            "sidebarTitle": "Preview template upgrade"
           }
         }
       }
@@ -15433,25 +16314,17 @@
             "type": "string"
           },
           "request_hash": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "request_context": {
-            "anyOf": [
-              {
-                "type": "object",
-                "additionalProperties": {}
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
           },
           "branch_id": {
             "format": "uuid",
@@ -15659,23 +16532,15 @@
             "type": "string"
           },
           "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "commit_sha": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           }
         },
@@ -15784,6 +16649,237 @@
         },
         "required": [
           "error"
+        ]
+      },
+      "CommunityTemplate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "description": "The draft's stable id. A rename of its code keeps it, and a new draft gets a new one, even under a code a deleted draft had. Routes and editor links address a draft by its code.",
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceProjectId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blank": {
+            "description": "Created with POST /orgs/{orgId}/templates, with no project behind it: every service is one the author added, and Regenerate From Project answers 400. A generated draft whose project was deleted is not blank.",
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "unpublished"
+            ]
+          },
+          "publishedVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hasUnpublishedChanges": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "readme": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defaultReadme": {
+            "description": "A README skeleton built from the draft as it is now: service names and required variable names only, never a value. The console offers it behind a button; it is not stored.",
+            "type": "string"
+          },
+          "logoUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "description": "web with a port, worker without one, or the managed type (postgres, redis, mysql, mongodb or storage). It and the fields below are the values after the author's settings.",
+                  "type": "string"
+                },
+                "image": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "port": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "healthcheck": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "volume": {
+                  "type": "boolean"
+                },
+                "mountPath": {
+                  "description": "null with volume true: the volume mounts at the default /data. null with volume false: no volume.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "command": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "alwaysOn": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "public": {
+                  "description": "Storage only, always present on a bucket: anonymous public-read, after the author's setting.",
+                  "type": "boolean"
+                },
+                "pgVersion": {
+                  "description": "Postgres only: the major a deploy creates the database on, after the author's setting. Absent when the project's database recorded none.",
+                  "type": "integer"
+                },
+                "added": {
+                  "description": "Present, and true, only on a service the author added: a PATCH deletes it for good. One from the project is removed instead.",
+                  "type": "boolean"
+                },
+                "removed": {
+                  "description": "The author left this service out of the template. It stays listed so it can be restored.",
+                  "type": "boolean"
+                },
+                "variables": {
+                  "description": "Sorted by the generator's name (originalName when renamed). Empty for a managed database. A removed service lists what restoring it brings back.",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateVariableView"
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "image",
+                "port",
+                "healthcheck",
+                "volume",
+                "mountPath",
+                "command",
+                "alwaysOn",
+                "removed",
+                "variables"
+              ]
+            }
+          },
+          "referenceOptions": {
+            "description": "What a variable may reference in the template as it is now. A removed service offers nothing.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateReferenceOption"
+            }
+          },
+          "editableFields": {
+            "$ref": "#/components/schemas/TemplateEditableFields"
+          },
+          "referenceKeys": {
+            "$ref": "#/components/schemas/TemplateReferenceKeys"
+          },
+          "publishRequirements": {
+            "description": "Always seven, in this order: has_service, no_blocked, no_conflicts, has_tagline, has_category, has_readme, required_descriptions.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplatePublishRequirement"
+            }
+          },
+          "report": {
+            "$ref": "#/components/schemas/TemplateGenerationReport"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "takenDown": {
+            "description": "Staff took this template down. It cannot be republished.",
+            "type": "boolean"
+          },
+          "deployCount": {
+            "description": "Succeeded deployments of this template.",
+            "type": "integer"
+          },
+          "totalProjects": {
+            "description": "Distinct projects that deployed this template since its first publish, any outcome: the number the gallery card shows (the catalog's totalProjects).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "orgId",
+          "sourceProjectId",
+          "blank",
+          "status",
+          "publishedVersion",
+          "hasUnpublishedChanges",
+          "name",
+          "tagline",
+          "category",
+          "readme",
+          "defaultReadme",
+          "logoUrl",
+          "services",
+          "referenceOptions",
+          "editableFields",
+          "referenceKeys",
+          "publishRequirements",
+          "report",
+          "updatedAt",
+          "takenDown",
+          "deployCount",
+          "totalProjects"
         ]
       },
       "ComputeProvider": {
@@ -16450,6 +17546,10 @@
             "format": "uri",
             "type": "string"
           },
+          "endpointHost": {
+            "description": "endpoint tcp only — the host to connect to on the service port (IPv6-only); such a service has no `url`",
+            "type": "string"
+          },
           "branch": {
             "type": "string"
           },
@@ -16510,13 +17610,9 @@
           },
           "service": {
             "description": "the compute service this hostname serves; each hostname of a domain can serve a different one",
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           }
         },
@@ -16846,25 +17942,17 @@
             }
           },
           "registeredAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "expiresAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "autorenew": {
@@ -16899,25 +17987,17 @@
           },
           "transferLockExpiresAt": {
             "description": "ICANN 60-day lock after registration: no transfer out before this, whatever `locked` says",
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "orderId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
             ]
           }
         },
@@ -16990,24 +18070,16 @@
         "properties": {
           "allocated": {
             "description": "the ceiling that was billed, in `unit`. NULL means no allocation was recorded in this window — not that nothing was allocated.",
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "number",
+              "null"
             ]
           },
           "actual": {
             "description": "what the app actually consumed, same unit. NULL means not measured in this window — not zero.",
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "number",
+              "null"
             ]
           },
           "unit": {
@@ -17016,13 +18088,9 @@
           },
           "utilisation": {
             "description": "actual / allocated; null when either side is unknown",
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "number",
+              "null"
             ]
           },
           "suspect": {
@@ -17290,13 +18358,32 @@
             ]
           },
           "always_on": {
-            "description": "compute only — true: machines never scale to zero; false (the platform default for new compute services, except workers): idle machines suspend and wake on request. Billing is actual usage either way.",
+            "description": "compute and managed databases (redis, mysql, mongodb) — true: machines never scale to zero; false: idle machines suspend and wake on request. A new compute service is born false (scale-to-zero, except a worker); a new managed database is born from INSTA_DB_ALWAYS_ON_DEFAULT (true on InstaCloud). Postgres is not recorded here: its idle mode lives on the database instance (GET /projects/{projectId}/database/instance, scaleToZero). Billing is actual usage either way.",
             "type": "boolean"
           },
           "websocket": {
             "description": "compute only — the app speaks WebSocket, so its machines carry connections-based concurrency and a 512 MB guest floor. Re-asserted by any redeploy given no flag, including restart. null: never recorded.",
             "type": [
               "boolean",
+              "null"
+            ]
+          },
+          "endpoint": {
+            "description": "compute only — how the service is reached. http: Host-routed HTTPS at `domain`. tcp: raw TCP at `endpoint_host`:`port` on the service’s own public IPv6 address (IPv6 clients only; no TLS from the platform, no custom domain, no WebSocket flag). Chosen at create, and changed by a deploy that passes `endpoint`. null: never chosen, which is http.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "http",
+              "tcp",
+              null
+            ]
+          },
+          "endpoint_host": {
+            "description": "compute, endpoint tcp only — the host to connect to on `port` (an IPv6-only name), set once a deploy has confirmed it; null otherwise",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -17386,11 +18473,36 @@
             ]
           },
           "template_logo_url": {
-            "description": "the template's mark, absolute and pinned to the commit that published it; null when the template is not in the registry (or carries no logo). Joined live rather than stored, because a republish moves it",
+            "description": "the template's mark; null when the template is not in the registry (or carries no logo). Official templates: a commit-pinned jsDelivr URL (TEMPLATE_LOGO_HOST). Community templates: any https:// link the author set. Joined live rather than stored, because a republish moves it",
             "type": [
               "string",
               "null"
             ]
+          },
+          "template_name": {
+            "description": "the template's name as the registry spells it, for a surface people read; null when the template is not in the registry, or its manifest omits a name. Read from the manifest the registry serves NOW, beside the logo, because a republish can rename it",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "template_version": {
+            "description": "the template version this instance was deployed from; null for a service created directly. Read from the deployment record, so it does not move when the registry is republished",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "template_latest_version": {
+            "description": "the version the registry serves for this template now; null when the registry does not serve it — absent, unpublished or taken down. The row still reports template_code and template_name in those cases, because attribution of a resource its owner deployed is not catalog visibility. For display beside template_version, never for deciding whether an update exists",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "template_update_available": {
+            "description": "true when upgrading this service's template deployment to the version the registry serves now would actually change something about the services it runs: a setting the new manifest would write, an environment variable it would write differently, a service it would add, or a variable it now requires that this instance holds no value for. A republish that only moved presentation is not an update, because applying it would change nothing, and neither is a new version string on identical content, which is what every community republish produces. False whenever the answer cannot be determined: a template absent from the registry, unpublished, taken down, a manifest this version of the platform cannot parse, or a registry read that failed. False too while the deployment's own run has not succeeded, because what an unfinished deploy needs is a retry, not an upgrade",
+            "type": "boolean"
           },
           "source": {
             "$ref": "#/components/schemas/ServiceSourceSummary"
@@ -17768,6 +18880,10 @@
                     "healthy",
                     "failed"
                   ]
+                },
+                "skipped": {
+                  "description": "an upgrade stepped over this service because the user had deleted it — the run never touched it, serviceId points at the deleted row, and state stays pending however the deployment ends. Not \"still in progress\"",
+                  "type": "boolean"
                 }
               }
             }
@@ -17779,11 +18895,466 @@
             "description": "container log tail captured when a service never became healthy",
             "type": "string"
           },
+          "rollbackTo": {
+            "description": "the version one step back, present only when this deployment was produced by an upgrade: what POST .../rollback would return the instance to. Absent on a first deploy, once the predecessor is gone, and on a deployment a ROLLBACK produced — that row's step back is the newer version it just left, which is offered as the update, not as a way back. Present is not a promise it will succeed — a version whose manifest is no longer recorded, or was republished with different content, still refuses at click time",
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "version"
+            ]
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
           }
         }
+      },
+      "TemplateEditableFields": {
+        "description": "Per service type, the TemplateServiceSettings keys a template service of that type takes. A PATCH answers 400 for any other.",
+        "type": "object",
+        "properties": {
+          "web": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "image",
+                "port",
+                "healthcheck",
+                "command",
+                "mountPath",
+                "alwaysOn"
+              ]
+            }
+          },
+          "worker": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "image",
+                "port",
+                "healthcheck",
+                "command",
+                "mountPath",
+                "alwaysOn"
+              ]
+            }
+          },
+          "postgres": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pgVersion"
+              ]
+            }
+          },
+          "redis": {
+            "maxItems": 0,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mysql": {
+            "maxItems": 0,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mongodb": {
+            "maxItems": 0,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "storage": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "public"
+              ]
+            }
+          }
+        },
+        "required": [
+          "web",
+          "worker",
+          "postgres",
+          "redis",
+          "mysql",
+          "mongodb",
+          "storage"
+        ]
+      },
+      "TemplateGenerationReport": {
+        "description": "What generation skipped, what blocks publishing (each with a fix), and notices.",
+        "type": "object",
+        "properties": {
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "service": {
+                  "type": "string"
+                },
+                "variable": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "fix": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ]
+            }
+          },
+          "blocked": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "service": {
+                  "type": "string"
+                },
+                "variable": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "fix": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ]
+            }
+          },
+          "notices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "service": {
+                  "type": "string"
+                },
+                "variable": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "fix": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ]
+            }
+          }
+        },
+        "required": [
+          "skipped",
+          "blocked",
+          "notices"
+        ]
+      },
+      "TemplatePublishRequirement": {
+        "description": "One condition publish checks. Publish answers 400 template_not_ready while any is not ok.",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "has_service",
+              "no_blocked",
+              "no_conflicts",
+              "has_tagline",
+              "has_category",
+              "has_readme",
+              "required_descriptions"
+            ]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "items": {
+            "description": "no_blocked: each blocked reason. no_conflicts: one sentence with its fix for each name the author added that the project now has too, services first. required_descriptions: each <service>.<VAR> still without a description. Otherwise empty.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "ok",
+          "items"
+        ]
+      },
+      "TemplateReferenceKeys": {
+        "description": "Per managed service type, the credential keys a variable may reference on a service of that type, one the author has not applied yet included (secretNames.ts CANONICAL_KEYS). A web service's url and host are not listed.",
+        "type": "object",
+        "properties": {
+          "postgres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "redis": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mysql": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mongodb": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "storage": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "postgres",
+          "redis",
+          "mysql",
+          "mongodb",
+          "storage"
+        ]
+      },
+      "TemplateReferenceOption": {
+        "description": "What a variable may reference: a database connection key, a bucket key, or a web service address including the service itself.",
+        "type": "object",
+        "properties": {
+          "token": {
+            "description": "Exactly what a reference choice sends and the manifest stores.",
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "key": {
+            "description": "A credential key of a managed database or a storage bucket, or url or host of a web service.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "service",
+          "key"
+        ]
+      },
+      "TemplateUpgradePlan": {
+        "type": "object",
+        "properties": {
+          "from_version": {
+            "description": "the version this instance was deployed from",
+            "type": "string"
+          },
+          "to_version": {
+            "description": "the version the registry serves now",
+            "type": "string"
+          },
+          "to_digest": {
+            "description": "content digest of the manifest this plan was computed from, send it back as expected_digest so the apply cannot run a version nobody reviewed",
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "description": "the manifest key; stable across copies, where the platform name may be <key>-2",
+                  "type": "string"
+                },
+                "service_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "service_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "gone": {
+                  "description": "the deployment created it and the branch no longer has it: the user deleted it. Reported, never recreated",
+                  "type": "boolean"
+                },
+                "added": {
+                  "description": "the new version introduces it; the upgrade creates it",
+                  "type": "boolean"
+                },
+                "fields": {
+                  "description": "what the upgrade will write on this service. On an `added` service these are the values it will be CREATED with, so `deployed` and `live` are null and `drifted` is false; a field the manifest does not declare gets no row and takes the platform default",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "description": "the `services` column this concerns — image, port, start_command, always_on, public, volume_gib (the new version adds a volume; it is attached at this plan's size) or volume_mount_path — so a client can deep-link to the setting",
+                        "type": "string"
+                      },
+                      "label": {
+                        "description": "what to show for this row. Render it as given: it is where a field states how far its change reaches, e.g. public access on a storage bucket applies to that bucket on every branch",
+                        "type": "string"
+                      },
+                      "deployed": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "live": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "next": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "drifted": {
+                        "description": "the live value differs from what the deployment recorded: the user changed it after deploying",
+                        "type": "boolean"
+                      },
+                      "verdict": {
+                        "type": "string",
+                        "enum": [
+                          "applied",
+                          "refused"
+                        ],
+                        "description": "applied: the upgrade writes it, which covers everything a manifest can declare for a service it keeps and for one it creates. refused: it cannot be changed in place at all, and refuses the whole upgrade"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "label",
+                      "drifted",
+                      "verdict"
+                    ]
+                  }
+                },
+                "missing_variables": {
+                  "type": "array",
+                  "items": {
+                    "description": "required variables the new version needs that this instance has no value for",
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "key",
+                "gone",
+                "added",
+                "fields",
+                "missing_variables"
+              ]
+            }
+          },
+          "removed": {
+            "type": "array",
+            "items": {
+              "description": "manifest keys the deployment created that the new version no longer declares. Left running",
+              "type": "string"
+            }
+          },
+          "refusals": {
+            "type": "array",
+            "items": {
+              "description": "non-empty means the upgrade cannot run at all",
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "from_version",
+          "to_version",
+          "to_digest",
+          "services",
+          "removed",
+          "refusals"
+        ]
+      },
+      "TemplateVariableView": {
+        "description": "One variable of a template service as its author sees it.",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "required",
+              "optional",
+              "default",
+              "reference",
+              "generated",
+              "fixed",
+              "removed"
+            ]
+          },
+          "value": {
+            "description": "default: the default text. reference: the token. fixed: the literal or the address reference.",
+            "type": "string"
+          },
+          "description": {
+            "description": "What whoever deploys reads. Omitted while it is the default sentence, which the console shows as an empty box.",
+            "type": "string"
+          },
+          "brokenReference": {
+            "description": "The token this variable referenced before its service was removed from the template or left the project. The variable is then required.",
+            "type": "string"
+          },
+          "originalName": {
+            "description": "Present only when the author renamed the variable: the generator's name, which a PATCH variables entry sends as name. name is then the new one.",
+            "type": "string"
+          },
+          "added": {
+            "description": "Present, and true, only on a variable the author added: a PATCH deletes it for good. One from the project is removed with choice removed instead.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "kind"
+        ]
       }
     }
   }

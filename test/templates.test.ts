@@ -113,6 +113,7 @@ const bundled = readdirSync(TEMPLATES).filter((d) =>
  *  know is warned about and SKIPPED. That is a gap in `src/`, so it is named here rather than
  *  derived, and it disappears from this map the day the parser learns the type. */
 const UNPARSEABLE: Record<string, string> = {
+  ghost: 'declares a managed mysql service this runtime cannot parse yet, so the catalog skips it',
   twenty: 'declares a managed redis service this runtime cannot parse yet, so the catalog skips it',
 }
 const listed = bundled.filter((c) => !manifestOf(c).meta?.draft && !(c in UNPARSEABLE)).sort()

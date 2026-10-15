@@ -4,9 +4,9 @@
 // idle), else a static INSTA_PLATFORM_STAFF_TOKEN. INSTA_PLATFORM_URL is always required.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, join, relative, resolve as resolvePath, sep } from "node:path";
+import { basename, join } from "node:path";
 import yaml from "js-yaml";
-import { ghcrGateMessage, ghcrRetryVerdict, parseGhcrRef, rewriteReadme, stripDeployBadge } from "./publish-lib.mjs";
+import { ghcrGateMessage, ghcrRetryVerdict, parseGhcrRef, repoPathOf, rewriteReadme, stripDeployBadge } from "./publish-lib.mjs";
 
 const url = process.env.INSTA_PLATFORM_URL?.replace(/\/+$/, "");
 if (!url) fail("INSTA_PLATFORM_URL must be set");
@@ -102,14 +102,12 @@ function absolutizeReadme(text, dir) {
   const repo = process.env.GITHUB_REPOSITORY || DEFAULT_REPO;
   const sha = process.env.GITHUB_SHA ?? gitHead();
   if (!sha) return text; // no commit to pin to: publish the text unchanged rather than guess
+  const inRepo = dirInRepo(dir);
   const root = repoRoot();
-  // Repo-relative terms throughout, so this works whether the caller passed `templates/hermes`
-  // or an absolute path.
-  const dirInRepo = relative(root, resolvePath(dir)).split(sep).join("/");
   const isDirectory = (p) => {
     try { return statSync(join(root, p)).isDirectory(); } catch { return false; }
   };
-  return rewriteReadme(text, { dirInRepo, repo, sha, isDirectory });
+  return rewriteReadme(text, { dirInRepo: inRepo, repo, sha, isDirectory });
 }
 
 // The logo is served from jsDelivr's CDN, pinned to the commit being published: immutable for
@@ -124,12 +122,13 @@ function logoUrlOf(dir, m) {
   const repo = process.env.GITHUB_REPOSITORY || DEFAULT_REPO;
   const sha = process.env.GITHUB_SHA ?? gitHead();
   if (!sha) return undefined;
-  return `https://cdn.jsdelivr.net/gh/${repo}@${sha}/${dir.replace(/^\.\//, "")}/${file}`;
+  return `https://cdn.jsdelivr.net/gh/${repo}@${sha}/${dirInRepo(dir)}/${file}`;
 }
 
-function gitHead() {
-  try { return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(); }
-  catch { return undefined; }
+// repoPathOf throws; the publisher turns that into its own exit path.
+function dirInRepo(dir) {
+  try { return repoPathOf(dir, repoRoot()); }
+  catch (e) { return fail(e.message); }
 }
 
 function repoRoot() {

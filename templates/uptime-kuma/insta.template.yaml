@@ -3,10 +3,11 @@ version: 1.0.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
-# Upstream's own image, referenced and never rebuilt. The 2.x release stage ships no entrypoint
-# script at all (`ENTRYPOINT ["/usr/bin/dumb-init", "--"]`, `CMD ["node", "server/server.js"]`) and
-# runs as root, so nothing has to be patched to make the platform volume writable. The 1.x image
-# did chown /app/data on boot, which is why older notes about this app mention a wrapper.
+# Upstream's own image, referenced and never rebuilt. The 2.x release stage's ENTRYPOINT is
+# `/usr/bin/dumb-init --` with `CMD ["node", "server/server.js"]`: a process supervisor and the
+# app, no shell script in front of them, and it runs as root. So nothing has to be patched to make
+# the platform volume writable. The 1.x image chowned /app/data on boot, which is why older notes
+# about this app mention a wrapper.
 upstream:
   repo: louislam/uptime-kuma
   image: docker.io/louislam/uptime-kuma
@@ -17,8 +18,9 @@ services:
   kuma:
     type: web
     # The plain tag is upstream's `release` target, which carries no USER and so runs as root.
-    # Upstream also publishes `2.5.6-rootless` from a stage that adds `USER node`; this one is
-    # deliberate, because root is what makes the volume at /data writable with no entrypoint.
+    # Upstream also publishes `2.5.6-rootless` from a stage that adds `USER node`. This tag is the
+    # deliberate one, because root is what makes the volume at /data writable without a
+    # permission-fixing entrypoint in front of the app.
     image: docker.io/louislam/uptime-kuma:2.5.6
     port: 3001
     # NOT `/`. Upstream's entry-page handler answers 302 to /dashboard (server/server.js), and the
@@ -66,9 +68,9 @@ services:
       optional:
         # server/uptime-kuma-server.js refuses a websocket upgrade whose Origin does not match the
         # Host it was given, which is a reverse proxy's decision and not this template's. `bypass`
-        # is upstream's own escape hatch; anything else leaves the check on. On the deployment this
-        # template was verified against the check never refused anything and the dashboard ran on
-        # socket.io long-polling anyway, for a reason not established; see the pull request.
+        # is upstream's own escape hatch; anything else leaves the check on. On the deployment used
+        # to verify this template, the check never refused anything, and the dashboard ran on
+        # socket.io long-polling anyway, for a reason not established. See the pull request.
         UPTIME_KUMA_WS_ORIGIN_CHECK: "Set to bypass only if the dashboard falls back to long-polling behind your own proxy. Leaving it unset keeps the websocket Origin check on"
         # server/server.js sends X-Frame-Options: sameorigin unless this is set to any value.
         UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN: "Set to 1 to drop the X-Frame-Options header so a status page can be embedded in an iframe on another site"

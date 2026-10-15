@@ -7,10 +7,10 @@ Self-hosted uptime monitoring with status pages and alerts.
 ## Overview
 
 [Uptime Kuma](https://github.com/louislam/uptime-kuma) watches things that are supposed to be up
-and tells you when they are not. You add a monitor (an HTTP endpoint, a TCP port, a ping, a DNS
-record, a Docker container, a push heartbeat from your own cron job), pick how often to check it,
+and tells you when they are not. You add a monitor (an HTTP endpoint, a TCP port, a JSON field in
+a response, a push heartbeat from your own cron job), pick how often to check it,
 and it draws the result as a bar of heartbeats with a retention history behind it. When a check
-fails it fires a notification through one of the 90-odd channels it ships with, and it can publish
+fails it fires a notification through one of the hundred-plus channels it ships with, and it can publish
 any subset of monitors as a public status page on its own URL.
 
 This template deploys the official upstream image unchanged, as a single instance that keeps
@@ -41,7 +41,7 @@ creates its own admin account from its setup screen on first visit.
 
 | Variable | Required | What it does |
 |---|---|---|
-| `UPTIME_KUMA_WS_ORIGIN_CHECK` | optional | Set to `bypass` only if the dashboard falls back to long-polling behind your own proxy. Left unset, Uptime Kuma refuses a websocket upgrade whose `Origin` does not match the `Host` it was given. |
+| `UPTIME_KUMA_WS_ORIGIN_CHECK` | optional | Left unset, Uptime Kuma refuses a websocket upgrade whose `Origin` does not match the `Host` it was given, which some reverse proxies rewrite. `bypass` turns that check off. On this platform the dashboard runs on socket.io long-polling and works fully, and the check was never observed refusing anything, so this is for your own proxy rather than for that. |
 | `UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN` | optional | Set to `1` to drop the `X-Frame-Options: sameorigin` header, so a status page can be embedded in an iframe on another site. |
 | `TZ` | optional | IANA timezone for timestamps in the UI and in notifications, such as `Europe/Berlin`. Defaults to UTC, and **Settings > Appearance** overrides it after deploy. |
 
@@ -73,6 +73,20 @@ asleep, which is worse than not monitoring.
 
 **It is not an APM.** Uptime Kuma answers "is it responding", not "why is it slow". It stores a
 response time per check and nothing from inside your application.
+
+**Three of the monitor types do not work here**, because of what the container can reach rather
+than anything in this template. Measured from inside the deployed service:
+
+| Type | Why |
+|---|---|
+| Ping | ICMP gets no replies out of the container. `ping -c 2 example.com` and `ping -c 2 1.1.1.1` both come back 100% packet loss. |
+| DNS | Only the platform's own resolver answers. A query to `1.1.1.1` times out, and that is the address Uptime Kuma fills the resolver field with by default. |
+| Docker Container | There is no Docker socket in the container and the platform exposes no Docker API, so there is no daemon to inspect. A remote Docker host you run yourself and expose over TCP would work. |
+
+Outbound TCP is otherwise unrestricted, including ports other than 80 and 443: connections to
+`example.com:80`, `example.com:443`, `github.com:22` and `smtp.gmail.com:587` all succeed, so the
+HTTP(s), TCP Port, SMTP and database monitor types have a route to work over. Only the HTTP(s) one
+has actually been run.
 
 ## After deploy
 

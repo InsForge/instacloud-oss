@@ -1,0 +1,66 @@
+code: superset-sh
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# Code is `superset-sh`, not `superset`: this is superset.sh, the coding-agent workspace app, and
+# AGENTS.md already uses the bare name for Apache Superset when it describes the `analytics`
+# category. `superset-sh` is upstream's own GitHub org and domain, so it is their spelling.
+upstream:
+  repo: superset-sh/superset
+  # The standalone CLI release, tag `cli-v1.37.0`. The desktop app shares the version number.
+  pinned: "1.37.0"
+  license: Elastic-2.0
+
+services:
+  # Named for the template, not "workspace": three templates sharing one service name collided on
+  # the same branch, the second overwriting the first (QA.md finding 1).
+  superset-sh:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/superset-sh:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 7681
+    healthcheck: /
+    volume: true  # mounts at /data
+    # true, unlike the other terminal templates, and it is the one field this template cannot
+    # share with them. What a user deploys this for is a Superset HOST: `superset start` opens an
+    # OUTBOUND connection to relay.superset.sh and waits, so a desktop app or an iPhone reaching
+    # this box arrives through that connection and never touches the routed port. Nothing would
+    # send the inbound request scale-to-zero waits for, so the box would idle-stop and the host
+    # would read offline in everyone's device list. Agents left working in tmux die with it for
+    # the same reason. This bills around the clock; a user who only wants the browser terminal
+    # can turn it off with `insta compute always-on off <service>`.
+    alwaysOn: true
+    env:
+      fixed:
+        # Puts the CLI's own store ($HOME/.superset: config, host database, host logs, installed
+        # plugins), every agent CLI's config, and whatever you clone on the volume.
+        HOME: /data/home
+      required:
+        # Neither a `default:` nor a `generate:`, so the deploy form shows two empty required fields
+        # and cannot be submitted until the operator fills them. That is deliberate: this service is
+        # a root shell in a browser, and a credential shipped in this file would be the same one on
+        # every deploy in the world. Nothing here can be left to a fallback.
+        ADMIN_USERNAME:
+          description: "Username for the browser terminal sign-in"
+        ADMIN_PASSWORD:
+          description: "Password for the browser terminal sign-in"
+      optional:
+        SUPERSET_API_KEY:
+          description: "Superset API key (`sk_live_…`) from Settings -> API Keys in the desktop app. Set it and the box registers itself as a host on every boot. Leave blank and run `superset auth login` in the terminal instead"
+        SUPERSET_ORGANIZATION_ID:
+          description: "Superset organization id, slug or name to register the host under. Only needed when your API key belongs to more than one organization, because the CLI will not guess"
+
+meta:
+  name: Superset
+  tagline: Coding agent workspaces on a remote host you reach from your desktop or phone
+  category: ai-agent
+  tags: [ai-agent, dev-tools]
+  # Architectures the published image carries. A box on anything else is told at deploy time
+  # rather than left to fail on the pull: the node base and the ttyd asset both carry aarch64, and
+  # upstream publishes `superset-linux-arm64.tar.gz` beside the x64 one, each with its own pinned
+  # checksum.
+  architectures: [amd64, arm64]
+  logo: ./logo.png
+  links:
+    upstream: https://github.com/superset-sh/superset
+    documentation: https://docs.superset.sh/cli/getting-started

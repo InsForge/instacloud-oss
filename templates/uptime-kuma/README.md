@@ -74,19 +74,19 @@ asleep, which is worse than not monitoring.
 **It is not an APM.** Uptime Kuma answers "is it responding", not "why is it slow". It stores a
 response time per check and nothing from inside your application.
 
-**Three of the monitor types do not work here**, because of what the container can reach rather
-than anything in this template. Measured from inside the deployed service:
+**Some monitor types cannot reach anything from here**, because of what the container's network
+allows rather than anything in this template. Measured from inside the deployed service:
 
-| Type | Why |
+| Type | What happens |
 |---|---|
-| Ping | ICMP gets no replies out of the container. `ping -c 2 example.com` and `ping -c 2 1.1.1.1` both come back 100% packet loss. |
-| DNS | Only the platform's own resolver answers. A query to `1.1.1.1` times out, and that is the address Uptime Kuma fills the resolver field with by default. |
-| Docker Container | There is no Docker socket in the container and the platform exposes no Docker API, so there is no daemon to inspect. A remote Docker host you run yourself and expose over TCP would work. |
+| Ping | **Does not work.** ICMP gets no replies: `ping -c 2 example.com` and `ping -c 2 1.1.1.1` both come back 100% packet loss. |
+| Docker Container | **Does not work.** There is no Docker socket in the container and the platform exposes no Docker API, so there is no daemon to inspect. A remote Docker host you run yourself and expose over TCP would work. |
+| DNS | **Works, but not on its default.** The **Resolver Server(s)** field is prefilled with `1.1.1.1`, and outbound port 53 does not reach it. Put the address in the container's own `/etc/resolv.conf` there instead and the monitor goes Up. Read that file rather than copying an address out of this page: it is the platform's, not this template's, and nothing here pins it. Note what such a monitor actually watches, which is that resolver, not your authoritative nameserver. |
 
-Outbound TCP is otherwise unrestricted, including ports other than 80 and 443: connections to
+Outbound TCP is otherwise unrestricted, including ports well away from 80 and 443: connections to
 `example.com:80`, `example.com:443`, `github.com:22` and `smtp.gmail.com:587` all succeed, so the
-HTTP(s), TCP Port, SMTP and database monitor types have a route to work over. Only the HTTP(s) one
-has actually been run.
+HTTP(s), TCP Port, SMTP and database monitor types have a route to work over. Only the HTTP(s) and
+DNS ones have actually been run.
 
 ## After deploy
 

@@ -46,8 +46,9 @@ creates its own admin account from its setup screen on first visit.
 | `TZ` | optional | IANA timezone for timestamps in the UI and in notifications, such as `Europe/Berlin`. Defaults to UTC, and **Settings > Appearance** overrides it after deploy. |
 
 Set by the template, not by you: `DATA_DIR=/data` (the SQLite database on the volume),
-`UPTIME_KUMA_PORT=3001` and `UPTIME_KUMA_HOST=0.0.0.0` (the port the process binds pinned to the
-port the platform routes).
+`UPTIME_KUMA_DB_TYPE=sqlite` (skips the database wizard, which would otherwise be the first screen
+and would offer an external MariaDB this template does not ship), and `UPTIME_KUMA_PORT=3001` /
+`UPTIME_KUMA_HOST=0.0.0.0` (the port the process binds pinned to the port the platform routes).
 
 There is no `ADMIN_PASSWORD` here, and that is upstream's shape rather than an omission. Uptime
 Kuma has no bootstrap environment variables: the only code path that writes the first user is its
@@ -56,9 +57,10 @@ own setup screen, so a password given at deploy time would be a value nothing re
 
 ## Scope
 
-This is a single instance on SQLite, which is Uptime Kuma's own default and the only database its
-Docker image supports without further setup. It does not run in a cluster, and two instances cannot
-share one volume.
+This is a single instance on SQLite, which is Uptime Kuma's own default. Upstream's 2.x setup
+wizard also offers an external MariaDB; this template answers that question for you and does not
+expose the `UPTIME_KUMA_DB_*` variables that would point at one. It does not run in a cluster, and
+two instances cannot share one volume.
 
 **The volume is the only copy.** Monitors, history, notification channels and status pages are all
 in that one SQLite file, and nothing here snapshots or replicates it. Uptime Kuma's

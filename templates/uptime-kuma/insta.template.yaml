@@ -41,6 +41,14 @@ services:
         # Without this the database lands on the container filesystem and every restart is a
         # fresh install.
         DATA_DIR: /data
+        # 2.x opens on a database wizard (server/setup-database.js) offering SQLite or an external
+        # MariaDB, and serves it from a second express app that answers the health path above with
+        # {"type":"setup-database"}. So the gate goes green on a deploy that has not started the
+        # application yet. This variable is upstream's own way past it: it writes db-config.json
+        # into DATA_DIR and sets needSetup false, so the first screen a user sees is the account
+        # one. The template already answered the question the wizard asks, since it ships a volume
+        # and no database service.
+        UPTIME_KUMA_DB_TYPE: sqlite
         # server/config.js resolves the port as args.port, then UPTIME_KUMA_PORT, then PORT, then
         # 3001. PORT is a name the platform may set for its own reasons, so the routed port above
         # and the port the process binds are pinned together here rather than left to that order.

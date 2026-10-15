@@ -20,8 +20,6 @@ services:
     # 1 GB: 2vcpu-2gb was tried on a live deployment against a ~30s first-response complaint and
     # made no difference, so that cost is not memory or core count and a bigger machine will not
     # fix it.
-    # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works (hermes and n8n
-    # cannot). Costs a ~25s cold boot, and an agent left running with no browser is stopped.
     volume: true  # mounts at /data
     env:
       fixed:

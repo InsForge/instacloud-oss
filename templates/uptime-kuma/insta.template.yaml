@@ -16,8 +16,9 @@ upstream:
 services:
   kuma:
     type: web
-    # The plain tag is upstream's `release` target, which runs as root. The `-rootless` variant of
-    # the same tag switches to uid 1000 and would need the volume chowned; this one does not.
+    # The plain tag is upstream's `release` target, which carries no USER and so runs as root.
+    # Upstream also publishes `2.5.6-rootless` from a stage that adds `USER node`; this one is
+    # deliberate, because root is what makes the volume at /data writable with no entrypoint.
     image: docker.io/louislam/uptime-kuma:2.5.6
     port: 3001
     # NOT `/`. Upstream's entry-page handler answers 302 to /dashboard (server/server.js), and the
@@ -64,9 +65,10 @@ services:
       # pull request.
       optional:
         # server/uptime-kuma-server.js refuses a websocket upgrade whose Origin does not match the
-        # Host it was given, which is a reverse proxy's decision and not this template's. Socket.io
-        # falls back to HTTP long-polling when it is refused, so the app still works either way.
-        # `bypass` is the documented escape hatch; anything else leaves the check on.
+        # Host it was given, which is a reverse proxy's decision and not this template's. `bypass`
+        # is upstream's own escape hatch; anything else leaves the check on. On the deployment this
+        # template was verified against the check never refused anything and the dashboard ran on
+        # socket.io long-polling anyway, for a reason not established; see the pull request.
         UPTIME_KUMA_WS_ORIGIN_CHECK: "Set to bypass only if the dashboard falls back to long-polling behind your own proxy. Leaving it unset keeps the websocket Origin check on"
         # server/server.js sends X-Frame-Options: sameorigin unless this is set to any value.
         UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN: "Set to 1 to drop the X-Frame-Options header so a status page can be embedded in an iframe on another site"

@@ -1,0 +1,92 @@
+code: uptime-kuma
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# Upstream's own image, referenced and never rebuilt. The 2.x release stage's ENTRYPOINT is
+# `/usr/bin/dumb-init --` with `CMD ["node", "server/server.js"]`: a process supervisor and the
+# app, no shell script in front of them, and it runs as root. So nothing has to be patched to make
+# the platform volume writable. The 1.x image chowned /app/data on boot, which is why older notes
+# about this app mention a wrapper.
+upstream:
+  repo: louislam/uptime-kuma
+  image: docker.io/louislam/uptime-kuma
+  pinned: "2.5.6"
+  license: MIT
+
+services:
+  kuma:
+    type: web
+    # The plain tag is upstream's `release` target, which carries no USER and so runs as root.
+    # Upstream also publishes `2.5.6-rootless` from a stage that adds `USER node`. This tag is the
+    # deliberate one, because root is what makes the volume at /data writable without a
+    # permission-fixing entrypoint in front of the app.
+    image: docker.io/louislam/uptime-kuma:2.5.6
+    port: 3001
+    # NOT `/`. Upstream's entry-page handler answers 302 to /dashboard (server/server.js), and the
+    # platform's gate wants a 2xx, so `/` fails it the way a redirect always does. This path is
+    # registered on the API router with no auth, returns 200 JSON, and reads a row out of the
+    # settings table on the way, so a pass also means knex finished its migrations against the
+    # SQLite file on the volume. `/dashboard` would 200 too, but only because the catch-all serves
+    # index.html for anything it does not recognise, which says nothing about the database.
+    healthcheck: /api/entry-page
+    # Uptime Kuma is a scheduler: every monitor is a timer inside this process, and nothing
+    # inbound fires them. Scaled to zero it would stop checking the things it exists to check and
+    # report false uptime for the window it was asleep, so this is the n8n case rather than the
+    # browser-terminal one. It bills around the clock; see the pull request's Open questions.
+    alwaysOn: true
+    # Monitors, heartbeats, notifications, status pages and the 2FA secrets all live in one SQLite
+    # file under DATA_DIR, which is pointed at the volume below.
+    volume: true
+    env:
+      fixed:
+        # server/database.js: `process.env.DATA_DIR || args["data-dir"] || ... || "./data/"`.
+        # Without this the database lands on the container filesystem and every restart is a
+        # fresh install.
+        DATA_DIR: /data
+        # 2.x opens on a database wizard (server/setup-database.js) offering SQLite or an external
+        # MariaDB, and serves it from a second express app that answers the health path above with
+        # {"type":"setup-database"}. So the gate goes green on a deploy that has not started the
+        # application yet. This variable is upstream's own way past it: it writes db-config.json
+        # into DATA_DIR and sets needSetup false, so the first screen a user sees is the account
+        # one. The template already answered the question the wizard asks, since it ships a volume
+        # and no database service.
+        UPTIME_KUMA_DB_TYPE: sqlite
+        # server/config.js resolves the port as args.port, then UPTIME_KUMA_PORT, then PORT, then
+        # 3001. PORT is a name the platform may set for its own reasons, so the routed port above
+        # and the port the process binds are pinned together here rather than left to that order.
+        UPTIME_KUMA_PORT: "3001"
+        # Same file reads HOST when UPTIME_KUMA_HOST is absent. Unset it would bind the unspecified
+        # address, which is fine, but a HOST arriving from the environment would move the listener
+        # somewhere nothing routes to.
+        UPTIME_KUMA_HOST: 0.0.0.0
+      # No `required:`. Uptime Kuma has no bootstrap environment variables: `socket.on("setup")`
+      # in server/server.js is the only code path that writes the first row of the user table, and
+      # it is reachable only from the app's own setup screen. An ADMIN_PASSWORD here would be a
+      # variable nothing reads. What that means for the deploy window is an Open question on the
+      # pull request.
+      optional:
+        # server/uptime-kuma-server.js refuses a websocket upgrade whose Origin does not match the
+        # Host it was given, which is a reverse proxy's decision and not this template's. `bypass`
+        # is upstream's own escape hatch; anything else leaves the check on. On the deployment used
+        # to verify this template, the check never refused anything, and the dashboard ran on
+        # socket.io long-polling anyway, for a reason not established. See the pull request.
+        UPTIME_KUMA_WS_ORIGIN_CHECK: "Set to bypass only if the dashboard falls back to long-polling behind your own proxy. Leaving it unset keeps the websocket Origin check on"
+        # server/server.js sends X-Frame-Options: sameorigin unless this is set to any value.
+        UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN: "Set to 1 to drop the X-Frame-Options header so a status page can be embedded in an iframe on another site"
+        # Only the display timezone; monitor intervals are wall-clock seconds either way. The same
+        # value is settable in Settings > Appearance after deploy, which wins over this one.
+        TZ: "IANA timezone for timestamps in the UI and in notifications, such as Europe/Berlin. Defaults to UTC"
+
+meta:
+  name: Uptime Kuma
+  tagline: Self-hosted uptime monitoring with status pages and alerts
+  category: observability
+  tags: [monitoring, observability]
+  # Upstream's 2.5.6 index carries amd64, arm64 and arm/v7. Nothing is rebuilt here, so the row
+  # rests on that published index.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/louislam/uptime-kuma
+    documentation: https://github.com/louislam/uptime-kuma/wiki

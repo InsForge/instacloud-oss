@@ -1,5 +1,5 @@
 # Pinned by digest; the upstream tag floats.
-FROM docker.io/nousresearch/hermes-agent:v2026.8.27@sha256:e0df6adebddf29b91112aefc999d4aaf6846c9eb544faca5672a16a13590ff79
+FROM docker.io/nousresearch/hermes-agent:v2026.9.24@sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7
 
 # Upstream's main process is the interactive TUI, which exits without a TTY. This
 # image supplies the main process instead: bootstrap auth, bring up the s6-supervised

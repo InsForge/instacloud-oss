@@ -172,6 +172,7 @@
                     "group": "Catalog",
                     "pages": [
                       "GET /regions",
+                      "GET /template-categories",
                       "GET /templates",
                       "GET /templates/{code}"
                     ]
@@ -244,9 +245,25 @@
                       "GET /orgs/{orgId}/billing/cycle",
                       "GET /orgs/{orgId}/billing/invoices",
                       "GET /orgs/{orgId}/billing/overview",
+                      "GET /orgs/{orgId}/billing/plan-change",
+                      "POST /orgs/{orgId}/billing/plan-change",
+                      "POST /orgs/{orgId}/billing/plan-change/{transitionId}/cancel",
                       "POST /orgs/{orgId}/billing/portal",
                       "POST /orgs/{orgId}/billing/redeem",
                       "GET /orgs/{orgId}/usage"
+                    ]
+                  },
+                  {
+                    "group": "Templates",
+                    "pages": [
+                      "GET /orgs/{orgId}/templates",
+                      "POST /orgs/{orgId}/templates",
+                      "GET /orgs/{orgId}/templates/{code}",
+                      "PATCH /orgs/{orgId}/templates/{code}",
+                      "DELETE /orgs/{orgId}/templates/{code}",
+                      "POST /orgs/{orgId}/templates/{code}/publish",
+                      "POST /orgs/{orgId}/templates/{code}/regenerate",
+                      "POST /orgs/{orgId}/templates/{code}/unpublish"
                     ]
                   }
                 ]
@@ -350,6 +367,7 @@
                       "GET /projects/{projectId}/database/instance",
                       "POST /projects/{projectId}/database/password",
                       "POST /projects/{projectId}/database/query",
+                      "POST /projects/{projectId}/database/restart",
                       "PATCH /projects/{projectId}/database/settings",
                       "GET /projects/{projectId}/database/tables",
                       "GET /projects/{projectId}/database/tables/{schema}/{table}/rows"
@@ -438,7 +456,11 @@
                     "group": "Templates",
                     "pages": [
                       "POST /projects/{projectId}/template-deployments",
-                      "GET /template-deployments/{deploymentId}"
+                      "POST /projects/{projectId}/template-deployments/{deploymentId}/rollback",
+                      "POST /projects/{projectId}/template-deployments/{deploymentId}/upgrade",
+                      "POST /projects/{projectId}/template-drafts",
+                      "GET /template-deployments/{deploymentId}",
+                      "GET /template-deployments/{deploymentId}/upgrade"
                     ]
                   }
                 ]

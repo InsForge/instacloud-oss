@@ -65,9 +65,9 @@ that had scaled to zero would never wake to refresh a feed. That bills continuou
 
 ## Links
 
-- Architectures: `linux/amd64` and `linux/arm64`. Upstream's `2.3.3` index carries both (and
+- Architectures: `linux/amd64` and `linux/arm64`. Upstream's index carries both (and
   arm/v6, arm/v7 and riscv64 besides); nothing is rebuilt here.
 - Upstream: <https://github.com/miniflux/v2>
 - Documentation: <https://miniflux.app/docs/>
-- Image: `docker.io/miniflux/miniflux`, pinned to `2.3.3`
+- Image: `docker.io/miniflux/miniflux`
 - License: Apache-2.0 (upstream `miniflux/v2`).

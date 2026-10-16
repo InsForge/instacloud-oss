@@ -16,7 +16,7 @@ model gateway and a dashboard over all of it. Its point of difference is that a 
 it directly, through an MCP server or the InsForge CLI, so the agent can read schemas and logs and
 then create tables, deploy functions and configure auth itself.
 
-This template packages upstream's own release, pinned to `v2.3.2`. It is not a rewrite and not an
+This template packages upstream's own release. It is not a rewrite and not an
 API anyone here wrote: the dashboard, the API surface and the database schema are upstream's.
 
 What the template does add is a single container. Upstream ships a four-service Compose stack
@@ -87,7 +87,7 @@ migration set before the server starts answering, which is the only time that ha
 - Architectures: `linux/amd64` only. Both upstream images publish `arm64`, but the PostgREST
   release asset pinned here is the `x86-64` static build, and the arm64 leg would compile the whole
   Node monorepo under QEMU. Neither has been done, so the claim is one architecture.
-- Upstream: <https://github.com/InsForge/InsForge>, pinned to `v2.3.2`
+- Upstream: <https://github.com/InsForge/InsForge>
 - Documentation: <https://docs.insforge.dev>
 - Database image: `ghcr.io/insforge/postgres:v15.13.4` (upstream's own)
 - Also bundled: [PostgREST](https://github.com/PostgREST/postgrest) `v12.2.12` (MIT) and

@@ -101,6 +101,6 @@ never wake for them. Always-on bills continuously.
 - Architectures: `linux/amd64` and `linux/arm64`. Upstream publishes a two-architecture index for
   this tag and nothing is rebuilt here.
 - Upstream: <https://github.com/paperclipai/paperclip>
-- Image: <https://github.com/paperclipai/paperclip/pkgs/container/paperclip> (`ghcr.io/paperclipai/paperclip:2026.1005.0`)
+- Image: <https://github.com/paperclipai/paperclip/pkgs/container/paperclip> (`ghcr.io/paperclipai/paperclip`)
 - Documentation: <https://docs.paperclip.ing>
 - License: MIT (upstream `paperclipai/paperclip`, LICENSE is the standard MIT text).

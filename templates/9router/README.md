@@ -51,5 +51,5 @@ The service listens on port 20128, is health-checked on `/api/health`, and store
 - Architectures: `linux/amd64` and `linux/arm64`. Upstream publishes both, and this image pins
   the multi-arch index rather than one platform's manifest.
 - Upstream: <https://github.com/decolua/9router>
-- Image: `docker.io/decolua/9router`, pinned to `0.5.55` (by digest, via `./Dockerfile`)
+- Image: `docker.io/decolua/9router`, pinned by digest via `./Dockerfile`
 - License: MIT (upstream `decolua/9router`).

@@ -1,0 +1,104 @@
+code: ghost
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/instacloud-oss
+
+# The official image with an entrypoint on top (see ./Dockerfile). Ghost itself is untouched: the
+# application, the Ghost-CLI install and upstream's own docker-entrypoint.sh all still run, and the
+# overlay only translates environment variable names and seeds the owner account.
+upstream:
+  repo: TryGhost/Ghost
+  image: docker.io/library/ghost
+  pinned: "6.70.0"
+  license: MIT
+
+services:
+  # Ghost's officially supported production database, and the one the official image is built
+  # against: its Dockerfile runs `ghost install --db mysql`, so mysql2 and the schema Ghost
+  # migrates are what that image ships. The alternative, SQLite on the volume below, is supported
+  # for self-hosters and would put every post, member and session in one file on one machine.
+  db:
+    type: mysql
+
+  ghost:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/ghost:1.0.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 2368
+    # Not `/`. Two reasons, and either one on its own would be enough.
+    #
+    # `/` is the published site, which renders from the theme and says nothing about whether the
+    # database answered; this endpoint is Ghost's own "has an owner been created yet" check and it
+    # reads the users table, so a 200 means the schema is migrated and reachable.
+    #
+    # `/` also sits behind Ghost's frontendSSLRedirect, which answers 301 to any request that is
+    # not already https (server/web/parent/frontend.js). The probe's X-Forwarded-Proto is what
+    # keeps that from firing, and a health path that does not depend on the probe sending it is
+    # one less thing between a working deploy and a red gate. This route carries no middleware at
+    # all (server/web/api/endpoints/admin/routes.js declares it bare).
+    healthcheck: /ghost/api/admin/authentication/setup/
+    # Ghost schedules published posts and newsletter sends from timers inside its own process, so
+    # an idle machine would miss a post scheduled for 9am. Same case as n8n's schedule triggers.
+    alwaysOn: true
+    # Uploaded images, installed themes, the members public/private keypair and the routes file.
+    # None of it is in the database, and all of it is what `paths__contentPath` points here.
+    volume: true
+    env:
+      fixed:
+        # Upstream's entrypoint reads this one: it chowns the path to `node` and seeds the
+        # stock themes into it on first boot. ./entrypoint.sh passes the same value to Ghost as
+        # `paths__contentPath`, so the directory the image prepares and the directory Ghost
+        # writes to cannot drift apart.
+        GHOST_CONTENT: /data
+        # The image's baked config binds 2368 and the service routes it; this is the third place
+        # that number appears (setup-owner.cjs needs it too) and the one the other two read.
+        GHOST_PORT: "2368"
+        # Ghost builds every absolute link from this: canonical tags, feed URLs, member magic
+        # links, and the origin the admin app is allowed to call.
+        SITE_URL: ${services.ghost.url}
+      platform:
+        # The managed mysql bundle, under names the manifest is allowed to spell.
+        # ./entrypoint.sh folds them into Ghost's `database__connection__*` config keys, which are
+        # lower-case in the middle and so cannot be declared here.
+        DB_HOST: ${{services.db.MYSQL_HOST}}
+        DB_PORT: ${{services.db.MYSQL_PORT}}
+        DB_USER: ${{services.db.MYSQL_USERNAME}}
+        DB_PASSWORD: ${{services.db.MYSQL_PASSWORD}}
+        DB_NAME: ${{services.db.MYSQL_DATABASE}}
+      required:
+        # Neither a `default:` nor a `generate:`, matching every other template that puts a
+        # credential in front of a public URL: a template variable is stored write-only
+        # (`minted = false`), so a generated password would be one nobody could read back, and a
+        # blank field silently mints another instead of erroring.
+        #
+        # Ghost has no account seeding of its own. Its only route to an owner is the setup screen
+        # at /ghost, which is open to whoever opens the URL first, so these two are what the
+        # entrypoint claims the site with before anyone else can.
+        ADMIN_EMAIL:
+          description: "Email address for the site owner, and what you sign in with at /ghost. Ghost identifies staff by email, not by a username"
+        ADMIN_PASSWORD:
+          description: "Password for that account. Ghost's own rule is at least 10 characters, and it rejects anything containing 'ghost' or 'password'"
+      optional:
+        ADMIN_NAME: "Display name shown on posts the owner writes. Defaults to Owner, and is editable in Settings afterwards"
+        SITE_TITLE: "Title of the publication, shown in the theme and in emails. Defaults to Ghost, and is editable in Settings afterwards"
+        STAFF_DEVICE_VERIFICATION: "Set to true to make Ghost email a six-digit code when a staff member signs in from a new device. Off by default, because an instance with no SMTP configured can never deliver that code and nobody could sign in"
+        MAIL_SMTP_HOST: "SMTP server for outgoing mail: staff invites, password resets and member magic links. Leave empty and Ghost falls back to direct delivery, which most networks drop"
+        MAIL_SMTP_PORT: "Port on that server. Defaults to 587"
+        MAIL_SMTP_SECURE: "Set to true for implicit TLS, which is port 465. Defaults to false, which is STARTTLS on 587"
+        MAIL_SMTP_USER: "Username for the SMTP server. Leave empty for a relay that needs no authentication"
+        MAIL_SMTP_PASSWORD: "Password or API key for that username"
+        MAIL_FROM: "Address outgoing mail is sent from, e.g. 'Your Site <hello@example.com>'. Most providers reject mail from an address they do not own"
+
+meta:
+  name: Ghost
+  tagline: Publishing platform for blogs and paid newsletters
+  category: cms
+  tags: [cms, newsletter]
+  # Architectures the published image carries. Upstream's 6.70.0 index carries amd64, arm64 and
+  # arm/v7, and the FROM pins that index digest rather than a child; the overlay is two COPYs, so
+  # there is nothing architecture-specific to build. Narrowed to the two the platform runs.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  draft: false
+  links:
+    upstream: https://github.com/TryGhost/Ghost
+    documentation: https://ghost.org/docs/

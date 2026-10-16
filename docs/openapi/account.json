@@ -172,6 +172,7 @@
           "Account"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -187,8 +188,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -291,6 +291,7 @@
           "Account"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -305,8 +306,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -392,6 +392,58 @@
           "metadata": {
             "title": "List regions",
             "sidebarTitle": "List regions"
+          }
+        }
+      }
+    },
+    "/template-categories": {
+      "get": {
+        "operationId": "listTemplateCategories",
+        "summary": "List template categories",
+        "tags": [
+          "Catalog"
+        ],
+        "description": "**Token scope:** `account` · `org` · `project` — read-only tokens allowed.\n\nList the template categories, in the order galleries show them. Public — no auth required.\n\nThe one list the console, the marketing site and InstaCloud OSS label categories from. A community template's category must be one of these slugs.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "slug": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "slug",
+                          "label"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "categories"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "x-mint": {
+          "metadata": {
+            "title": "List template categories",
+            "sidebarTitle": "List template categories"
           }
         }
       }
@@ -569,6 +621,7 @@
           "Account"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -581,26 +634,18 @@
                     "type": "string"
                   },
                   "orgId": {
-                    "anyOf": [
-                      {
-                        "format": "uuid",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "format": "uuid",
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "projectId": {
                     "description": "requires orgId; the project must belong to that org",
-                    "anyOf": [
-                      {
-                        "format": "uuid",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "format": "uuid",
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "access": {
@@ -626,8 +671,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -664,7 +708,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the minting credential is narrower than the requested token (token_scope)",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -675,7 +718,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "not a member of orgId, or projectId is not a project of that org",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -1030,30 +1072,30 @@
             }
           },
           "totalProjects": {
-            "description": "distinct PROJECTS that ever deployed this template (any outcome) — the adoption number; one project deploying repeatedly counts once",
+            "description": "distinct PROJECTS that deployed this template since its first publish (any outcome) — the adoption number; one project deploying repeatedly counts once",
             "type": "integer"
           },
           "activeProjects": {
-            "description": "distinct PROJECTS that still have at least one live service from a SUCCEEDED deployment of this template (service in creating/active; deleting, errored or deleted services do not keep a project active) — what a visitor reads as \"running this now\"",
+            "description": "distinct PROJECTS that still have at least one live service from a SUCCEEDED deployment of this template made since its first publish (service in creating/active; deleting, errored or deleted services do not keep a project active) — what a visitor reads as \"running this now\"",
             "type": "integer"
           },
           "successRate": {
-            "description": "share of the CONCLUDED deployments of this template that reached succeeded, as a whole percent. Denominator: deployments with status succeeded + failed + partial, EXCLUDING runs abandoned by a platform restart (a platform release must not count against a template) and excluding running deployments (not concluded). A partial deployment counts as a failure. This is a per-DEPLOYMENT rate, not per attempt: an idempotent retry reuses its deployment row. null (never 0) when nothing has concluded — no data is not 0%",
+            "description": "share of the CONCLUDED deployments of this template since its first publish that reached succeeded, as a whole percent. Denominator: deployments with status succeeded + failed + partial, EXCLUDING runs abandoned by a platform restart (a platform release must not count against a template) and excluding running deployments (not concluded). A partial deployment counts as a failure. This is a per-DEPLOYMENT rate, not per attempt: an idempotent retry reuses its deployment row. null (never 0) when nothing has concluded — no data is not 0%",
             "type": [
               "integer",
               "null"
             ]
           },
           "deploymentCount": {
-            "description": "cumulative DEPLOYMENT runs for this code",
+            "description": "cumulative DEPLOYMENT runs for this code since the template was first published",
             "type": "integer"
           },
           "activeDeploymentCount": {
-            "description": "DEPLOYMENT runs that succeeded and still have a live attributed service",
+            "description": "DEPLOYMENT runs since the first publish that succeeded and still have a live attributed service",
             "type": "integer"
           },
           "logoUrl": {
-            "description": "absolute https logo URL, served by the CDN in front of the public registry repo (cdn.jsdelivr.net) and pinned to the publishing merge SHA; null when the template published no logo. See templateManifest.ts TEMPLATE_LOGO_HOST for the enforced host.",
+            "description": "absolute https logo URL; null when the template published no logo. Official templates: a commit-pinned jsDelivr URL (TEMPLATE_LOGO_HOST in templateManifest.ts). Community templates: any https:// link the author set.",
             "type": [
               "string",
               "null"
@@ -1120,30 +1162,30 @@
             }
           },
           "totalProjects": {
-            "description": "distinct PROJECTS that ever deployed this template (any outcome) — the adoption number; one project deploying repeatedly counts once",
+            "description": "distinct PROJECTS that deployed this template since its first publish (any outcome) — the adoption number; one project deploying repeatedly counts once",
             "type": "integer"
           },
           "activeProjects": {
-            "description": "distinct PROJECTS that still have at least one live service from a SUCCEEDED deployment of this template (service in creating/active; deleting, errored or deleted services do not keep a project active) — what a visitor reads as \"running this now\"",
+            "description": "distinct PROJECTS that still have at least one live service from a SUCCEEDED deployment of this template made since its first publish (service in creating/active; deleting, errored or deleted services do not keep a project active) — what a visitor reads as \"running this now\"",
             "type": "integer"
           },
           "successRate": {
-            "description": "share of the CONCLUDED deployments of this template that reached succeeded, as a whole percent. Denominator: deployments with status succeeded + failed + partial, EXCLUDING runs abandoned by a platform restart (a platform release must not count against a template) and excluding running deployments (not concluded). A partial deployment counts as a failure. This is a per-DEPLOYMENT rate, not per attempt: an idempotent retry reuses its deployment row. null (never 0) when nothing has concluded — no data is not 0%",
+            "description": "share of the CONCLUDED deployments of this template since its first publish that reached succeeded, as a whole percent. Denominator: deployments with status succeeded + failed + partial, EXCLUDING runs abandoned by a platform restart (a platform release must not count against a template) and excluding running deployments (not concluded). A partial deployment counts as a failure. This is a per-DEPLOYMENT rate, not per attempt: an idempotent retry reuses its deployment row. null (never 0) when nothing has concluded — no data is not 0%",
             "type": [
               "integer",
               "null"
             ]
           },
           "deploymentCount": {
-            "description": "cumulative DEPLOYMENT runs for this code (every run ever) — the deployment-unit counterpart of totalProjects",
+            "description": "cumulative DEPLOYMENT runs for this code (every run since the template was first published) — the deployment-unit counterpart of totalProjects",
             "type": "integer"
           },
           "activeDeploymentCount": {
-            "description": "DEPLOYMENT runs that succeeded and still have a live attributed service — the deployment-unit counterpart of activeProjects",
+            "description": "DEPLOYMENT runs since the first publish that succeeded and still have a live attributed service — the deployment-unit counterpart of activeProjects",
             "type": "integer"
           },
           "logoUrl": {
-            "description": "absolute https logo URL, served by the CDN in front of the public registry repo (cdn.jsdelivr.net) and pinned to the publishing merge SHA; null when the template published no logo. See templateManifest.ts TEMPLATE_LOGO_HOST for the enforced host.",
+            "description": "absolute https logo URL; null when the template published no logo. Official templates: a commit-pinned jsDelivr URL (TEMPLATE_LOGO_HOST in templateManifest.ts). Community templates: any https:// link the author set.",
             "type": [
               "string",
               "null"
@@ -1164,7 +1206,7 @@
         }
       },
       "TemplateManifestService": {
-        "description": "One entry of a manifest's services map, as parseTemplateManifest normalizes it. The four managed types, postgres, redis, mysql and mongodb, are declared bare: they carry none of image, build, port, healthcheck, volume or alwaysOn, because the platform owns all of it.",
+        "description": "One entry of a manifest's services map, as parseTemplateManifest normalizes it. The managed types (postgres, redis, mysql, mongodb and storage) carry none of image, build, port, healthcheck, volume, command, mountPath or alwaysOn, because the platform owns all of it. Only storage takes public and only postgres takes pgVersion. A pgVersion the database provider cannot create fails the deployment with the provider's sentence.",
         "type": "object",
         "properties": {
           "type": {
@@ -1175,7 +1217,8 @@
               "postgres",
               "redis",
               "mysql",
-              "mongodb"
+              "mongodb",
+              "storage"
             ]
           },
           "image": {
@@ -1189,16 +1232,32 @@
             "type": "integer"
           },
           "healthcheck": {
-            "description": "web only (required there): a path on the deployed service that the platform itself fetches. A worker has no HTTP endpoint and may not declare one — its health gate is the machine state. A managed database may not declare one: it is gated by the platform before any app deploys.",
+            "description": "web only (optional; without it a deploy counts as healthy once the service is up): a path on the deployed service that the platform itself fetches. A worker has no HTTP endpoint and may not declare one — its health gate is the machine state. A managed database may not declare one: it is gated by the platform before any app deploys.",
             "type": "string"
           },
           "volume": {
             "description": "needs a /data disk; the platform owns the size, a manifest never names one. A managed database may not declare one either: the platform owns its disk.",
             "type": "boolean"
           },
+          "command": {
+            "description": "Start command, run through sh -c. Absent = the image default.",
+            "type": "string"
+          },
+          "mountPath": {
+            "description": "Volume mount path. Only with volume: true. Absent = /data.",
+            "type": "string"
+          },
           "alwaysOn": {
             "description": "idle mode at creation. Omitted = the platform default (compute is born scale-to-zero, a worker always-on); explicit false = opt this service into scale-to-zero (refused on a worker: nothing is routed to it, so nothing could wake it); true = always-on, for work that arrives on an outbound connection. A managed database may not declare it either: the platform owns its idle policy.",
             "type": "boolean"
+          },
+          "public": {
+            "description": "storage only — provision the bucket with anonymous public-read (default false)",
+            "type": "boolean"
+          },
+          "pgVersion": {
+            "description": "postgres only — the Postgres major version to create the database on: 16, 17, 18. Omitted: the platform default (INSTA_DB_POSTGRES_MAJOR; 16 on InstaCloud). Fixed for the database's lifetime; branches keep it. 501 when the database provider cannot create that major yet.",
+            "type": "integer"
           },
           "env": {
             "$ref": "#/components/schemas/TemplateServiceEnv"

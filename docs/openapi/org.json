@@ -36,6 +36,10 @@
     {
       "name": "Billing",
       "description": "Usage, cycles, invoices and credits."
+    },
+    {
+      "name": "Templates",
+      "description": "Deploy a template into a project."
     }
   ],
   "paths": {
@@ -112,6 +116,7 @@
           "Organization"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -127,8 +132,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -249,11 +253,12 @@
     "/orgs/{orgId}/billing/checkout": {
       "post": {
         "operationId": "createCheckout",
-        "summary": "Start a Stripe Checkout session to subscribe the org to a paid tier",
+        "summary": "Create checkout",
         "tags": [
           "Billing"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -272,8 +277,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -337,10 +341,10 @@
             "description": "Billing (Stripe) not configured"
           }
         },
-        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nOrg owner/admin only: start legacy subscription Checkout; UTC-managed tier changes require billing/plan-change",
         "x-mint": {
           "metadata": {
-            "title": "Start a Stripe Checkout session to subscribe the org to a paid tier",
+            "title": "Create checkout",
             "sidebarTitle": "Create checkout"
           }
         }
@@ -614,7 +618,7 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nBilling overview for a window — totals, credits, forecast, per-dimension + per-project breakdown (pure read)",
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nBilling overview for a window — totals, credits, forecast, per-dimension + per-project breakdown; applies due plan changes without accruing or charging usage",
         "x-mint": {
           "metadata": {
             "title": "Get billing overview",
@@ -623,10 +627,682 @@
         }
       }
     },
+    "/orgs/{orgId}/billing/plan-change": {
+      "get": {
+        "operationId": "getPlanChangeOptions",
+        "summary": "Get plan change options",
+        "tags": [
+          "Billing"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "canManage": {
+                      "type": "boolean"
+                    },
+                    "pending": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "format": "uuid",
+                          "type": "string"
+                        },
+                        "fromTier": {
+                          "type": "string"
+                        },
+                        "toTier": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "awaiting_payment"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "scheduled"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "applied"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "failed"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "cancelled"
+                              ]
+                            }
+                          ]
+                        },
+                        "effectiveAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "includedUsd": {
+                          "type": "number"
+                        },
+                        "changeKind": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "upgrade"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "downgrade"
+                              ]
+                            }
+                          ]
+                        },
+                        "renewalAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "cancellable": {
+                          "type": "boolean"
+                        },
+                        "paymentUrl": {
+                          "format": "uri",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "fromTier",
+                        "toTier",
+                        "status",
+                        "effectiveAt",
+                        "includedUsd"
+                      ]
+                    },
+                    "retryKey": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "tier": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "free"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "pro"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "team"
+                                ]
+                              }
+                            ]
+                          },
+                          "feeCents": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "currency": {
+                            "type": "string",
+                            "enum": [
+                              "usd"
+                            ]
+                          },
+                          "includedUsd": {
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "effectiveAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "renewalAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "renewalFeeCents": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "changeKind": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "upgrade"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "downgrade"
+                                ]
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "tier",
+                          "feeCents",
+                          "currency",
+                          "includedUsd"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "canManage",
+                    "pending",
+                    "retryKey",
+                    "options"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nRead paid-plan change availability, current subscription prices and an authorized pending retry",
+        "x-mint": {
+          "metadata": {
+            "title": "Get plan change options",
+            "sidebarTitle": "Get plan change options"
+          }
+        }
+      },
+      "post": {
+        "operationId": "requestPaidPlanChange",
+        "summary": "Request paid plan change",
+        "tags": [
+          "Billing"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tier": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "free"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "pro"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "team"
+                        ]
+                      }
+                    ]
+                  },
+                  "idempotencyKey": {
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$",
+                    "type": "string"
+                  },
+                  "expectedFeeCents": {
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Required for Pro/Team: amount due now accepted from the options response, excluding tax; zero for a scheduled downgrade. Omit for Free.",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "tier",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "fromTier": {
+                      "type": "string"
+                    },
+                    "toTier": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "awaiting_payment"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "scheduled"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "applied"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "failed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "cancelled"
+                          ]
+                        }
+                      ]
+                    },
+                    "effectiveAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "includedUsd": {
+                      "type": "number"
+                    },
+                    "changeKind": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "upgrade"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "downgrade"
+                          ]
+                        }
+                      ]
+                    },
+                    "renewalAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "cancellable": {
+                      "type": "boolean"
+                    },
+                    "paymentUrl": {
+                      "format": "uri",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "fromTier",
+                    "toTier",
+                    "status",
+                    "effectiveAt",
+                    "includedUsd"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nFree → paid takes effect once paid; Pro → Team next UTC day after payment; downgrade at the current paid period end (owner/admin)",
+        "x-mint": {
+          "metadata": {
+            "title": "Request paid plan change",
+            "sidebarTitle": "Request paid plan change"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/billing/plan-change/{transitionId}/cancel": {
+      "post": {
+        "operationId": "cancelScheduledDowngrade",
+        "summary": "Withdraw a scheduled downgrade before the paid period ends (owner/admin)",
+        "tags": [
+          "Billing"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "transitionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "fromTier": {
+                      "type": "string"
+                    },
+                    "toTier": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "awaiting_payment"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "scheduled"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "applied"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "failed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "cancelled"
+                          ]
+                        }
+                      ]
+                    },
+                    "effectiveAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "includedUsd": {
+                      "type": "number"
+                    },
+                    "changeKind": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "upgrade"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "downgrade"
+                          ]
+                        }
+                      ]
+                    },
+                    "renewalAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "cancellable": {
+                      "type": "boolean"
+                    },
+                    "paymentUrl": {
+                      "format": "uri",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "fromTier",
+                    "toTier",
+                    "status",
+                    "effectiveAt",
+                    "includedUsd"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Withdraw a scheduled downgrade before the paid period ends (owner/admin)",
+            "sidebarTitle": "Cancel scheduled downgrade"
+          }
+        }
+      }
+    },
     "/orgs/{orgId}/billing/portal": {
       "post": {
         "operationId": "createBillingPortal",
-        "summary": "Open the Stripe Customer Portal (change plan / card / cancel)",
+        "summary": "Create billing portal",
         "tags": [
           "Billing"
         ],
@@ -682,10 +1358,10 @@
             "description": "Billing (Stripe) not configured"
           }
         },
-        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nOrg owner/admin only: open the Stripe Customer Portal; UTC-managed plans allow payment management only",
         "x-mint": {
           "metadata": {
-            "title": "Open the Stripe Customer Portal (change plan / card / cancel)",
+            "title": "Create billing portal",
             "sidebarTitle": "Create billing portal"
           }
         }
@@ -699,6 +1375,7 @@
           "Billing"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -715,8 +1392,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -741,13 +1417,9 @@
                       "type": "integer"
                     },
                     "creditsExpireAt": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
+                      "type": [
+                        "string",
+                        "null"
                       ]
                     },
                     "orgId": {
@@ -875,6 +1547,7 @@
           "Domains"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -896,8 +1569,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -986,7 +1658,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the name is taken, its extension cannot be sold here, or it is already registered through InstaCloud",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -1122,7 +1793,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "agents are refused: this settles money a human started",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -1143,7 +1813,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "no URL to give back — already paid, payment in progress, or the checkout expired. THE ORDER IS UPDATED to match whichever it was, so this 4xx does not mean nothing happened.",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -1265,6 +1934,7 @@
           "Domains"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -1560,7 +2230,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "managed DNS delegation is not enabled on this deployment",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -1604,6 +2273,7 @@
           "Domains"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -1623,8 +2293,7 @@
                 ]
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -1661,7 +2330,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the registrar refused them — with its own sentence",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -1906,6 +2574,7 @@
           "Domains"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -1941,8 +2610,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -1979,7 +2647,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the record does not fit its type, the zone cannot hold it (a CNAME or NS at the domain itself), or the registrar refused it — with its own sentence",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -2000,7 +2667,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the host serves a compute service through InstaCloud, or an NS there would delegate one away",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -2044,6 +2710,7 @@
           "Domains"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -2123,7 +2790,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the merged record does not fit its type, the zone cannot hold it, or the registrar refused it — with its own sentence",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -2144,7 +2810,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the record is managed, or the host it moves to serves a compute service (for an NS: or has one beneath it)",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -2240,7 +2905,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "a hostname still claims the record",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -2323,6 +2987,7 @@
           "Organization"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -2355,8 +3020,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -2590,6 +3254,7 @@
           "Organization"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -2604,8 +3269,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -2766,6 +3430,7 @@
           "Projects"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -2780,8 +3445,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -2826,6 +3490,16 @@
             }
           },
           "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
             "description": "Default Response",
             "content": {
               "application/json": {
@@ -2889,6 +3563,885 @@
           "metadata": {
             "title": "List projects in an org",
             "sidebarTitle": "List projects"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/templates": {
+      "get": {
+        "operationId": "listOrgTemplates",
+        "summary": "This org's community templates, drafts and published",
+        "tags": [
+          "Templates"
+        ],
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nOne summary per template, with no services, variables or publish requirements. getOrgTemplate serves one template in full.",
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "templates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CommunityTemplateSummary"
+                      }
+                    }
+                  },
+                  "required": [
+                    "templates"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "This user listed the templates too many times in the last minute. Retry later.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-mint": {
+          "metadata": {
+            "title": "This org's community templates, drafts and published",
+            "sidebarTitle": "List org templates"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createOrgTemplate",
+        "summary": "Create org template",
+        "tags": [
+          "Templates"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "description": "The draft's name, trimmed, 1 to 80 characters. The template code is derived from it. Omitted: New template, with a random suffix on its code.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "template": {
+                      "$ref": "#/components/schemas/CommunityTemplate"
+                    }
+                  },
+                  "required": [
+                    "template"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The organization is billing-suspended, or the caller holds a project-scoped token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nCreate a blank community template draft, with no project behind it. Services are added with PATCH.",
+        "x-mint": {
+          "metadata": {
+            "title": "Create org template",
+            "sidebarTitle": "Create org template"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/templates/{code}": {
+      "get": {
+        "operationId": "getOrgTemplate",
+        "summary": "One community template of this org",
+        "tags": [
+          "Templates"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "code",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "template": {
+                      "$ref": "#/components/schemas/CommunityTemplate"
+                    }
+                  },
+                  "required": [
+                    "template"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.",
+        "x-mint": {
+          "metadata": {
+            "title": "One community template of this org",
+            "sidebarTitle": "Get org template"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateOrgTemplate",
+        "summary": "Edit a community template draft",
+        "tags": [
+          "Templates"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "description": "Rename. Only before the first publish.",
+                    "type": "string"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "type": "string"
+                  },
+                  "tagline": {
+                    "maxLength": 160,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "category": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "readme": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "logoUrl": {
+                    "description": "An https:// image link. The link and its percent-encoded form are each at most 2048 characters. null clears it.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "variables": {
+                    "maxItems": 600,
+                    "description": "Only the variables that changed, at most 600, the cap a project apply has. A name deleted in this PATCH can be added again only in a later PATCH. One invalid entry answers 400 and nothing is saved.",
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "service": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "description": "The generator's name for the variable: the view's originalName when it is renamed, else its name. On an add, the new variable's name.",
+                          "type": "string"
+                        },
+                        "choice": {
+                          "description": "null clears the choice, back to what the generator chose. Omitted leaves the choice as it is.",
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/TemplateVariableChoice"
+                            },
+                            {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "enum": [
+                                null,
+                                null
+                              ]
+                            }
+                          ]
+                        },
+                        "newName": {
+                          "description": "Renames the variable: ^[A-Z][A-Z0-9_]{0,63}$, and no other variable of the service may have that name. null clears the rename. Omitted leaves the name as it is.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "add": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ],
+                          "description": "Adds a required variable called name to a web service or worker: ^[A-Z][A-Z0-9_]{0,63}$, a name no variable of the service has or shows, at most 200 variables per service and 1000 per template. The entry carries nothing else. A choice for it rides in its own entry, and adds run before every other entry."
+                        },
+                        "delete": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ],
+                          "description": "Deletes a variable the author added, with its choice and rename. One from the project answers 400: remove it with choice removed. The entry carries nothing else, and deletes run after every other entry."
+                        }
+                      },
+                      "required": [
+                        "service",
+                        "name"
+                      ]
+                    }
+                  },
+                  "services": {
+                    "maxItems": 100,
+                    "description": "Only the services that changed, at most 100. An add or a delete entry carries nothing else. Service adds run first and deletes run after every other entry. A template holds at most 50 services. A name deleted in this PATCH can be added again only in a later PATCH. One invalid entry answers 400 and nothing is saved.",
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "description": "The service. On an add, the new service name: lower-kebab, at most 39 characters, a name no service of the template has.",
+                          "type": "string"
+                        },
+                        "removed": {
+                          "description": "true leaves the service out of the published template, false restores it. Omitted leaves it as it is. A service the author added is deleted instead, and true on one answers 400.",
+                          "type": "boolean"
+                        },
+                        "settings": {
+                          "description": "Only the fields that changed: each replaces that field. null clears every setting of the service. Postgres takes only pgVersion and storage only public. Redis, MySQL and MongoDB answer 400, and so does a field the service type does not take.",
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/TemplateServiceSettings"
+                            },
+                            {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "enum": [
+                                null,
+                                null
+                              ]
+                            }
+                          ]
+                        },
+                        "add": {
+                          "$ref": "#/components/schemas/TemplateAddedService"
+                        },
+                        "delete": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ],
+                          "description": "Deletes a service the author added, with every setting, choice, rename and added variable kept under its name. One from the project answers 400: remove it with removed true. The entry carries nothing else, and deletes run after every other entry."
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
+                  "expectedUpdatedAt": {
+                    "format": "date-time",
+                    "description": "The draft's updatedAt as the client rendered it. A different current value answers 409 template_draft_changed.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "expectedUpdatedAt"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "code",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "template": {
+                      "$ref": "#/components/schemas/CommunityTemplate"
+                    }
+                  },
+                  "required": [
+                    "template"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "code template_draft_changed: the draft changed since the client read it (expectedUpdatedAt), review it and save again. Without a code: the new code is taken, or the template was already published and keeps its code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "This user saved too many times in the last minute. Retry later.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Edit a community template draft",
+            "sidebarTitle": "Update org template"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteOrgTemplate",
+        "summary": "Delete a draft that was never published",
+        "tags": [
+          "Templates"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "code",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Delete a draft that was never published",
+            "sidebarTitle": "Delete org template"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/templates/{code}/publish": {
+      "post": {
+        "operationId": "publishOrgTemplate",
+        "summary": "Publish the draft to the gallery now, with no review, as the next version",
+        "tags": [
+          "Templates"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedUpdatedAt": {
+                    "format": "date-time",
+                    "description": "The draft's updatedAt as the client rendered it. A different current value answers 409 template_draft_changed.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "expectedUpdatedAt"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "code",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "template": {
+                      "$ref": "#/components/schemas/CommunityTemplate"
+                    }
+                  },
+                  "required": [
+                    "template"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "code template_not_ready: a publish requirement is unmet. The message names the first, publishRequirements in the view lists them all. Without a code: a malformed request, a template that does not pass validation, or a draft generated by an older version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "code template_publish_conflict: the published version changed outside this draft. code template_code_owned: the code belongs to someone else. code template_taken_down: InstaCloud took this template down and it cannot be republished. code template_draft_changed: the draft changed since the client read it (expectedUpdatedAt), review it and publish again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Publish the draft to the gallery now, with no review, as the next version",
+            "sidebarTitle": "Publish org template"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/templates/{code}/regenerate": {
+      "post": {
+        "operationId": "regenerateOrgTemplate",
+        "summary": "Rebuild the draft from the source project, keeping what the author edited",
+        "tags": [
+          "Templates"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "code",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "template": {
+                      "$ref": "#/components/schemas/CommunityTemplate"
+                    },
+                    "changes": {
+                      "type": "object",
+                      "properties": {
+                        "addedServices": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "removedServices": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "addedVariables": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "removedVariables": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "addedServices",
+                        "removedServices",
+                        "addedVariables",
+                        "removedVariables"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "template",
+                    "changes"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).",
+        "x-mint": {
+          "metadata": {
+            "title": "Rebuild the draft from the source project, keeping what the author edited",
+            "sidebarTitle": "Regenerate org template"
+          }
+        }
+      }
+    },
+    "/orgs/{orgId}/templates/{code}/unpublish": {
+      "post": {
+        "operationId": "unpublishOrgTemplate",
+        "summary": "Unpublish org template",
+        "tags": [
+          "Templates"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "code",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "template": {
+                      "$ref": "#/components/schemas/CommunityTemplate"
+                    }
+                  },
+                  "required": [
+                    "template"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "**Token scope:** `account` · `org` — read-only tokens refused (not a GET).\n\nTake the template out of the gallery. Deployed services keep running.",
+        "x-mint": {
+          "metadata": {
+            "title": "Unpublish org template",
+            "sidebarTitle": "Unpublish org template"
           }
         }
       }
@@ -2968,6 +4521,7 @@
           "Domains"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -2982,8 +4536,7 @@
                 ]
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -3060,7 +4613,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "already delegated, bought through InstaCloud (use its own delegate door), or the domain carries live mail",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -3071,7 +4623,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "managed DNS delegation is not enabled on this deployment",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -3112,7 +4663,27 @@
         "tags": [
           "Domains"
         ],
+        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nThe org's BYO delegated zones, each with its nameservers and the sweeper's last is-it-pointed-yet observation (refreshed about every minute at small fleet sizes; no per-request DNS).\n\nSet limit or cursor to request a page; continue with nextCursor until null. Without either parameter the complete collection is returned for compatibility.",
         "parameters": [
+          {
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "maxLength": 253,
+              "type": "string"
+            },
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
           {
             "schema": {
               "format": "uuid",
@@ -3136,11 +4707,27 @@
                       "items": {
                         "$ref": "#/components/schemas/OrgZone"
                       }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
                     "items"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -3176,7 +4763,6 @@
             }
           }
         },
-        "description": "**Token scope:** `account` · `org` — read-only tokens allowed.\n\nThe org's BYO delegated zones, each with its nameservers and the sweeper's last is-it-pointed-yet observation (refreshed about every minute at small fleet sizes; no per-request DNS).",
         "x-mint": {
           "metadata": {
             "title": "List org zones",
@@ -3333,6 +4919,7 @@
           "Domains"
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -3360,8 +4947,7 @@
                 ]
               }
             }
-          },
-          "required": true
+          }
         },
         "parameters": [
           {
@@ -3446,7 +5032,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "the zone already serves (the repair window closed at activation), or the provider refused",
                   "$ref": "#/components/schemas/Error"
                 }
               }
@@ -3687,13 +5272,9 @@
           },
           "number": {
             "description": "the invoice number printed on the PDF; null before Stripe assigns one",
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "createdAt": {
@@ -3715,24 +5296,16 @@
           },
           "description": {
             "description": "the invoice's description, else its first line item — what was bought",
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "pdfUrl": {
             "description": "Stripe-hosted, read-only PDF; null until Stripe has rendered it. The payable hosted invoice link is deliberately never returned.",
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           }
         },
@@ -3791,6 +5364,67 @@
               "enterprise"
             ]
           },
+          "pendingPlanChange": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "changeKind": {
+                "type": "string",
+                "enum": [
+                  "upgrade",
+                  "downgrade"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "fromTier": {
+                "type": "string",
+                "enum": [
+                  "free",
+                  "pro",
+                  "team",
+                  "enterprise"
+                ]
+              },
+              "toTier": {
+                "type": "string",
+                "enum": [
+                  "free",
+                  "pro",
+                  "team",
+                  "enterprise"
+                ]
+              },
+              "effectiveAt": {
+                "format": "date-time",
+                "description": "UTC effective timestamp: next-day upgrade or paid-period-end downgrade; the current tier remains effective until cutover. A Free → Pro/Team change cuts over locally once paid (status applied) — this stays the Stripe subscription start.",
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "awaiting_payment",
+                  "scheduled"
+                ]
+              },
+              "includedUsd": {
+                "description": "Full-cycle target allowance. An in-cycle paid upgrade adds only a proportional increase to the existing cycle.",
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "fromTier",
+              "toTier",
+              "effectiveAt",
+              "status",
+              "includedUsd"
+            ]
+          },
           "billingStatus": {
             "type": "string",
             "enum": [
@@ -3812,7 +5446,7 @@
                 "type": "number"
               },
               "includedUsd": {
-                "description": "tier allowance for the window (free $5 / pro $20 / team $0 — the plan fee is flat and usage bills from the first cent / enterprise per deal, $0 default); platform-configurable",
+                "description": "included allowance saved for an exact snapshotted billing cycle; otherwise the configured current-tier allowance. Closed-cycle snapshots do not change when the org changes plan or configuration changes.",
                 "type": "number"
               },
               "overageUsd": {
@@ -3820,7 +5454,7 @@
                 "type": "number"
               },
               "creditsUsd": {
-                "description": "remaining included allowance plus the org credit balance (legacy merged figure; prefer creditBalanceUsd)",
+                "description": "remaining usable included allowance plus the org credit balance (legacy merged figure; prefer creditBalanceUsd). Unused allowance from a closed snapshotted cycle is excluded.",
                 "type": "number"
               },
               "forecastUsd": {
@@ -3887,6 +5521,67 @@
               "pro",
               "team",
               "enterprise"
+            ]
+          },
+          "pendingPlanChange": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "changeKind": {
+                "type": "string",
+                "enum": [
+                  "upgrade",
+                  "downgrade"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "fromTier": {
+                "type": "string",
+                "enum": [
+                  "free",
+                  "pro",
+                  "team",
+                  "enterprise"
+                ]
+              },
+              "toTier": {
+                "type": "string",
+                "enum": [
+                  "free",
+                  "pro",
+                  "team",
+                  "enterprise"
+                ]
+              },
+              "effectiveAt": {
+                "format": "date-time",
+                "description": "UTC effective timestamp: next-day upgrade or paid-period-end downgrade; the current tier remains effective until cutover. A Free → Pro/Team change cuts over locally once paid (status applied) — this stays the Stripe subscription start.",
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "awaiting_payment",
+                  "scheduled"
+                ]
+              },
+              "includedUsd": {
+                "description": "Full-cycle target allowance. An in-cycle paid upgrade adds only a proportional increase to the existing cycle.",
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "fromTier",
+              "toTier",
+              "effectiveAt",
+              "status",
+              "includedUsd"
             ]
           },
           "billingStatus": {
@@ -3977,6 +5672,352 @@
             ]
           }
         }
+      },
+      "CodedError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "description": "stable machine-readable reason, e.g. private_lane_disabled, private_lane_unavailable_in_region, public_access_closed, credential_change_in_progress",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "CommunityTemplate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "description": "The draft's stable id. A rename of its code keeps it, and a new draft gets a new one, even under a code a deleted draft had. Routes and editor links address a draft by its code.",
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceProjectId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blank": {
+            "description": "Created with POST /orgs/{orgId}/templates, with no project behind it: every service is one the author added, and Regenerate From Project answers 400. A generated draft whose project was deleted is not blank.",
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "unpublished"
+            ]
+          },
+          "publishedVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hasUnpublishedChanges": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "readme": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defaultReadme": {
+            "description": "A README skeleton built from the draft as it is now: service names and required variable names only, never a value. The console offers it behind a button; it is not stored.",
+            "type": "string"
+          },
+          "logoUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "description": "web with a port, worker without one, or the managed type (postgres, redis, mysql, mongodb or storage). It and the fields below are the values after the author's settings.",
+                  "type": "string"
+                },
+                "image": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "port": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "healthcheck": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "volume": {
+                  "type": "boolean"
+                },
+                "mountPath": {
+                  "description": "null with volume true: the volume mounts at the default /data. null with volume false: no volume.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "command": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "alwaysOn": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "public": {
+                  "description": "Storage only, always present on a bucket: anonymous public-read, after the author's setting.",
+                  "type": "boolean"
+                },
+                "pgVersion": {
+                  "description": "Postgres only: the major a deploy creates the database on, after the author's setting. Absent when the project's database recorded none.",
+                  "type": "integer"
+                },
+                "added": {
+                  "description": "Present, and true, only on a service the author added: a PATCH deletes it for good. One from the project is removed instead.",
+                  "type": "boolean"
+                },
+                "removed": {
+                  "description": "The author left this service out of the template. It stays listed so it can be restored.",
+                  "type": "boolean"
+                },
+                "variables": {
+                  "description": "Sorted by the generator's name (originalName when renamed). Empty for a managed database. A removed service lists what restoring it brings back.",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateVariableView"
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "image",
+                "port",
+                "healthcheck",
+                "volume",
+                "mountPath",
+                "command",
+                "alwaysOn",
+                "removed",
+                "variables"
+              ]
+            }
+          },
+          "referenceOptions": {
+            "description": "What a variable may reference in the template as it is now. A removed service offers nothing.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateReferenceOption"
+            }
+          },
+          "editableFields": {
+            "$ref": "#/components/schemas/TemplateEditableFields"
+          },
+          "referenceKeys": {
+            "$ref": "#/components/schemas/TemplateReferenceKeys"
+          },
+          "publishRequirements": {
+            "description": "Always seven, in this order: has_service, no_blocked, no_conflicts, has_tagline, has_category, has_readme, required_descriptions.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplatePublishRequirement"
+            }
+          },
+          "report": {
+            "$ref": "#/components/schemas/TemplateGenerationReport"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "takenDown": {
+            "description": "Staff took this template down. It cannot be republished.",
+            "type": "boolean"
+          },
+          "deployCount": {
+            "description": "Succeeded deployments of this template.",
+            "type": "integer"
+          },
+          "totalProjects": {
+            "description": "Distinct projects that deployed this template since its first publish, any outcome: the number the gallery card shows (the catalog's totalProjects).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "orgId",
+          "sourceProjectId",
+          "blank",
+          "status",
+          "publishedVersion",
+          "hasUnpublishedChanges",
+          "name",
+          "tagline",
+          "category",
+          "readme",
+          "defaultReadme",
+          "logoUrl",
+          "services",
+          "referenceOptions",
+          "editableFields",
+          "referenceKeys",
+          "publishRequirements",
+          "report",
+          "updatedAt",
+          "takenDown",
+          "deployCount",
+          "totalProjects"
+        ]
+      },
+      "CommunityTemplateSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "description": "The draft's stable id. A rename of its code keeps it, and a new draft gets a new one, even under a code a deleted draft had. Routes and editor links address a draft by its code.",
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceProjectId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blank": {
+            "description": "Created with POST /orgs/{orgId}/templates, with no project behind it: every service is one the author added, and Regenerate From Project answers 400. A generated draft whose project was deleted is not blank.",
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "unpublished"
+            ]
+          },
+          "publishedVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hasUnpublishedChanges": {
+            "type": "boolean"
+          },
+          "takenDown": {
+            "description": "Staff took this template down. It cannot be republished.",
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "logoUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "deployCount": {
+            "description": "Succeeded deployments of this template.",
+            "type": "integer"
+          },
+          "totalProjects": {
+            "description": "Distinct projects that deployed this template since its first publish, any outcome: the number the gallery card shows (the catalog's totalProjects).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "orgId",
+          "sourceProjectId",
+          "blank",
+          "status",
+          "publishedVersion",
+          "hasUnpublishedChanges",
+          "takenDown",
+          "name",
+          "tagline",
+          "category",
+          "logoUrl",
+          "updatedAt",
+          "deployCount",
+          "totalProjects"
+        ],
+        "description": "One template of the org as GET /orgs/{orgId}/templates lists it, with no services, variables, reference options, publish requirements or README. GET /orgs/{orgId}/templates/{code} serves one in full."
       },
       "ComputeProvider": {
         "description": "Compute plane actually backing a compute resource, derived from its provider_ref rather than its kind. Absent when it cannot be determined from the row — clients must then assert no provider rather than assume one from `kind`.",
@@ -4171,13 +6212,9 @@
           },
           "service": {
             "description": "the compute service this hostname serves; each hostname of a domain can serve a different one",
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           }
         },
@@ -4207,13 +6244,9 @@
             "type": "integer"
           },
           "renewalPriceCents": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "integer",
+              "null"
             ]
           },
           "currency": {
@@ -4229,35 +6262,23 @@
             "type": "string"
           },
           "paidAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "registeredAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "failedReason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           }
         },
@@ -4696,25 +6717,17 @@
             }
           },
           "registeredAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "expiresAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "autorenew": {
@@ -4749,25 +6762,17 @@
           },
           "transferLockExpiresAt": {
             "description": "ICANN 60-day lock after registration: no transfer out before this, whatever `locked` says",
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "orderId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
             ]
           }
         },
@@ -4803,6 +6808,502 @@
           "owner",
           "admin",
           "member"
+        ]
+      },
+      "TemplateAddedService": {
+        "description": "A service the author adds to a template: a compute service from an image, web with a port and a worker without one, or a managed database or bucket by type.",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "compute"
+                ]
+              },
+              "image": {
+                "description": "A public image reference, published as typed. The Image setting checks it.",
+                "type": "string"
+              },
+              "port": {
+                "description": "1 to 65535. null: a worker, always on, with no health check.",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "image",
+              "port"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "postgres",
+                  "redis",
+                  "mysql",
+                  "mongodb",
+                  "storage"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        ]
+      },
+      "TemplateEditableFields": {
+        "description": "Per service type, the TemplateServiceSettings keys a template service of that type takes. A PATCH answers 400 for any other.",
+        "type": "object",
+        "properties": {
+          "web": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "image",
+                "port",
+                "healthcheck",
+                "command",
+                "mountPath",
+                "alwaysOn"
+              ]
+            }
+          },
+          "worker": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "image",
+                "port",
+                "healthcheck",
+                "command",
+                "mountPath",
+                "alwaysOn"
+              ]
+            }
+          },
+          "postgres": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pgVersion"
+              ]
+            }
+          },
+          "redis": {
+            "maxItems": 0,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mysql": {
+            "maxItems": 0,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mongodb": {
+            "maxItems": 0,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "storage": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "public"
+              ]
+            }
+          }
+        },
+        "required": [
+          "web",
+          "worker",
+          "postgres",
+          "redis",
+          "mysql",
+          "mongodb",
+          "storage"
+        ]
+      },
+      "TemplateGenerationReport": {
+        "description": "What generation skipped, what blocks publishing (each with a fix), and notices.",
+        "type": "object",
+        "properties": {
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "service": {
+                  "type": "string"
+                },
+                "variable": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "fix": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ]
+            }
+          },
+          "blocked": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "service": {
+                  "type": "string"
+                },
+                "variable": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "fix": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ]
+            }
+          },
+          "notices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "service": {
+                  "type": "string"
+                },
+                "variable": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "fix": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ]
+            }
+          }
+        },
+        "required": [
+          "skipped",
+          "blocked",
+          "notices"
+        ]
+      },
+      "TemplatePublishRequirement": {
+        "description": "One condition publish checks. Publish answers 400 template_not_ready while any is not ok.",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "has_service",
+              "no_blocked",
+              "no_conflicts",
+              "has_tagline",
+              "has_category",
+              "has_readme",
+              "required_descriptions"
+            ]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "items": {
+            "description": "no_blocked: each blocked reason. no_conflicts: one sentence with its fix for each name the author added that the project now has too, services first. required_descriptions: each <service>.<VAR> still without a description. Otherwise empty.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "ok",
+          "items"
+        ]
+      },
+      "TemplateReferenceKeys": {
+        "description": "Per managed service type, the credential keys a variable may reference on a service of that type, one the author has not applied yet included (secretNames.ts CANONICAL_KEYS). A web service's url and host are not listed.",
+        "type": "object",
+        "properties": {
+          "postgres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "redis": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mysql": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mongodb": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "storage": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "postgres",
+          "redis",
+          "mysql",
+          "mongodb",
+          "storage"
+        ]
+      },
+      "TemplateReferenceOption": {
+        "description": "What a variable may reference: a database connection key, a bucket key, or a web service address including the service itself.",
+        "type": "object",
+        "properties": {
+          "token": {
+            "description": "Exactly what a reference choice sends and the manifest stores.",
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "key": {
+            "description": "A credential key of a managed database or a storage bucket, or url or host of a web service.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "service",
+          "key"
+        ]
+      },
+      "TemplateServiceSettings": {
+        "description": "What the author changed on one service. CommunityTemplate.editableFields lists the keys each service type takes, and a PATCH answers 400 for any other. A field left out keeps the generator's value.",
+        "type": "object",
+        "properties": {
+          "public": {
+            "description": "Storage only: serve the bucket with anonymous public-read. false makes it private again.",
+            "type": "boolean"
+          },
+          "image": {
+            "description": "An image reference, published as typed (not pinned to a digest).",
+            "type": "string"
+          },
+          "port": {
+            "description": "1 to 65535. null: no port, so the service runs as a worker, with no health check and always on.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "alwaysOn": {
+            "description": "false: the service scales to zero when idle. A worker is always on whatever this says.",
+            "type": "boolean"
+          },
+          "mountPath": {
+            "description": "Where a volume mounts, a path starting with /. null, or an empty or blank string: no volume.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pgVersion": {
+            "description": "Postgres only: the major a deploy creates the database on, one of 16, 17, 18.",
+            "type": "integer"
+          },
+          "healthcheck": {
+            "description": "A path starting with /. null, or an empty or blank string: none.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "command": {
+            "description": "Run through sh -c. null, or an empty or blank string: the image's own.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TemplateVariableChoice": {
+        "description": "The author's choice for one variable: required, optional with or without a default, a reference, a random 32-character secret, or left out.",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "required"
+                ]
+              },
+              "description": {
+                "description": "At most 200 characters. Blank keeps the default sentence.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "optional"
+                ]
+              },
+              "default": {
+                "description": "At most 4096 bytes. Published with the template, so never a secret.",
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "reference"
+                ]
+              },
+              "token": {
+                "description": "One of the view referenceOptions tokens, or a key of a service removed from the template: that variable stays required until the service is restored.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "token"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "generated"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "removed"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
+        ]
+      },
+      "TemplateVariableView": {
+        "description": "One variable of a template service as its author sees it.",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "required",
+              "optional",
+              "default",
+              "reference",
+              "generated",
+              "fixed",
+              "removed"
+            ]
+          },
+          "value": {
+            "description": "default: the default text. reference: the token. fixed: the literal or the address reference.",
+            "type": "string"
+          },
+          "description": {
+            "description": "What whoever deploys reads. Omitted while it is the default sentence, which the console shows as an empty box.",
+            "type": "string"
+          },
+          "brokenReference": {
+            "description": "The token this variable referenced before its service was removed from the template or left the project. The variable is then required.",
+            "type": "string"
+          },
+          "originalName": {
+            "description": "Present only when the author renamed the variable: the generator's name, which a PATCH variables entry sends as name. name is then the new one.",
+            "type": "string"
+          },
+          "added": {
+            "description": "Present, and true, only on a variable the author added: a PATCH deletes it for good. One from the project is removed with choice removed instead.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "kind"
         ]
       }
     }

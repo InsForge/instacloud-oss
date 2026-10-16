@@ -1,0 +1,64 @@
+{
+  "categories": [
+    {
+      "slug": "ai-agent",
+      "label": "AI Agent"
+    },
+    {
+      "slug": "llm",
+      "label": "LLM"
+    },
+    {
+      "slug": "automation",
+      "label": "Automation"
+    },
+    {
+      "slug": "backend",
+      "label": "Backend"
+    },
+    {
+      "slug": "database",
+      "label": "Database"
+    },
+    {
+      "slug": "crm",
+      "label": "CRM"
+    },
+    {
+      "slug": "analytics",
+      "label": "Analytics"
+    },
+    {
+      "slug": "dev-tools",
+      "label": "Dev Tools"
+    },
+    {
+      "slug": "authentication",
+      "label": "Authentication"
+    },
+    {
+      "slug": "cms",
+      "label": "CMS"
+    },
+    {
+      "slug": "observability",
+      "label": "Observability"
+    },
+    {
+      "slug": "productivity",
+      "label": "Productivity"
+    },
+    {
+      "slug": "communication",
+      "label": "Communication"
+    },
+    {
+      "slug": "ecommerce",
+      "label": "E-commerce"
+    },
+    {
+      "slug": "other",
+      "label": "Other"
+    }
+  ]
+}

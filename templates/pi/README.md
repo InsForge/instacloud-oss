@@ -14,8 +14,11 @@ URL.
 
 The image is built from the Dockerfile in this directory: `node:24-bookworm-slim` (pinned by digest)
 plus [ttyd](https://github.com/tsl0922/ttyd) 1.7.7 (verified against a pinned SHA-256) and
-`@earendil-works/pi-coding-agent` pinned to an exact version. Nothing floats on `latest`, so a
-restart gives you the same environment. In front of ttyd sits the InstaCloud sign-in page,
+`@earendil-works/pi-coding-agent` pinned to an exact version. The base image, ttyd and the agent
+CLI are fixed, so the CLI you get is the one the template version names. The rest is not: every Debian package is
+installed by name from Debian's live bookworm repositories, `gh` from upstream's rolling apt
+repository and `bun` from npm, so all of them can move between two builds of the same template
+version. In front of ttyd sits the InstaCloud sign-in page,
 `insta-gate` from this repository's `gate/`, also verified against a pinned SHA-256. ttyd listens
 only inside the container and never receives your credentials. Template versions before 0.8.3 logged the
 credential on every start, and upgrading does not remove those lines from the log history: if you
@@ -32,6 +35,17 @@ ran one, set a new `ADMIN_PASSWORD` before you upgrade.
   variables.
 - Deploys are health-gated: a container that does not answer is rolled back to the last healthy
   image instead of leaving you with a dead URL.
+- A terminal that outlives the tab. Every tab attaches to the same tmux session, `main`, so closing
+  the tab or dropping the network does not stop an agent mid-task, and opening the URL again picks
+  up where it was. The machine itself still scales to zero once nothing is connected, which ends
+  the session. To keep agents working with nobody connected, run
+  `insta compute always-on on <service>`, which bills for the uptime.
+- Common tools preinstalled: `gh`, git, curl, ripgrep, jq, ssh, rsync, unzip, zip, less, tree,
+  fzf, htop, nano and vi, python3 with venv and pip, bun, and the C and C++ toolchain that `npm
+  install` needs to build a package with a native addon. For working out what is wrong from inside
+  the box: lsof, ss, dig, netstat, socat. A machine that mounts the platform toolbox at
+  `/.insta/tools/bin` has a second `gh` there, and a git credential helper already pointing at that
+  one keeps working.
 
 ## What you need before deploying
 

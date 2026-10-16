@@ -42,6 +42,8 @@ for (const dir of dirs) {
   for (const f of ["code", "version", "maintainer"]) if (!m?.[f]) err(dir, `missing ${f}`);
   if (m?.version && !SEMVER_RE.test(String(m.version))) err(dir, `version '${m.version}' is not semver`);
   if (!m?.meta?.category) err(dir, "missing meta.category");
+  // Whether the platform lists the category needs the network, so check-categories asks that.
+  if (m?.meta?.category === "other") err(dir, "meta.category: other is for community templates, propose a category instead (AGENTS.md)");
   if (!m?.upstream?.pinned) err(dir, "missing upstream.pinned");
 
   // The version is written twice when we build the image ourselves, and the two must agree. Drafts
@@ -95,6 +97,14 @@ for (const dir of dirs) {
   const readme = join(root, dir, "README.md");
   if (existsSync(readme)) {
     const text = readFileSync(readme, "utf8");
+    // The manifest is where the version lives. A copy in prose has nothing keeping it true:
+    // `check-upstreams --apply` moves the manifest and the Dockerfile and reads no README, so a
+    // bump used to ship with the page still naming the version before it. A warning rather than
+    // an error, because a short pin like `0.1.0` can legitimately be some other number here.
+    const pinned = String(m?.upstream?.pinned ?? "");
+    if (pinned && new RegExp(`(?<![0-9A-Za-z._-])${pinned.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![0-9A-Za-z._-])`).test(text)) {
+      console.warn(`~ ${dir}: README names the pinned version ${pinned}; a bump moves the manifest and not this page, so leave the version out and name the image or package alone`);
+    }
     const targets = [
       ...text.matchAll(/!\[[^\]]*\]\(([^)\s]+)/g),
       ...text.matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi),

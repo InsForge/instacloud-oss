@@ -95,10 +95,10 @@ variables, because ClickHouse has no environment variable for any of them.
 
 ## Links
 
-- Architectures: `linux/amd64` and `linux/arm64`. Upstream's `26.8.11.7` index carries both, and
+- Architectures: `linux/amd64` and `linux/arm64`. Upstream's index carries both, and
   this image only copies in a config file and a wrapper script.
 - Documentation: <https://clickhouse.com/docs>
 - HTTP interface reference: <https://clickhouse.com/docs/interfaces/http>
 - Upstream: <https://github.com/ClickHouse/ClickHouse>
-- Image: `docker.io/library/clickhouse`, pinned to `26.8.11.7` (the LTS line)
+- Image: `docker.io/library/clickhouse`, the LTS line
 - License: Apache-2.0 (upstream `ClickHouse/ClickHouse`).

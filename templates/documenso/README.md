@@ -102,7 +102,7 @@ detail what Documenso makes of the `.p12` it was given.
 
 ## Links
 
-- Upstream: <https://github.com/documenso/documenso>, pinned at `v2.20.0`
-- Image: `docker.io/documenso/documenso:v2.20.0`, with this directory's `Dockerfile` on top
+- Upstream: <https://github.com/documenso/documenso>
+- Image: `docker.io/documenso/documenso`, with this directory's `Dockerfile` on top
 - Documentation: <https://docs.documenso.com/docs/self-hosting>
 - License: AGPL-3.0-only

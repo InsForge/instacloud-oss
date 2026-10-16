@@ -26,6 +26,13 @@ IS the template code. Copying the closest existing template is the fastest way t
   it does and where the value comes from), After deploy (how to actually start using it), and
   Links (upstream, the image or package, the license). A draft template opens with a note saying
   why it is draft.
+- **No version numbers in the README.** Name the image or the package, not its tag: the pin lives
+  in `upstream.pinned` and in the manifest's image reference, and a copy here has nothing keeping
+  it true. `check-upstreams --apply` moves those two and reads no README, so every bump used to
+  leave the page naming the version before it, which is what a reader deciding whether to deploy
+  reads first. Lint warns on one. Where a version is evidence rather than a label, such as which
+  upstream index was checked for an architecture, it belongs in the table in
+  [README.md](README.md), which records what was checked and when.
 - The **deploy button**, in its own paragraph under the title and tagline, for every publishable
   template: `[![Deploy on InstaCloud](<cdn>/assets/deploy-button.svg)](https://instacloud.com/templates/<code>)`.
   CI rejects a publishable template that omits it, checks that the href names this template's own
@@ -189,25 +196,28 @@ the catalog holds only a reference, and it is served from a CDN pinned to the pu
 - Fair-code upstreams such as n8n: reference the official image, and never rebuild or rebrand it.
 - A template that exposes a terminal MUST require an access credential (for ttyd, the InstaCloud
   sign-in page from `gate/`, with ttyd on loopback behind it).
-- Categories are `ai-agent`, `llm`, `automation`, `backend` (database, auth, storage and functions
-  shipped as one backend, such as Supabase), `database` (a single datastore, such as ClickHouse),
-  `crm` (customer relationship management, such as Twenty), `analytics` (a tool that reads a
-  datastore someone else runs, such as Superset or Umami) and `dev-tools` (what a developer runs to
-  do the work, such as a Git host or a hosted editor). The `database` and `analytics` line is worth
-  stating because it decides several: ClickHouse is the datastore so it is `database`, Superset
-  queries one so it is `analytics`.
-- Propose a new category in your PR rather than reaching for `other`, and propose it with at least
-  two templates that want it. A category with one member is a rail entry with one card, and a
-  template is never held back waiting for a bucket: ship it under the nearest existing category and
-  move it later, which is a manifest edit and a version bump rather than a migration.
-- A new category also needs a label in the console (`TEMPLATE_CATEGORIES`) and the marketing gallery
-  (`CATEGORIES`), or it is listed only under All, and it belongs in both `TEMPLATE_CATEGORY_ORDER`
-  and `LABELS` in [ui/src/lib/templatePicker.ts](../ui/src/lib/templatePicker.ts), which mirrors the
-  console's list and labels for this repo's own UI. That third place is easy to miss: a category
-  absent from it still gets a rail entry and a guessed label, it just sorts in alphabetically after
-  the ones the console orders deliberately, which is a difference nothing fails on. The gallery's
-  toolbar breakpoint is measured off the label widths, so it moves when a new category first has a
-  published template to badge.
+- `meta.category` is one of the platform's categories, and the platform owns that list (the UI
+  snapshot below is a copy of it): `curl https://api.instacloud.com/template-categories` gives the
+  slugs, their labels and the order every gallery shows them in. The console and the marketing
+  gallery read it from there, and `npm run check-categories` fails on a manifest whose category it
+  does not list. The lines worth stating are the ones that decide several templates. `backend` is
+  database, auth, storage and functions shipped as one, such as Supabase. `database` is a single
+  datastore, such as ClickHouse, and `analytics` is a tool that queries one someone else runs, such
+  as Superset or Umami. `authentication` is an identity service on its own, such as Keycloak, while
+  auth inside a backend stays `backend`. `dev-tools` is what a developer runs to do the work, such
+  as a Git host or a hosted editor.
+- `other` is for community templates, which authors publish from the console with no review. An
+  official template does not use it, and lint refuses it: propose a new category instead, with at
+  least two templates that want it. A category with one member is a rail entry with one card, and
+  a template is never held back waiting for a bucket: ship it under the nearest existing category
+  and move it later, which is a manifest edit and a version bump rather than a migration.
+- A new category is a platform change (`TEMPLATE_CATEGORIES` in its `templateCategories.ts`) and
+  nothing else needs to learn it, except this repo's own UI. That runs self-hosted, with no platform
+  to ask, so it ships a snapshot of the list in
+  [ui/src/lib/template-categories.json](../ui/src/lib/template-categories.json). Once the platform
+  change is live, `npm run check-categories` fails until `npm run check-categories -- --write`
+  refreshes the snapshot, and that refresh belongs in the same PR as the first template to use the
+  new category.
 - `meta.draft: true` keeps a template out of the gallery while it is unfinished. Drafts are exempt
   from the logo and version-bump rules, because they publish nothing.
 - Everything in this tree is **English**, comments included. A comment only some contributors can

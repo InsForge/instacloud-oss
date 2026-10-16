@@ -89,6 +89,6 @@ you create any.
 - Architectures: `linux/amd64` and `linux/arm64`.
 - Documentation: <https://docs.anythingllm.com>
 - Upstream: <https://github.com/Mintplex-Labs/anything-llm>
-- Upstream image: `docker.io/mintplexlabs/anythingllm`, pinned to `1.17.0`; this template deploys
+- Upstream image: `docker.io/mintplexlabs/anythingllm`; this template deploys
   `ghcr.io/insforge/insta-oss/templates/anythingllm`, built from the `Dockerfile` here.
 - License: MIT (see <https://github.com/Mintplex-Labs/anything-llm/blob/master/LICENSE>).

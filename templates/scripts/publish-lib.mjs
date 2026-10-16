@@ -194,6 +194,66 @@ function scanDeployButtons(text) {
   return { lines, hits };
 }
 
+// The asset named as a whole path, bounded on BOTH sides by something that cannot be part of one.
+// Deliberately looser than DEPLOY_BUTTON_LINE about the markdown around it (see the draft check in
+// lint.mjs) but exact about WHICH FILE, because a different file renders as that file:
+// `myassets/…`, `foo.assets/…`, `…deploy-button.svg.bak` and `…deploy-button.svgx` are all
+// other files, and DEPLOY_BUTTON_LINE already leaves every one of them alone. A test that says so
+// is what stops these two from contradicting each other again.
+//
+// The asset has to be a whole path, so the bound is what SURROUNDS it, and it is spelled as an
+// ALLOW-LIST of characters that cannot be part of a path. The obvious way round, listing the
+// characters that can, was wrong twice in a row for the same reason: a deny-list of path
+// characters is never finished. It missed non-ASCII letters, then combining marks, and after
+// those would come format characters, joiners, and whatever else Unicode adds. Inverting it ends
+// the category: anything not named here counts as part of a name, so
+// `eassets/…`, `\u00e9assets/…` and `e\u0301assets/…` are all somebody else's file without the
+// class having to know what a combining acute is.
+//
+// What terminates the path is MARKDOWN and HTML syntax, not URL syntax. Several characters RFC
+// 3986 allows in a path are punctuation too, `! $ & ' ( ) * + , ; = : @`, and treating those as
+// boundaries reported a different file as this one: `deploy-button.svg!x` is a legal filename,
+// and not ours. So this names only what actually ends a URL where a README puts one.
+//
+// Two of them are kept anyway, because the demands genuinely conflict. `)` is legal in a path,
+// but CommonMark requires parentheses inside a link destination to be balanced or escaped, so an
+// unbalanced one IS the end of the destination; a filename that really contains one arrives
+// percent-encoded or wrapped in <>. A quote is legal in a path too, and is also how an HTML
+// attribute closes. Both are resolved the same way, by which mistake costs more: this list feeds
+// the DRAFT check, where failing to see a button ships a live link to a route that does not exist
+// yet, and seeing one too many costs an author one message about a filename nobody has. So where
+// the two readings collide, it errs toward seeing.
+//
+// The sides are also split by direction, not just by the slash: an OPENING delimiter can only
+// precede the path and a CLOSING one can only follow it, so neither list carries the other's.
+//
+// Left: nothing (start of input), a slash, which ENDS the previous segment, or what opens a
+// destination or an attribute value. Covers `](<cdn>/assets/...)`, `](assets/...)`,
+// `src="assets/..."` and a bare path at the start of a line.
+const LEFT_BOUND = "\\s/(\\[{<\"'`|=";
+// Right: what closes one, plus the `?` and `#` that open a query or a fragment, and NOT a
+// slash: `assets/deploy-button.svg/extra` names something BELOW the file, not the file.
+const RIGHT_BOUND = "\\s)\\]}>\"'`|?#";
+const ASSET_MENTION = new RegExp(
+  `(?:^|[${LEFT_BOUND}])${DEPLOY_BUTTON_ASSET.replace(/[.]/g, "\\.")}(?:$|[${RIGHT_BOUND}])`,
+  "u",
+);
+
+/**
+ * Does this README name the button asset at all, in any form: linked or not, fenced or not,
+ * inline in prose or alone on its line.
+ *
+ * This is the question "is the asset mentioned", NOT "is there a button" (findDeployButtons).
+ * lint.mjs wants the first for its draft rule, where the risk is what a reader can click rather
+ * than what publish strips, and the second everywhere else.
+ *
+ * @param {string} text  the README source
+ * @returns {boolean}
+ */
+export function mentionsDeployButtonAsset(text) {
+  return ASSET_MENTION.test(String(text ?? ""));
+}
+
 /**
  * Every deploy button in a README, as the href each one links to. Empty when the asset is only
  * mentioned: unlinked, indented into a code block, inside a fence, or a neighbouring filename.

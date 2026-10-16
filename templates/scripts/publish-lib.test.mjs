@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { DEPLOY_BUTTON_ASSET, findDeployButtons, ghcrGateMessage, ghcrRetryVerdict, parseGhcrRef, rewriteReadme, stripDeployBadge } from './publish-lib.mjs'
+import {
+  DEPLOY_BUTTON_ASSET,
+  findDeployButtons,
+  ghcrGateMessage,
+  ghcrRetryVerdict,
+  mentionsDeployButtonAsset,
+  parseGhcrRef,
+  rewriteReadme,
+  stripDeployBadge,
+} from './publish-lib.mjs'
 
 const SHA = 'a'.repeat(40)
 const REPO = 'InsForge/instacloud-oss'
@@ -282,4 +291,138 @@ describe('findDeployButtons', () => {
       expect(findDeployButtons(text).length > 0).toBe(stripDeployBadge(text) !== text)
     }
   })
+})
+
+describe('mentionsDeployButtonAsset', () => {
+  // lint.mjs's draft rule rides on this, so a false positive fails a draft over a file it does
+  // not have, and a false negative lets a draft ship a button pointing at a route that does not
+  // exist yet.
+  const url = `https://cdn.jsdelivr.net/gh/InsForge/insta-oss@main/${DEPLOY_BUTTON_ASSET}`
+
+  it('sees the asset in the documented snippet', () => {
+    expect(mentionsDeployButtonAsset(`[![Deploy on InstaCloud](${url})](https://x)`)).toBe(true)
+  })
+
+  it('sees it inline in prose, which the button matcher does not', () => {
+    const inline = `Try [![Deploy](${url})](https://x) here.`
+    expect(mentionsDeployButtonAsset(inline)).toBe(true)
+    expect(findDeployButtons(inline)).toEqual([])
+  })
+
+  it('sees it in a fenced sample', () => {
+    expect(mentionsDeployButtonAsset(`\`\`\`markdown\n![x](${url})\n\`\`\`\n`)).toBe(true)
+  })
+
+  it('sees a bare path at the start of a line', () => {
+    expect(mentionsDeployButtonAsset(`${DEPLOY_BUTTON_ASSET}\n`)).toBe(true)
+  })
+
+  it('sees one that ends at the markdown link\'s closing paren', () => {
+    // Regression: building the right-hand class by APPENDING the slash read `%-/` as a range
+    // covering U+0025 to U+002F, which includes `)`. Every link in the snippet ends with one, so
+    // the matcher stopped seeing the documented form while still seeing `…svg?v=2`.
+    expect(mentionsDeployButtonAsset(`[![D](${url})](https://x)`)).toBe(true)
+    expect(mentionsDeployButtonAsset(`![x](${DEPLOY_BUTTON_ASSET})`)).toBe(true)
+  })
+
+  it('sees the forms a README actually writes', () => {
+    // An allow-list of delimiters has to name every one of these, so they are pinned rather than
+    // assumed: a missing delimiter would silently stop the draft guard from seeing a real button.
+    for (const text of [
+      `![x](${DEPLOY_BUTTON_ASSET})`,
+      `<img src="${DEPLOY_BUTTON_ASSET}">`,
+      `<img src='${DEPLOY_BUTTON_ASSET}'>`,
+      `${DEPLOY_BUTTON_ASSET}\n`,
+      `see ${DEPLOY_BUTTON_ASSET} here`,
+      DEPLOY_BUTTON_ASSET,
+    ]) {
+      expect(mentionsDeployButtonAsset(text)).toBe(true)
+    }
+  })
+
+  it('sees a relative reference with no leading ./', () => {
+    // Bounded by "not a path character" rather than "start or slash" for exactly this: the
+    // character to the left here is an opening parenthesis.
+    expect(mentionsDeployButtonAsset(`![x](${DEPLOY_BUTTON_ASSET})`)).toBe(true)
+    expect(mentionsDeployButtonAsset(`![x](./${DEPLOY_BUTTON_ASSET})`)).toBe(true)
+  })
+
+  it('sees one carrying a query or a fragment', () => {
+    expect(mentionsDeployButtonAsset(`![x](${url}?v=2)`)).toBe(true)
+    expect(mentionsDeployButtonAsset(`![x](${url}#icon)`)).toBe(true)
+  })
+
+  it('does NOT treat a legal path character as the end of the path', () => {
+    // RFC 3986 allows all of these in a path, so a filename can contain them and a file that
+    // does is not ours. They are punctuation as well, which is what made them look like
+    // boundaries: `deploy-button.svg!x` was read as our asset followed by prose.
+    for (const ch of ["!", "$", "&", "*", "+", ",", ";", "=", ":", "@"]) {
+      expect(mentionsDeployButtonAsset(`![x](${url}${ch}x)`)).toBe(false)
+    }
+  })
+
+  it("still bounds on a quote, which RFC 3986 would allow in a path", () => {
+    // The one deliberate exception to the rule above, and the two demands genuinely conflict: a
+    // single quote is legal in a path AND is how an HTML attribute closes. Bounding on it means
+    // `deploy-button.svg'x` reads as ours, which costs a draft author one error message about a
+    // filename nobody has. NOT bounding on it means <img src='...'> stops being seen, which costs
+    // a draft a live button pointing at a route that does not exist yet. The asymmetry decides
+    // it: this check exists to catch what a reader can click, so it errs toward seeing.
+    expect(mentionsDeployButtonAsset(`<img src='${DEPLOY_BUTTON_ASSET}'>`)).toBe(true)
+    expect(mentionsDeployButtonAsset(`![x](${url}'x)`)).toBe(true)
+  })
+
+  it('sees one in a markdown table cell', () => {
+    // Every template README documents its variables in a GFM table, so a pipe has to bound.
+    expect(mentionsDeployButtonAsset(`| \`${DEPLOY_BUTTON_ASSET}\` |`)).toBe(true)
+  })
+
+  it('does NOT see a different file, bounded on EITHER side', () => {
+    // Every one of these renders as some other file, and findDeployButtons already leaves them
+    // alone. The right-hand cases are the ones the first version of this bound got wrong.
+    // The allow-list bound is what makes the last four of these work without the pattern knowing
+    // anything about Unicode categories: whatever is not a delimiter is part of a name.
+    for (const other of [
+      `my${DEPLOY_BUTTON_ASSET}`,            // left: another directory
+      `x-${DEPLOY_BUTTON_ASSET}`,            // left: hyphen is a path character
+      `foo.${DEPLOY_BUTTON_ASSET}`,          // left: so is a dot
+      `1${DEPLOY_BUTTON_ASSET}`,             // left: so is a digit
+      `\u00e9${DEPLOY_BUTTON_ASSET}`,        // left: precomposed e-acute
+      `e\u0301${DEPLOY_BUTTON_ASSET}`,       // left: the SAME name decomposed, e + U+0301
+      `\u200d${DEPLOY_BUTTON_ASSET}`,        // left: a zero-width joiner
+      `${DEPLOY_BUTTON_ASSET}.bak`,          // right: a neighbouring file
+      `${DEPLOY_BUTTON_ASSET}x`,             // right: .svgx
+      `${DEPLOY_BUTTON_ASSET}/extra`,        // right: something BELOW the file, not the file
+      `${DEPLOY_BUTTON_ASSET}\u0301`,        // right: a combining mark
+    ]) {
+      expect(mentionsDeployButtonAsset(`![x](https://example.com/${other})`)).toBe(false)
+    }
+  })
+
+  it('never contradicts the stripper', () => {
+    // The invariant that keeps these two from drifting: anything strippable is mentioned, and
+    // nothing the stripper calls a different file is mentioned. Two answers to "is this our
+    // asset" is how this bound was wrong twice.
+    const strippable = [`[![D](${url})](https://x)`, `   [![D](${url})](https://x)`]
+    const otherFiles = [
+      `[![D](https://x/my${DEPLOY_BUTTON_ASSET})](https://x)`,
+      `[![D](${url}.bak)](https://x)`,
+      `[![D](${url}/extra)](https://x)`,
+      `[![D](https://x/\u00e9${DEPLOY_BUTTON_ASSET})](https://x)`,
+    ]
+    for (const t of strippable) {
+      expect(findDeployButtons(t).length).toBeGreaterThan(0)
+      expect(mentionsDeployButtonAsset(t)).toBe(true)
+    }
+    for (const t of otherFiles) {
+      expect(findDeployButtons(t)).toEqual([])
+      expect(mentionsDeployButtonAsset(t)).toBe(false)
+    }
+  })
+
+  it('does not see a README that never names it', () => {
+    expect(mentionsDeployButtonAsset('# n8n\n\nTag.\n\n![shot](./shot.png)\n')).toBe(false)
+    expect(mentionsDeployButtonAsset('')).toBe(false)
+  })
+
 })

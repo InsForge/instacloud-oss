@@ -5,7 +5,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 import { FIXED_REF_RE, checkFixedRef, MANAGED_TYPES, BARE_TYPES } from "./manifest-refs.mjs";
-import { DEPLOY_BUTTON_ASSET, findDeployButtons } from "./publish-lib.mjs";
+import { DEPLOY_BUTTON_ASSET, findDeployButtons, mentionsDeployButtonAsset } from "./publish-lib.mjs";
 import { ARCHITECTURES } from "./build-targets.mjs";
 import { checkServiceRuntime, checkTypedFields } from "./service-runtime.mjs";
 import { checkDockerfilePin, checkUpstreamFrom } from "./dockerfile-pin.mjs";
@@ -124,33 +124,48 @@ for (const dir of dirs) {
     // link never surfaces on the gallery where someone would notice it: this is the only place it
     // gets checked. AGENTS.md tells a contributor to start by copying the nearest template, which
     // makes a carried-over <code> in the href the likeliest mistake in this block.
-    // The button, checked through publish's OWN matcher rather than a second one written here.
-    // A looser test passes a README carrying something publish will never strip: a fenced sample
-    // satisfying the requirement while GitHub shows no button at all, or a neighbouring filename
-    // validated as if it were the button. One matcher, so the two cannot drift.
+    // The button. Two checks with DELIBERATELY different reach, because they answer different
+    // questions:
+    //
+    // Whether a button is correct, or present at all, goes through publish's OWN matcher
+    // (findDeployButtons). A looser test there passes a README carrying something publish will
+    // never strip: a fenced sample satisfying the requirement while GitHub shows no button, or a
+    // neighbouring filename validated as if it were one.
+    //
+    // Whether a DRAFT touches the asset is a plain mention, which is looser on purpose. The risk
+    // there is not what publish strips but what a reader can click, and GitHub renders a linked
+    // image inline in prose as a button while the line-anchored matcher does not match it. On a
+    // draft that button points at a console route that does not exist until the template
+    // publishes. Erring wide costs a draft author a fenced sample; erring narrow ships a dead
+    // button. Wide stops at the asset being a whole path segment though: a different file whose
+    // path merely ends the same way renders as that file, not as this button.
     const expected = `https://instacloud.com/templates/${dir}`;
     const buttons = findDeployButtons(text);
-    if (buttons.length) {
-      if (draft) {
-        err(dir, `README carries the deploy button, but the template is a draft: ${expected} does not exist until it publishes`);
+    if (draft) {
+      if (mentionsDeployButtonAsset(text)) {
+        err(dir, `README mentions ${DEPLOY_BUTTON_ASSET}, but the template is a draft: `
+          + `${expected} does not exist until it publishes, so nothing here should link to it, `
+          + `a sample included`);
       }
+    } else if (buttons.length) {
       if (!existsSync(join(root, "..", DEPLOY_BUTTON_ASSET))) {
         err(dir, `README references ${DEPLOY_BUTTON_ASSET}, which is not in this repository`);
       }
       for (const href of buttons) {
         if (href !== expected) err(dir, `deploy button links '${href}', expected '${expected}'`);
       }
-    } else if (!draft) {
+    } else {
       // AGENTS.md says every publishable template carries the button, so enforce it the way the
       // logo rule is enforced. Two different mistakes get two different messages: writing it in a
       // form publish cannot strip is not the same as not writing it, and telling someone to "add"
       // one they already wrote would only get a second copy.
-      err(dir, text.includes(DEPLOY_BUTTON_ASSET)
+      err(dir, mentionsDeployButtonAsset(text)
         ? `README mentions ${DEPLOY_BUTTON_ASSET}, but not as a button publish would strip: it has to be `
           + `a linked image alone on its line, outside any code fence, indented at most three spaces, `
           + `with the asset last in the URL. `
           + `Expected [![Deploy on InstaCloud](<cdn>/${DEPLOY_BUTTON_ASSET})](${expected})`
-        : `README is missing the deploy button: add it under the title as [![Deploy on InstaCloud](<cdn>/${DEPLOY_BUTTON_ASSET})](${expected}), see assets/README.md`);
+        : `README is missing the deploy button: add it under the title as `
+          + `[![Deploy on InstaCloud](<cdn>/${DEPLOY_BUTTON_ASSET})](${expected}), see assets/README.md`);
     }
   }
 

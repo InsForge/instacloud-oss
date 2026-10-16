@@ -57,13 +57,16 @@ The rule is load-bearing rather than a nicety: brand black on GitHub's dark READ
 
 Every publishable template README carries the button under its title, and
 `templates/scripts/lint.mjs` enforces that: a publishable template that omits it is rejected, the
-href has to name that template's own code, and a draft cannot carry one at all, since its gallery
-page does not exist until it publishes.
+href has to name that template's own code, and a draft may not so much as mention the asset,
+since the console route it would link to does not exist until the template publishes.
 
-The lint asks the publisher what counts, through the same `findDeployButtons` the stripper uses,
-so only a form publish would actually remove counts as the button. A fenced sample, an unlinked
-image, a four-space indent or a neighbouring filename is a mention rather than a button, and gets
-said so rather than passing as one. Copying the nearest template is how
+Those two checks reach differently on purpose. Whether a button is correct, or there at all, goes
+through the same `findDeployButtons` the stripper uses, so only a form publish would actually
+remove counts: a fenced sample, an unlinked image, a four-space indent or a neighbouring filename
+is a mention rather than a button, and gets told so rather than passing as one. The draft check is
+the plain mention, because what matters there is not what publish strips but what a reader can
+click, and GitHub renders a linked image inline in prose as a button that the line-anchored
+matcher does not match. Copying the nearest template is how
 `templates/AGENTS.md` says to start a new one, so a carried-over code in that href is the mistake
 the check is really there for.
 

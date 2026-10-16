@@ -36,7 +36,8 @@ IS the template code. Copying the closest existing template is the fastest way t
 - The **deploy button**, in its own paragraph under the title and tagline, for every publishable
   template: `[![Deploy on InstaCloud](<cdn>/assets/deploy-button.svg)](https://instacloud.com/templates/<code>)`.
   CI rejects a publishable template that omits it, checks that the href names this template's own
-  code, and rejects one on a draft, whose gallery page does not exist until it publishes. Since
+  code, and rejects a draft that so much as mentions the asset, since the console route does not
+  exist until the template publishes and an inline mention still renders as a button. Since
   copying the nearest template is the fastest way to start, a code carried over from the one you
   copied is the mistake that check exists for. The publish step removes the line on the way to
   the catalog, so the gallery does not show a second copy of the call to action its own rail

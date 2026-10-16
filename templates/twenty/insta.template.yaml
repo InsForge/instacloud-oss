@@ -1,12 +1,12 @@
 code: twenty
-version: 1.0.0
+version: 1.1.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
 upstream:
   repo: twentyhq/twenty
   image: docker.io/twentycrm/twenty
-  pinned: v2.44.0
+  pinned: v2.48.0
   # The few `@license Enterprise` files stay off: billing is disabled and no enterprise key is set.
   license: AGPL-3.0-only
 
@@ -25,7 +25,7 @@ services:
 
   crm:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/twenty:1.0.0   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/twenty:1.1.0   # built from ./Dockerfile by templates-build-images.yml
     port: 3000
     healthcheck: /healthz
     # The queue worker runs in this machine, and a stopped machine runs no scheduled or queued job.

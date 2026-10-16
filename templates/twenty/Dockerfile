@@ -1,5 +1,5 @@
 # Upstream's release image plus an entrypoint, a boot-time port holder and an SNI preload.
-FROM docker.io/twentycrm/twenty:v2.44.0
+FROM docker.io/twentycrm/twenty:v2.48.0
 
 USER root
 

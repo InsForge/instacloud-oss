@@ -1,5 +1,5 @@
 code: ghost
-version: 1.0.0
+version: 1.1.0
 maintainer: official
 sourceRepo: InsForge/instacloud-oss
 
@@ -9,7 +9,7 @@ sourceRepo: InsForge/instacloud-oss
 upstream:
   repo: TryGhost/Ghost
   image: docker.io/library/ghost
-  pinned: "6.70.0"
+  pinned: "6.71.0"
   license: MIT
 
 services:
@@ -22,7 +22,7 @@ services:
 
   ghost:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/ghost:1.0.0   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/ghost:1.1.0   # built from ./Dockerfile by templates-build-images.yml
     port: 2368
     # Not `/`. Two reasons, and either one on its own would be enough.
     #

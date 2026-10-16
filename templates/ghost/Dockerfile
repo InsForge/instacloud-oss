@@ -2,7 +2,7 @@
 # arm64 and arm/v7, and a child digest resolves to that one platform whatever --platform says.
 # Repin with `docker buildx imagetools inspect docker.io/library/ghost:<tag>` and take the
 # top-level Digest, not a Manifests row.
-FROM docker.io/library/ghost:6.70.0@sha256:30bf2aaadd3b35c3ffb99d2d4c69418da33f9711ffdca706626fe91e4dc92688
+FROM docker.io/library/ghost:6.71.0@sha256:00032f15726204565bf799ac272ee6fef588547cce50bedd38de3db55272c053
 
 # Two files and nothing else. Ghost, Ghost-CLI, the baked config.production.json and upstream's own
 # /usr/local/bin/docker-entrypoint.sh are untouched, and that entrypoint still runs as the last

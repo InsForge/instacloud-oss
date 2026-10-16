@@ -1,12 +1,12 @@
 code: anythingllm
-version: 1.0.0
+version: 1.1.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
 upstream:
   repo: Mintplex-Labs/anything-llm
   image: docker.io/mintplexlabs/anythingllm
-  pinned: "1.17.0"
+  pinned: "1.18.0"
   license: MIT
 
 # Three values the operator never needs to read back, so they belong here rather than in
@@ -30,7 +30,7 @@ services:
     type: web
     # Built from ./Dockerfile by templates-build-images.yml. The overlay exists only to redirect
     # two paths onto the volume; see the Dockerfile for why neither is reachable with env alone.
-    image: ghcr.io/insforge/insta-oss/templates/anythingllm:1.0.0
+    image: ghcr.io/insforge/insta-oss/templates/anythingllm:1.1.0
     port: 3001
     # The server answers 200 with {"online":true} here, unauthenticated, and this is the same path
     # upstream's own container HEALTHCHECK probes. `/` serves the SPA and would also answer 200,

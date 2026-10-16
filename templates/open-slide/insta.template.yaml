@@ -1,5 +1,5 @@
 code: open-slide
-version: 0.2.0
+version: 0.3.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -8,7 +8,7 @@ sourceRepo: InsForge/insta-oss
 upstream:
   repo: open-slide/open-slide
   package: "@open-slide/core"
-  pinned: "2.0.1"
+  pinned: "2.2.0"
   license: MIT
 
 services:
@@ -16,7 +16,7 @@ services:
   # same branch, the second overwriting the first (QA.md finding 1).
   open-slide:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/open-slide:0.2.0   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/open-slide:0.3.0   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
     healthcheck: /             # the sign-in gate answers 401 unauthenticated, which counts as healthy
     # The browser reaches this INBOUND, so wake-on-request works: nothing in the dev server runs

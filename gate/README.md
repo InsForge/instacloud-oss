@@ -1,9 +1,10 @@
 # insta-gate
 
-The InstaCloud sign-in page in front of the browser terminal templates (`claude-code`, `codex`,
-`pi`). It replaces ttyd's own HTTP basic auth: the gate listens on the routed port, checks
-`ADMIN_USERNAME` and `ADMIN_PASSWORD` through a sign-in page, and proxies a signed-in browser to ttyd
-on loopback, WebSocket included. The spec is
+The InstaCloud sign-in page in front of the templates whose app has no authentication of its own:
+the browser terminals (`claude-code`, `codex`, `pi`), `dsh` and `open-slide`. It replaces the HTTP
+basic auth they used: the gate listens on the routed port, checks `ADMIN_USERNAME` and
+`ADMIN_PASSWORD` through a sign-in page, and proxies a signed-in browser to the app on loopback,
+WebSocket included. The spec is
 [plans/2026-10-08-ttyd-login-gate-spec.md](../plans/2026-10-08-ttyd-login-gate-spec.md).
 
 ## Use it in a template
@@ -23,11 +24,13 @@ exec node /usr/local/lib/insta-gate.mjs --name claude-code -- \
   ttyd -i lo -p 7682 -W tmux -u new-session -A -s main
 ```
 
-`--port` (default 7681) is the routed port and `--upstream-port` (default 7682) is ttyd's. The gate
-starts the command after `--` as its child, forwards `SIGTERM`, `SIGINT` and `SIGHUP`, and exits
-with the child's status. It opens the routed port only once the child answers on the upstream port.
-If that takes longer than `--ready-timeout` seconds (default 30), it stops the child and exits 1, so
-the deploy fails instead of reporting healthy.
+`--port` (default 7681) is the routed port and `--upstream-port` (default 7682) is the app's. The
+gate starts the command after `--` as its child, forwards `SIGTERM`, `SIGINT` and `SIGHUP`, and
+exits with the child's status. It opens the routed port only once the child answers on the upstream
+port. If that takes longer than `--ready-timeout` seconds (default 30), it stops the child and exits
+1, so the deploy fails instead of reporting healthy. A template whose entrypoint already supervises
+more than one process (`dsh`, `open-slide`) starts the gate in the background under that supervisor
+instead of `exec`ing it, so a child that exits 0 on its own still fails the container.
 
 ## Build
 

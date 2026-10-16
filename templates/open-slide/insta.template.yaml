@@ -1,5 +1,5 @@
 code: open-slide
-version: 0.1.0
+version: 0.2.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -16,9 +16,9 @@ services:
   # same branch, the second overwriting the first (QA.md finding 1).
   open-slide:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/open-slide:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/open-slide:0.2.0   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
-    healthcheck: /             # nginx answers 401 unauthenticated, which counts as healthy
+    healthcheck: /             # the sign-in gate answers 401 unauthenticated, which counts as healthy
     # The browser reaches this INBOUND, so wake-on-request works: nothing in the dev server runs
     # on a timer, and a deck nobody is looking at does not need a machine. Costs a cold boot.
     alwaysOn: false
@@ -27,9 +27,9 @@ services:
       required:
         # Neither a `default:` nor a `generate:`, matching the other gated templates: this service
         # writes files to the volume on request, so the operator picks the credential and nothing
-        # falls back. No 186-byte cap here: that limit is ttyd's, nginx basic auth has no such edge.
+        # falls back.
         ADMIN_USERNAME:
-          description: "Username for the editor sign-in. Pick your own; it may not contain a colon"
+          description: "Username for the editor sign-in. Pick your own"
         ADMIN_PASSWORD:
           description: "Password for the editor sign-in. Pick a strong one: it is all that stands between the URL and an editor that writes files"
 

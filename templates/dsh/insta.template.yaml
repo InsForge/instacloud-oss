@@ -1,5 +1,5 @@
 code: dsh
-version: 0.4.2
+version: 0.5.0
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -16,9 +16,9 @@ services:
   # the same branch, the second overwriting the first (QA.md finding 1).
   dsh:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/dsh:0.4.2   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/dsh:0.5.0   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
-    healthcheck: /             # nginx answers 401 unauthenticated, which counts as healthy
+    healthcheck: /             # the sign-in gate answers 401 unauthenticated, which counts as healthy
     # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works (hermes and n8n
     # cannot). Costs a ~25s cold boot, and an agent left running with no browser is stopped.
     volume: true  # mounts at /data
@@ -35,9 +35,8 @@ services:
       required:
         # Neither a `default:` nor a `generate:`, matching the other agent UIs: this service runs
         # shell commands the model chooses, so the operator picks the credential, nothing falls back.
-        # No 186-byte cap here: that limit is ttyd's; nginx basic auth has no such edge.
         ADMIN_USERNAME:
-          description: "Username for the web UI sign-in. Pick your own; it may not contain a colon"
+          description: "Username for the web UI sign-in. Pick your own"
         ADMIN_PASSWORD:
           description: "Password for the web UI sign-in. Pick a strong one: it is all that stands between the URL and an agent that runs shell commands"
       optional:

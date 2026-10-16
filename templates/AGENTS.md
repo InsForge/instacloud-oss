@@ -194,7 +194,8 @@ the catalog holds only a reference, and it is served from a CDN pinned to the pu
 - Volumes mount at `/data` unless the service declares `mountPath` (rule 15). Prefer `/data` and point
   the app's data directory there with its own env var (`HERMES_HOME`, `N8N_USER_FOLDER`, `HOME`).
 - Fair-code upstreams such as n8n: reference the official image, and never rebuild or rebrand it.
-- A template that exposes a terminal MUST require an access credential (for ttyd, the `-c` flag).
+- A template that exposes a terminal MUST require an access credential (for ttyd, the InstaCloud
+  sign-in page from `gate/`, with ttyd on loopback behind it).
 - `meta.category` is one of the platform's categories, and the platform owns that list (the UI
   snapshot below is a copy of it): `curl https://api.instacloud.com/template-categories` gives the
   slugs, their labels and the order every gallery shows them in. The console and the marketing

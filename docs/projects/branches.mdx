@@ -13,11 +13,11 @@ A branch is a full, isolated clone of your environment. Every project starts on 
 | Storage | Copy-on-write fork of the bucket's objects |
 | Compute | A clone of each app at its own URL, running the parent's image |
 | Secrets | Copied, with service bindings remapped to the branch's services |
-| Managed databases (`redis`/`mysql`/`mongodb`) | A fresh, empty instance — no data cloned |
-| Compute `/data` volume | Same size, empty — no data inheritance |
+| Managed databases (`redis`/`mysql`/`mongodb`) | A fresh, empty instance, with no data cloned |
+| Compute `/data` volume | Same size, empty (self-hosted InstaCloud OSS forks the volume files instead) |
 
 <Note>
-On self-hosted insta-oss, the database and bucket are full copies (dump-and-restore, object sync) rather than copy-on-write — same isolation, duplicated at clone time.
+On self-hosted InstaCloud OSS, a branch is a fork on disk: the Postgres data directory and every compute volume are reflink-copied, so `branch create` returns in about a second whatever a sleeping database weighs, and the bucket objects are synced. A database that is awake is streamed with `pg_basebackup` instead, in time proportional to its size, because a file-level copy of a live server is not consistent. Compute volumes have no such streaming path, so they are copied whether the app is running or not: stop the group first if you need a quiescent copy.
 </Note>
 
 ## Creating and switching
@@ -28,11 +28,11 @@ insta branch switch staging
 insta secrets
 ```
 
-`create` forks from your current branch — choose the parent explicitly with `--from <branch>`. Creating does not switch you: `switch` rewrites the directory link (`.insta/project.json`), after which every command targets the branch. Rerun `insta secrets` to refresh `.env`.
+`create` forks from your current branch. Choose the parent explicitly with `--from <branch>`. Creating does not switch you: `switch` rewrites the directory link (`.insta/project.json`), after which every command targets the branch. Rerun `insta secrets` to refresh `.env`.
 
 ## Branch URLs and credentials
 
-Each branch's compute services get their own URLs, printed on deploy and listed by `insta manifest`. Credentials are per-branch: `insta db url` prints the branch's connection string, and the branch's copied bindings point at the branch's own services, so work done on a branch stays on that branch. Commands that accept `--branch` (`secrets`, `deploy`, `storage delete`, and others) can still reach another branch when you tell them to.
+Each branch's compute services get their own URLs, printed on deploy and listed by `insta agent manifest`. Credentials are per-branch: `insta postgres url` prints the branch's connection string, and the branch's copied bindings point at the branch's own services, so work done on a branch stays on that branch. Commands that accept `--branch` (`secrets`, `deploy`, `storage delete`, and others) can still reach another branch when you tell them to.
 
 ## Merging
 
@@ -40,7 +40,7 @@ Each branch's compute services get their own URLs, printed on deploy and listed 
 insta branch merge staging --into main
 ```
 
-Merging is structural and additive: a service that exists on the source but not the target is created there, empty — deploy to it afterwards. Data never merges — promoting data changes means running your migrations against the target and deploying. Existing services are skipped with a reason (`exists`, `cap`). On self-hosted insta-oss, a merged compute group is created and deployed with the source branch's image against the target's own database and bucket.
+Merging is structural and additive: a service that exists on the source but not the target is created there, empty, so deploy to it afterwards. Data never merges: promoting data changes means running your migrations against the target and deploying. Existing services are skipped with a reason (`exists`, `cap`). On self-hosted InstaCloud OSS, a merged compute group is created and deployed with the source branch's image against the target's own database and bucket.
 
 ## Limits
 

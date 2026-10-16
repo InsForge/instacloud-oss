@@ -17,4 +17,15 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
+      # RUN_DOCKER_TESTS=1 enables every test/**/*.int.test.ts. vitest.config.ts turns
+      # `fileParallelism` off for those runs, so the Docker suites go one file at a time: they
+      # share the `io-garage` container, dockerd's address pool and the default state file, and
+      # running them together made eviction and clone-isolation cases fail beside their siblings.
       - run: npm test
+        env:
+          RUN_DOCKER_TESTS: '1'
+          INSTA_OSS_SCHEDULER: '0'
+      # ---- WP4 ----
+      # ---- WP6 ----
+      - run: shellcheck -s sh install.sh e2e/lib.sh e2e/local-smoke.sh e2e/server-smoke.sh
+      - run: docker build --build-arg VERSION=ci -t instacloud:ci .

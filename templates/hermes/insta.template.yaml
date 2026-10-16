@@ -1,5 +1,5 @@
 code: hermes
-version: 2.3.1
+version: 2.3.2
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -16,7 +16,7 @@ generated:
 services:
   hermes:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/hermes:2.3.1   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/hermes:2.3.2   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
     healthcheck: /api/status
     # Channels arrive on OUTBOUND connections (Telegram long poll, Slack Socket Mode, ...),
@@ -72,6 +72,10 @@ meta:
   tagline: Autonomous AI agent from Nous Research with multi-channel messaging
   category: ai-agent
   tags: [ai-agent, ai]
+  # Architectures the published image carries. A box on anything else is told at deploy time
+  # rather than left to fail on the pull: upstream publishes both and this image only adds an
+  # entrypoint.
+  architectures: [amd64, arm64]
   logo: ./logo.png              # 512x512, real transparency; see the attribution table in ../README.md
   links:
     upstream: https://github.com/NousResearch/hermes-agent

@@ -1,0 +1,38 @@
+# A tiny manifest used only by the end-to-end scripts. It lives under e2e/ so the bundled
+# catalog never lists it, and meta.draft keeps it out of the gallery even if it is copied
+# into templates/ by mistake.
+code: tpl-hello
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+upstream:
+  repo: traefik/whoami
+  image: docker.io/traefik/whoami
+  pinned: "v1.10"
+  license: MIT
+
+generated:
+  hello_token: secret:32
+
+services:
+  hello:
+    type: web
+    image: docker.io/traefik/whoami:v1.10
+    port: 80
+    healthcheck: /
+    env:
+      fixed:
+        WHOAMI_NAME: tpl-hello
+      generated:
+        HELLO_TOKEN: ${hello_token}
+
+meta:
+  name: Hello fixture
+  tagline: Deployment fixture for the end-to-end scripts
+  category: automation
+  tags: [automation]
+  # Declared so the fixture models the real shape, and so the smoke runs on an arm64 box:
+  # traefik/whoami:v1.10 publishes both.
+  architectures: [amd64, arm64]
+  draft: true

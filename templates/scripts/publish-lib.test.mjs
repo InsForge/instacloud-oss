@@ -11,7 +11,7 @@ import {
 } from './publish-lib.mjs'
 
 const SHA = 'a'.repeat(40)
-const REPO = 'InsForge/insta-oss'
+const REPO = 'InsForge/instacloud-oss'
 const DIR = 'templates/example'
 const cdn = (p) => `https://cdn.jsdelivr.net/gh/${REPO}@${SHA}/${p}`
 
@@ -154,7 +154,7 @@ describe('ghcrRetryVerdict', () => {
 })
 
 describe('stripDeployBadge', () => {
-  const button = `[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/insta-oss@main/${DEPLOY_BUTTON_ASSET})](https://console.instacloud.com/templates/n8n)`
+  const button = `[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/insta-oss@main/${DEPLOY_BUTTON_ASSET})](https://instacloud.com/templates/n8n)`
 
   it('takes the button and the blank line it leaves behind', () => {
     // One blank line has to survive between the tagline and the next section, not two.
@@ -186,14 +186,14 @@ describe('stripDeployBadge', () => {
   it('matches the button whatever host serves it', () => {
     // The snippet is documented against jsDelivr, but a fork or a short vanity URL should still
     // be recognised: the asset path is what identifies it.
-    const short = `[![Deploy on InstaCloud](https://instacloud.com/${DEPLOY_BUTTON_ASSET})](https://console.instacloud.com/templates/pi)`
+    const short = `[![Deploy on InstaCloud](https://instacloud.com/${DEPLOY_BUTTON_ASSET})](https://instacloud.com/templates/pi)`
     expect(stripDeployBadge(`# pi\n\nTag.\n\n${short}\n\n## Overview\n`)).toBe('# pi\n\nTag.\n\n## Overview\n')
   })
 })
 
 describe('stripDeployBadge bounds', () => {
   const url = `https://cdn.jsdelivr.net/gh/InsForge/insta-oss@main/${DEPLOY_BUTTON_ASSET}`
-  const button = (u = url) => `[![Deploy on InstaCloud](${u})](https://console.instacloud.com/templates/n8n)`
+  const button = (u = url) => `[![Deploy on InstaCloud](${u})](https://instacloud.com/templates/n8n)`
   const wrap = (line) => `# n8n\n\nTag.\n\n${line}\n\n## Overview\n`
 
   it('strips a paragraph indented up to three spaces', () => {
@@ -255,7 +255,7 @@ describe('findDeployButtons', () => {
   // carrying something publish would leave on the gallery, and anything it invents is a template
   // failing CI over a button it does not have.
   const url = `https://cdn.jsdelivr.net/gh/InsForge/insta-oss@main/${DEPLOY_BUTTON_ASSET}`
-  const href = 'https://console.instacloud.com/templates/n8n'
+  const href = 'https://instacloud.com/templates/n8n'
   const button = (u = url, h = href) => `[![Deploy on InstaCloud](${u})](${h})`
   const wrap = (line) => `# n8n\n\nTag.\n\n${line}\n\n## Overview\n`
 
@@ -264,7 +264,7 @@ describe('findDeployButtons', () => {
   })
 
   it('finds every button, in document order', () => {
-    const second = 'https://console.instacloud.com/templates/pi'
+    const second = 'https://instacloud.com/templates/pi'
     expect(findDeployButtons(`${wrap(button())}\n${button(url, second)}\n`)).toEqual([href, second])
   })
 

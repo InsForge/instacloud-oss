@@ -67,6 +67,8 @@ and an idle machine would never wake for an incoming message.
 
 ## Links
 
+- Architectures: `linux/amd64` and `linux/arm64`. Upstream publishes both and this image only
+  adds an entrypoint.
 - Upstream: <https://github.com/openclaw/openclaw>
 - License: MIT (upstream `openclaw/openclaw`; the LICENSE file is the standard MIT text, with
   third-party notices recorded separately in the repository).

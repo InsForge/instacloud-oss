@@ -3,15 +3,21 @@ import { test, expect, beforeAll, afterAll } from 'vitest'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { loadConfig } from '../src/config'
 import { Engine } from '../src/engine'
 import { LocalPostgres } from '../src/adapters/postgres'
 import { DockerCompute } from '../src/adapters/compute'
 import { LocalGarage } from '../src/adapters/garage'
 import { LocalManagedDb } from '../src/adapters/manageddb'
 
-const engine = new Engine(new LocalPostgres(), new DockerCompute(), new LocalGarage(), new LocalManagedDb())
+const cfg = loadConfig()
+const storage = new LocalGarage({ configPath: cfg.garageConfigPath, hostEndpoint: cfg.s3HostEndpoint, mode: cfg.mode, domain: cfg.domain })
+const engine = new Engine(new LocalPostgres(), new DockerCompute(), storage, new LocalManagedDb(), { cfg })
 let projectId = ''
 const pg = new LocalPostgres()
+// postgres handles are container names: io-<ref>-pg-<name>
+const MAIN = 'io-citest-main-pg-db'
+const FEAT = 'io-citest-feat-pg-db'
 
 const teardown = async () => { try { if (projectId) await engine.destroyProject(projectId) } catch {} }
 
@@ -23,17 +29,27 @@ afterAll(teardown)
 test('branch create copies data and is isolated', async () => {
   const { project } = await engine.createProject('citest')
   projectId = project.id
+  // Project create provisions nothing (WP5): the container arrives with the postgres service.
+  expect(await engine.addDbService(projectId, 'db')).toMatchObject({ id: 'pg-db', type: 'postgres', name: 'db', pg_version: 16 })
 
-  await pg.query('citest-main', 'CREATE TABLE notes(id serial primary key, body text);')
-  await pg.query('citest-main', "INSERT INTO notes(body) VALUES ('from-main');")
+  await pg.query(MAIN, 'CREATE TABLE notes(id serial primary key, body text);')
+  await pg.query(MAIN, "INSERT INTO notes(body) VALUES ('from-main');")
 
   await engine.createBranch(projectId, 'feat')
-  expect(await pg.query('citest-feat', "SELECT count(*) FROM notes WHERE body='from-main';")).toBe('1')
+  // Contract section 13: a new branch's postgres is provisioned, readied and THEN slept, so the
+  // fork is asleep from birth and its container is not running. Reaching it goes through a wake
+  // door, and for a database the `api` door is a management call (decision 48) — which is what a
+  // `psql` through the branch's lane would trigger for a developer.
+  const featDb = (await engine.services(projectId, 'feat')).find((s) => s.name === 'db')
+  expect(featDb).toMatchObject({ type: 'postgres', runtime: 'asleep' })
+  await engine.dbListDatabases(projectId, 'feat')
 
-  await pg.query('citest-feat', "INSERT INTO notes(body) VALUES ('from-feat');")
-  expect(await pg.query('citest-main', 'SELECT count(*) FROM notes;')).toBe('1') // main unchanged
-  expect(await pg.query('citest-feat', 'SELECT count(*) FROM notes;')).toBe('2')
-  expect(await pg.query('citest-main', "SELECT count(*) FROM notes WHERE body='from-feat';")).toBe('0')
+  expect(await pg.query(FEAT, "SELECT count(*) FROM notes WHERE body='from-main';")).toBe('1')
+
+  await pg.query(FEAT, "INSERT INTO notes(body) VALUES ('from-feat');")
+  expect(await pg.query(MAIN, 'SELECT count(*) FROM notes;')).toBe('1') // main unchanged
+  expect(await pg.query(FEAT, 'SELECT count(*) FROM notes;')).toBe('2')
+  expect(await pg.query(MAIN, "SELECT count(*) FROM notes WHERE body='from-feat';")).toBe('0')
 })
 
 test('database management round-trip: create/list/delete db, extensions, insight, password', async () => {
@@ -65,7 +81,7 @@ test('database management round-trip: create/list/delete db, extensions, insight
   const { password, connString } = await engine.dbSetPassword(projectId, undefined)
   expect(connString).toContain(encodeURIComponent(password))
   const { docker } = await import('../src/docker')
-  const out = await docker(['exec', 'io-citest-main-pg', 'psql',
+  const out = await docker(['exec', MAIN, 'psql',
     `postgres://postgres:${encodeURIComponent(password)}@localhost:5432/app`, '-tAc', 'select 1'])
   expect(out.toString().trim()).toBe('1')
 })

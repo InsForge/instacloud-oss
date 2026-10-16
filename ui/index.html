@@ -3,7 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>insta-oss</title>
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>InstaCloud OSS</title>
+    <script>
+      // The stored theme before first paint (lib/theme.ts owns it after that). System by default,
+      // like the console: measured live, a fresh console session on a light OS renders LIGHT, so
+      // the old dark default made the self-host feel like a different product to light-OS users.
+      try {
+        var t = localStorage.getItem('insta_theme') || 'system'
+        if (t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark')
+        }
+      } catch (e) {
+        if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark')
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

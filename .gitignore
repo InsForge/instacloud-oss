@@ -6,3 +6,22 @@ dist/
 postcss.config.mjs
 ui/node_modules/
 ui/dist/
+.gstack/
+
+# throwaway VPS test credentials and agent scratch (never commit)
+.insta-oss-test.pem
+*.pem
+.token.json
+.box.sh
+.boxcp.sh
+.remote-setup.sh
+.remote1.sh
+.rsync-exclude
+.apply-*.py
+.dashwalk.sh
+.findroute.sh
+.mcp-call.sh
+.wakeall.sh
+.wakemd.sh
+plans/impl/watch-review.sh
+plans/impl/shellcheck-gate.sh

@@ -1,0 +1,11 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="hexagon">
+<mask id="mask0_0_302" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="20" height="20">
+<rect id="Bounding box" width="20" height="20" fill="#D9D9D9"/>
+</mask>
+<g mask="url(#mask0_0_302)">
+<path id="hexagon_2" d="M6.12021 16.7917L2.24042 10L6.12021 3.20833H13.8798L17.7596 10L13.8798 16.7917H6.12021ZM6.75479 15.7083H13.2452L16.5113 10L13.2452 4.29167H6.75479L3.48875 10L6.75479 15.7083Z" fill="white"/>
+<path id="Ellipse 2 (Stroke)" d="M12 10C12 8.89543 11.1046 8 10 8C8.89543 8 8 8.89543 8 10C8 11.1046 8.89543 12 10 12V13C8.34315 13 7 11.6569 7 10C7 8.34315 8.34315 7 10 7C11.6569 7 13 8.34315 13 10C13 11.6569 11.6569 13 10 13V12C11.1046 12 12 11.1046 12 10Z" fill="white"/>
+</g>
+</g>
+</svg>

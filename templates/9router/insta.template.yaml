@@ -1,5 +1,5 @@
 code: 9router
-version: 1.2.1
+version: 1.2.2
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -12,7 +12,7 @@ upstream:
 services:
   router:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/9router:1.2.1   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/9router:1.2.2   # built from ./Dockerfile by templates-build-images.yml
     port: 20128
     healthcheck: /api/health    # / is a 307 redirect chain and never satisfies the deploy health gate
     volume: true  # DATA_DIR points provider keys, accounts, and jwt-secret at it
@@ -30,6 +30,10 @@ meta:
   tagline: Self-hosted LLM router with fallback across 40+ providers
   category: llm
   tags: [llm, ai]
+  # Architectures the published image carries. A box on anything else is told at deploy time
+  # rather than left to fail on the pull: the base pin is the multi-arch index, and both arches
+  # build and start.
+  architectures: [amd64, arm64]
   logo: ./logo.png              # 500x500, real transparency; see the attribution table in ../README.md
   links:
     upstream: https://github.com/decolua/9router

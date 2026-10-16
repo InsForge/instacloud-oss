@@ -1,5 +1,5 @@
 code: dsh
-version: 0.4.1
+version: 0.4.2
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -16,7 +16,7 @@ services:
   # the same branch, the second overwriting the first (QA.md finding 1).
   dsh:
     type: web
-    image: ghcr.io/insforge/insta-oss/templates/dsh:0.4.1   # built from ./Dockerfile by templates-build-images.yml
+    image: ghcr.io/insforge/insta-oss/templates/dsh:0.4.2   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
     healthcheck: /             # nginx answers 401 unauthenticated, which counts as healthy
     # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works (hermes and n8n
@@ -53,6 +53,10 @@ meta:
   tagline: Plugin-composed coding agent with a browser UI
   category: ai-agent
   tags: [ai-agent, ai]
+  # Architectures the published image carries. A box on anything else is told at deploy time
+  # rather than left to fail on the pull: the node base, bubblewrap and the bundled ripgrep all
+  # carry aarch64.
+  architectures: [amd64, arm64]
   # DeepSeek's own mark, for DeepSeek's own project: descriptive use of the kind their
   # BRAND_GUIDELINES.md permits, unlike branding a third-party agent with it.
   logo: ./logo.svg

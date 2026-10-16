@@ -1,0 +1,101 @@
+code: openbot
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# Upstream's own one-container image, which already carries the app, the API, Chromium and an
+# optional PostgreSQL. ./Dockerfile adds exactly two things it cannot ship: an authenticating face
+# for the public URL, and a stable encryption key kept on the volume. See the README.
+upstream:
+  repo: CopilotKit/openbot
+  image: ghcr.io/copilotkit/openbot
+  pinned: "v0.0.15@sha256:29daf0d4f80ec6ff851ad2a5d82736ff3d49d3ff37f6acfde69ffdecd82b28dd"
+  license: MIT
+
+services:
+  openbot:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/openbot:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 8080
+    # Caddy answers /health without a credential and proxies it to the API's own /health, which
+    # returns {"status":"ok"}. Everything else on this origin is behind basic auth, so the gate
+    # needs the one route that is not: a 401 is not a 2xx.
+    healthcheck: /health
+    # The browser reaches this INBOUND, so wake-on-request works. Nothing in this image is
+    # scheduled: upstream's routines sweep and the staged-attachment sweep are both external cron
+    # jobs that the one-container deployment does not run, so there is no background work an idle
+    # machine would miss. See Open questions on the pull request for what that costs.
+    alwaysOn: false
+    volume: true
+    # NOT /data. The embedded PostgreSQL's data directory is hardcoded at /var/lib/postgresql/data
+    # in upstream's own postgres-init, and upstream's deployment doc is explicit that the volume
+    # goes on the PARENT: a volume mounted directly on the data directory arrives holding
+    # `lost+found` on any ext4-backed platform, and initdb refuses a directory with anything in it.
+    # The container then starts, the deploy reports success, and the URL serves a 502 with nothing
+    # on it to explain why, because `api` waits on `postgres` and `migrate`.
+    mountPath: /var/lib/postgresql
+    env:
+      fixed:
+        # The database inside the container, on the volume above. Upstream runs migrations only in
+        # this mode (docker/s6/scripts/migrate.sh exits 0 when it is off), so pointing this at the
+        # platform's managed postgres would deploy an app against an empty schema.
+        EMBEDDED_POSTGRES: "on"
+        # One administrator, no sign-in. The alternative upstream offers is an OAuth client
+        # (Google, Microsoft or Okta) registered against a redirect URI nobody can know before the
+        # deploy exists, which is not something a template can ask for. What stands in front of it
+        # instead is the basic auth the two required variables below drive; see the README.
+        #
+        # OPENBOT_PUBLIC_URL, OPENBOT_APP_URL and TRUSTED_ORIGINS stay UNSET on purpose. Upstream
+        # refuses to start when single-user is combined with an address the public internet
+        # reaches, and those three are the only values it reads to decide that. They are unused
+        # here: the app is served same-origin by the API, and trustedOrigins is read only when an
+        # identity provider is configured.
+        OPENBOT_SINGLE_USER: "true"
+        INTELLIGENCE_API_URL: https://api.intelligence.copilotkit.ai
+        INTELLIGENCE_GATEWAY_WS_URL: wss://realtime.intelligence.copilotkit.ai
+        # Where the overlay's Caddy listens. The API keeps 3001 on loopback; tpl-init pins its
+        # PORT so a platform-injected one cannot move it onto this number and collide.
+        PROXY_PORT: "8080"
+      required:
+        # Neither a `default:` nor a `generate:`, matching the terminal templates. This service is
+        # an administrator account on the public internet: it drives a real browser with its own
+        # logins and can run shell commands in its own container, so a credential shipped in this
+        # file would be the same one on every deploy in the world, and a generated one would be a
+        # password nobody can read back (a template variable is stored write-only).
+        ADMIN_USERNAME:
+          description: "Username for the sign-in in front of OpenBot. Letters, digits, dot, dash and underscore only"
+        ADMIN_PASSWORD:
+          description: "Password for that sign-in. At most 72 bytes, which is all bcrypt reads. It is the only thing between the URL and a browser-driving agent"
+        # Not optional, because the server refuses to start without it: upstream owns durable
+        # threads and memory in Intelligence and offers no degraded mode.
+        INTELLIGENCE_API_KEY:
+          description: "CopilotKit Intelligence runtime key (cpk-...), from the API Keys page of your project at intelligence.copilotkit.ai. A free plan is available"
+        # Nothing answers without it: the shipped Bots speak OpenAI's API directly and the key is
+        # read from the environment, not from a page in the app.
+        OPENAI_API_KEY:
+          description: "OpenAI API key the shipped Bots spend (platform.openai.com/api-keys). Point it elsewhere with OPENAI_BASE_URL below"
+      optional:
+        OPENAI_BASE_URL:
+          description: "An endpoint speaking OpenAI's /v1/chat/completions, if the key above is not OpenAI's. Leave blank for OpenAI"
+        KEY_ENCRYPTION_KEY:
+          description: "Base64 of 32 bytes (openssl rand -base64 32), encrypting the credential vault at rest. Leave blank and one is generated on the volume at first boot and reused after that"
+        COMPOSIO_API_KEY:
+          description: "Composio key, if you want its connector catalogue on the Plugins page. Leave blank to use the built-in connectors only"
+
+meta:
+  name: OpenBot
+  tagline: Self-hosted AI coworkers with a browser, a shell and an audit trail
+  category: ai-agent
+  tags: [ai-agent, ai]
+  # amd64 only, by upstream's limit rather than by choice: the release workflow builds this image
+  # on `ubuntu-latest` with no `platforms:`, so the published v0.0.15 index carries exactly one
+  # manifest, linux/amd64. (The per-framework agent images beside it are two-arch; this one is
+  # not.) Declaring arm64 would turn the buildx push red and, if it got past that, tell a user on
+  # an arm64 box they could deploy something that does not exist.
+  architectures: [amd64]
+  logo: ./logo.png              # 256x256, real transparency; see the attribution table in ../README.md
+  # Published. The two calls the draft note raised are settled: the proxy sign-in stays, and the
+  # CopilotKit Intelligence key is a required variable the README names before anything else.
+  links:
+    upstream: https://github.com/CopilotKit/openbot
+    documentation: https://github.com/CopilotKit/openbot/blob/main/docs/README.md

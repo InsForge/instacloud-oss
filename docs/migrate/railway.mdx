@@ -1,0 +1,66 @@
+---
+title: "Migrate from Railway"
+description: "Move a Railway project, its variables, Postgres, and volumes onto InstaCloud."
+---
+
+Railway and InstaCloud think about deployments the same way, so the concepts map almost one to one. A service becomes a **compute** service, Railway Postgres becomes a **postgres** service, variables become project secrets, a `${{Postgres.DATABASE_URL}}` reference becomes a binding, and a volume becomes `insta compute volume` mounted at `/data`. This guide takes you from a running Railway project to the same app on InstaCloud, with its data. Your coding agent does most of it.
+
+InstaCloud offers:
+
+- **Postgres with real branching.** A branch opens as a copy-on-write clone holding all of the parent's data, at its own connection string, so a feature or an agent task can run migrations nowhere near production.
+- **Built for coding agents.** A CLI and an MCP server your agent drives directly, with an approval gate on the actions that matter.
+- **Flexible deployments.** A GitHub repo with no Dockerfile needed, your own Dockerfile, or an image from any registry.
+- **Managed services alongside.** Postgres, Redis, MySQL, MongoDB, and object storage in one project.
+- **Real support.** An active community on [Discord](https://discord.com/invite/MPxwj5xVvW).
+
+## Migration steps
+
+We will migrate [Railway's own Django template](https://github.com/railwayapp-templates/django), a Python service with a Postgres database. Its `railway.json` says how it was built. Abridged here: the real `startCommand` also runs `collectstatic`:
+
+```json
+{
+  "build":  { "builder": "RAILPACK" },
+  "deploy": { "startCommand": "python manage.py migrate && gunicorn mysite.wsgi" }
+}
+```
+
+
+**One code change first.** InstaCloud hands Postgres to your app as a single `DATABASE_URL`. This template reads the five `PG*` variables Railway injects instead, so point it at the DSN before you start. In Django that is `dj-database-url`, and most other stacks take a DSN directly.
+
+### 1. Point a coding agent at your Railway project
+
+Your agent reads the project straight from Railway's API, so it needs your repo name and a project token, not a checkout. Give it the skill first:
+
+```bash
+npx -y insta@latest agent setup
+```
+
+That installs the `insta` CLI, the `insta` skill, and the MCP server for every coding agent on this machine. The skill is what knows how a Railway project maps onto services here.
+
+### 2. Create a project
+
+```bash
+insta project create mysite
+```
+
+Or click **Create Project** in the [console](https://console.instacloud.com). A new project starts empty.
+
+{/* screenshot: console, Create Project */}
+
+### 3. Ask your agent to migrate
+
+Create a Railway project token first, under **Project Settings → Tokens**. Railway's CLI picks a project interactively otherwise, and your agent cannot answer a picker.
+
+```text title="Prompt" wrap
+Migrate my Railway service mysite and its Postgres data to InstaCloud. The repo is railwayapp-templates/django, and my Railway project token is in RAILWAY_TOKEN. Follow the insta skill's migration runbook, and stop before sending traffic to it.
+```
+
+It will ask you to approve anything that touches production, and it will hand two jobs back to you, because Railway has no command for either. **Order matters.** If you have a volume, download it *first*, while its service is still running, because Railway refuses to read a volume whose service is stopped. Only then scale every service to zero, workers and cron services included, so nothing is still writing when the database is copied.
+
+Leave the Railway project frozen rather than deleted, so you can go back to it.
+
+{/* screenshot: console, project with a compute service and a postgres service deployed */}
+
+## Limitations
+
+A few things are not here yet. [Limitations](/limitations/overview) covers the ones people hit most, and is worth the minute before you commit. Stuck anywhere? Come to [Discord](https://discord.com/invite/MPxwj5xVvW).

@@ -18,7 +18,7 @@ This guide takes you from no account to a coding agent deploying on InstaCloud. 
     Prefer to stay in the terminal? Skip the console. This creates a project named after the current directory and links it in the same run:
 
     ```bash
-    npx -y insta@latest setup agent --create
+    npx -y insta@latest agent setup --create
     ```
   </Step>
 
@@ -32,7 +32,7 @@ This guide takes you from no account to a coding agent deploying on InstaCloud. 
     ```
 
     ```bash title="CLI"
-    npx -y insta@latest setup agent --project <project-id>
+    npx -y insta@latest agent setup --project <project-id>
     ```
 
     </CodeGroup>
@@ -103,7 +103,7 @@ This guide takes you from no account to a coding agent deploying on InstaCloud. 
       insta deploy .
       ```
 
-      `services add` creates each service on the current branch. `secrets bind` injects the Postgres connection string as `DATABASE_URL` when compute deploys. `deploy .` builds the directory remotely from its Dockerfile and prints the URL. Ports, regions, images, and build troubleshooting are in [Build & deploy](/deploy/overview).
+      `services add` creates each service on the current branch. `secrets bind` injects the Postgres connection string as `DATABASE_URL` when compute deploys. `deploy .` builds the directory remotely from its Dockerfile and prints the URL. Ports, regions, images, and build troubleshooting are in [Build & deploy](/deploy/overview). On self-hosted InstaCloud OSS, `secrets bind` answers `501`: every compute container already receives each service's credentials under their own names (`insta secrets list` names them).
     </Accordion>
 
     No Dockerfile and no agent at hand? In the console, open the project's **Services** page, click **Add Service**, and choose **Deploy a Template**.
@@ -122,7 +122,7 @@ This guide takes you from no account to a coding agent deploying on InstaCloud. 
     An S3-compatible bucket per branch, forked with the branch.
   </Card>
   <Card title="Compute" icon="server" href="/compute/overview">
-    Run any container in a microVM that sleeps when idle.
+    Run any container in a microVM, always on or scaling to zero.
   </Card>
   <Card title="MCP tools" icon="plug" href="/reference/mcp-tools">
     The `insta_*` tools the MCP server exposes, grouped by area.

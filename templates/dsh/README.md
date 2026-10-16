@@ -2,7 +2,7 @@
 
 DeepSeek's plugin-composed coding agent, with its browser UI behind an auth gate.
 
-[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/insta-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/dsh)
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/dsh)
 
 > **This one needs a maintainer watching upstream.** DeepSeek Harness describes itself as a
 > developer preview and says there will be compatibility-breaking changes, and the version pinned
@@ -155,6 +155,8 @@ language, and you can pin it from Settings.
 
 ## Links
 
+- Architectures: `linux/amd64` and `linux/arm64`. The node base image, bubblewrap and the
+  ripgrep the harness bundles are all available for both.
 - Upstream: <https://github.com/deepseek-ai/deepseek-harness>
 - Package: [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh)
 - Cordis: <https://github.com/cordiverse/cordis>

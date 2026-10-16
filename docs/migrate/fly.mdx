@@ -1,0 +1,77 @@
+---
+title: "Migrate from Fly.io"
+description: "Move a Fly app and its Postgres onto InstaCloud."
+---
+
+A Fly app becomes an InstaCloud **compute** service, Fly Postgres becomes a **postgres** service, and `fly secrets` become project secrets bound into the app. Fly is the easiest platform to leave, because a Fly app already has the one thing the others lack: a `Dockerfile`.
+
+InstaCloud offers:
+
+- **Postgres with real branching.** A branch opens as a copy-on-write clone holding all of the parent's data, at its own connection string, so a feature or an agent task can run migrations nowhere near production.
+- **Built for coding agents.** A CLI and an MCP server your agent drives directly, with an approval gate on the actions that matter.
+- **Flexible deployments.** A local directory, a GitHub repo, or an image from any registry.
+- **Managed services alongside.** Postgres, Redis, MySQL, MongoDB, and object storage in one project.
+- **Real support.** An active community on [Discord](https://discord.com/invite/MPxwj5xVvW).
+
+## Migration steps
+
+We will migrate [Fly's own Django example](https://github.com/fly-apps/hello-django), a Python app with a Dockerfile. Its committed `fly.toml`, abridged, already holds most of what the migration needs:
+
+```toml
+app = "hello-django"
+primary_region = "ams"
+
+[build]
+
+[env]
+  PORT = "8000"
+
+[http_service]
+  internal_port = 8000
+```
+
+
+### 1. Point a coding agent at your Fly app
+
+Work in the app's own checkout: the `Dockerfile` and `fly.toml` it already holds are most of what the migration needs. Give your agent the skill there:
+
+```bash
+cd hello-django          # your app
+npx -y insta@latest agent setup
+```
+
+That installs the `insta` CLI, the `insta` skill, and the MCP server for every coding agent on this machine. The skill is what knows how a Fly app maps onto services here.
+
+### 2. Create a project
+
+```bash
+insta project create hello-django
+```
+
+Or click **Create Project** in the [console](https://console.instacloud.com). A new project starts empty.
+
+{/* screenshot: console, Create Project */}
+
+### 3. Ask your agent to migrate
+
+One thing first, because your agent cannot do it. **Fly does not let anyone read a secret back**: `fly secrets list` prints names and digests only. Either copy each value from wherever you set it, or read them off the running machine before you stop it:
+
+```bash
+fly ssh console -a hello-django -C 'printenv SECRET_KEY' | insta secrets set SECRET_KEY
+```
+
+The pipe keeps the value out of your terminal. Repeat per secret, but skip the `DATABASE_URL` that `fly pg attach` installed: your agent binds the new database under that name, and a copied string there would block the binding. Then hand over:
+
+```text title="Prompt" wrap
+Migrate my Fly app hello-django and its Fly Postgres to InstaCloud. The code is in this directory, with its Dockerfile and fly.toml. Follow the insta skill's migration runbook, and stop before sending traffic to it.
+```
+
+Because the Dockerfile is already there, your agent deploys straight from the directory with `insta deploy .`, no GitHub connection needed. It will ask you to approve anything that touches production, and expect it to scale the Fly app to zero before it copies the database, so nothing is still writing.
+
+Leave the Fly app stopped rather than destroyed, so you can go back to it. A machine left running would keep serving clients and writing to the old database.
+
+{/* screenshot: console, project with a compute service and a postgres service deployed */}
+
+## Limitations
+
+A few things are not here yet. [Limitations](/limitations/overview) covers the ones people hit most, and is worth the minute before you commit. Stuck anywhere? Come to [Discord](https://discord.com/invite/MPxwj5xVvW).

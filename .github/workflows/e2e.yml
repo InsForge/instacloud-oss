@@ -1,0 +1,96 @@
+name: e2e
+
+# Two jobs on two separate VMs, so the container names of one never collide with the other.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * *'
+
+jobs:
+  local:
+    name: local mode
+    runs-on: ubuntu-latest
+    concurrency:
+      group: e2e-local-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build:ui
+      - run: npm i -g insta@latest
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: pre-pull images
+        run: |
+          docker pull postgres:16-alpine
+          docker pull dxflrs/garage:v2.3.0
+          docker pull rclone/rclone:latest
+          docker pull traefik/whoami:v1.10
+      - name: local smoke
+        env:
+          E2E_START_DAEMON: '1'
+          E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          # The scripts keep their logs out of the checkout, so the artifact names the path.
+          E2E_LOG: ${{ runner.temp }}/daemon.log
+        run: sh e2e/local-smoke.sh
+      - name: daemon log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-daemon-log
+          path: ${{ runner.temp }}/daemon.log
+          if-no-files-found: warn
+      - name: containers
+        if: always()
+        run: docker ps -a
+
+  server:
+    name: server mode
+    # Installs a stack on the runner, so it only runs where that is expected: main, a manual
+    # run, the nightly schedule, or a pull request labelled e2e-server.
+    if: >
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'e2e-server')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: e2e-server-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: docker build -t ghcr.io/insforge/instacloud:ci .
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client xfsprogs
+      - run: npm i -g insta@latest
+      - name: server smoke
+        env:
+          E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          E2E_INSTALL_LOG: ${{ runner.temp }}/install.log
+        run: |
+          sudo -E env INSTA_OSS_IMAGE=ghcr.io/insforge/instacloud:ci \
+            INSTA_OSS_TLS=internal \
+            E2E_RUN_ID="$E2E_RUN_ID" \
+            E2E_INSTALL_LOG="$E2E_INSTALL_LOG" \
+            sh e2e/server-smoke.sh
+      - name: install log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-install-log
+          path: ${{ runner.temp }}/install.log
+          if-no-files-found: warn
+      - name: stack logs
+        if: always()
+        run: |
+          sudo sed -e 's/=.*/=REDACTED/' /etc/instacloud/instad.env || true
+          sudo docker compose --project-directory /etc/instacloud --env-file /etc/instacloud/instad.env \
+            -f /etc/instacloud/compose.yml logs --tail 200 || true
+          docker ps -a

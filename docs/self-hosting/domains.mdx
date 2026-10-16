@@ -1,0 +1,228 @@
+---
+title: "Domains and TLS"
+description: "Every hostname the daemon mints, how to bring your own, and how databases are reachable from anywhere."
+---
+
+## The names the daemon mints
+
+In server mode every service gets a name under your domain, minted when the service is created:
+
+| Service | Hostname | Port |
+| --- | --- | --- |
+| compute group `web` | `web-shop-main.<domain>` | 443 |
+| postgres `db` | `pg-db-shop-main.<domain>` | 5432 by default (`INSTA_OSS_LANE_PG_PORT`) |
+| redis `cache` | `redis-cache-shop-main.<domain>` | 6379 by default (`INSTA_OSS_LANE_REDIS_PORT`), in-network only |
+| mongodb `docs` | `mongodb-docs-shop-main.<domain>` | 27017 by default (`INSTA_OSS_LANE_MONGO_PORT`), in-network only |
+| mysql `app` | `mysql-app-shop-main.<domain>` | its own port, in-network only |
+| the API | `api.<domain>` | 443 |
+| the dashboard | `console.<domain>` | 443 |
+| storage | `s3.<domain>` and `<bucket>.s3.<domain>` | 443 |
+
+The `shop-main` part is the ref: the project slug and the branch slug, frozen when the branch is
+created. Renaming the project later does not move the URL.
+
+A DNS label cannot exceed 63 characters, and a long service name beside a long project and branch
+pair can. When that happens the label is shortened to a prefix plus a 6-character hash of the full
+name. It is stable, and `insta services list` shows the real host, so copy it from there rather
+than composing it by hand.
+
+## The automatic domain
+
+With no `--domain` the installer resolves the public IPv4 address of the box and uses
+`<a-b-c-d>.sslip.io`, which resolves every subdomain back to that address. It is enough to get a
+working URL in one command.
+
+<Warning>
+The sslip.io suffix shares certificate rate limits with everyone else using it. For anything you
+depend on, pass `--domain` with a domain you control.
+</Warning>
+
+## Your own domain
+
+At install time, with a wildcard record (`*.example.com` and `example.com` to the box), or
+per-host A records:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/InsForge/instacloud-oss/main/install.sh | sudo sh -s -- --domain example.com --email ops@example.com
+```
+
+For one app on a host you own, point it at an existing install:
+
+```bash
+insta domain attach shop.example.com --group web
+insta domain check shop.example.com
+insta domain detach shop.example.com
+```
+
+`attach` prints the DNS record to create: a `CNAME` to `api.<domain>`, or an A record to the
+address of the box. `check` reports the record and whether the host is being served, and is
+the command to poll until it prints that it is serving `https://shop.example.com`. Under `acme`
+and `internal` the certificate is issued on the first request that arrives with that name. Under
+`custom` nothing is issued: a name inside your wildcard is served straight away, and one outside
+it routes but reads `pending`, since no certificate will appear for it.
+
+## TLS
+
+Three modes, and which one you chose decides whether anything is issued per hostname at all.
+
+`INSTA_OSS_TLS=acme` (the default) uses a public CA and needs the name to resolve to the box from
+the internet. `INSTA_OSS_TLS=internal` uses a local issuer instead, for a box on a private
+network. In both of these the edge issues a certificate per hostname, on demand, the first time a
+request arrives for a name the daemon recognises: nothing is pre-provisioned, so adding a service
+or a branch needs no certificate step. Under `acme` that also publishes the hostname to the public
+certificate transparency logs, which is what keeps a public compute service awake; see [TLS and
+what your domain costs you](/self-hosting/install#tls-and-what-your-domain-costs-you).
+
+`INSTA_OSS_TLS=custom` serves one certificate you supply, for every name under your domain, and
+issues nothing at all. It has to carry two SANs, `*.<domain>` and `*.s3.<domain>`, because a
+wildcard matches exactly one label and bucket URLs are `<bucket>.s3.<domain>`. No hostname is
+published, no order is placed, and renewal is yours: the install page has the procedure and what
+the daemon does to make an approaching expiry hard to miss.
+
+Under `internal` the installer copies the root certificate to `/var/lib/instacloud/edge/ca.pem`
+on the box, and clients need to trust it. The same applies under `custom` when your certificate
+comes from a private CA, with your own CA file in place of the copy below. That path exists only on
+the box, and the data directory is readable by root alone, so copy the root to each machine that
+runs a client first, through the sudo-capable user you SSH in as. Each client then reads its own
+variable, so a tool that is not told will fail on its own while everything else works:
+
+```bash
+ssh ubuntu@<box> sudo cat /var/lib/instacloud/edge/ca.pem > ./instacloud-ca.pem
+curl --cacert ./instacloud-ca.pem https://api.example.com/healthz
+export PGSSLROOTCERT=$PWD/instacloud-ca.pem
+export NODE_EXTRA_CA_CERTS=$PWD/instacloud-ca.pem
+export AWS_CA_BUNDLE=$PWD/instacloud-ca.pem
+```
+
+`AWS_CA_BUNDLE` is what the AWS CLI and boto3 read, and they read none of the other three, so
+without it an upload to `https://s3.example.com` fails with `SSL validation failed` and `unable to
+get local issuer certificate` while curl and psql against the same box are fine. The AWS SDK for
+JavaScript has no equivalent knob: it uses Node's trust store, so `NODE_EXTRA_CA_CERTS` above
+already covers it. Exporting all four is the simple answer whichever client you reach for.
+
+### When one hostname will not verify
+
+Under `acme` the edge lists the local issuer after the public CA, so a name whose ACME order
+fails still gets a certificate and still serves HTTPS. It is signed by the box, so a normal
+client refuses it: `curl` says "unable to get local issuer certificate", the AWS CLI says
+"SSL validation failed", and only that one hostname is affected. The edge then keeps serving the
+local certificate until it nears expiry, so a single failed order sticks.
+
+Check which issuer holds a name:
+
+```bash
+sudo find /var/lib/instacloud/caddy/data/caddy/certificates -name '*.crt' | sed 's|.*/certificates/||'
+```
+
+Names under `local/` fell back. Delete the one that fell back and let the edge order it again:
+
+```bash
+sudo rm -rf /var/lib/instacloud/caddy/data/caddy/certificates/local/<hostname>
+sudo docker restart io-edge
+curl -sS -o /dev/null -w '%{ssl_verify_result}\n' https://<hostname>/     # 0 means it verifies
+```
+
+If it falls back again, the name is not reaching the box from the internet on port 80, or the
+public CA is rate limiting the suffix. The sslip.io warning above is the usual cause: every
+reinstall re-orders a certificate for every hostname.
+
+## Databases from anywhere
+
+Postgres is the one that is public. It shares a single port for every database on the box, and the
+daemon routes by the hostname in the TLS handshake:
+
+```bash
+psql "$(insta postgres url)"
+insta postgres connect
+```
+
+`insta postgres url` prints a DSN of the form
+`postgres://postgres:<password>@pg-db-shop-main.example.com:5432/app?sslmode=require`. Because the
+lane demultiplexes on SNI, the client has to send the hostname in the handshake. Recent clients do:
+libpq 14 or newer, the JDBC driver 42.2.x or newer, node-postgres, psycopg 3. An older client gets
+a clear error that says there was no SNI in the TLS handshake, and the fix is to upgrade the client
+or connect from inside the branch.
+
+Redis and MongoDB are not meant to be public, and whether they actually are is up to your
+firewall. Their lanes work the same way as Postgres, on 6379 and 27017 with TLS and SNI, and apps
+reach them by hostname from the branch network. Two things decide the rest:
+
+- the daemon binds every lane to all interfaces in server mode (`INSTA_OSS_LANE_BIND`, `0.0.0.0`),
+  so the ports are listening wherever this box is reachable;
+- the installer writes its restricting rules ONLY when it finds an active `ufw` or a running
+  `firewalld`. On a box with neither, it changes no firewall at all and warns you, and 6379 and
+  27017 are then reachable from the internet.
+
+So do one of these before you put anything in them: restrict the two ports at your cloud security
+group, which is how most of these boxes are protected, or enable `ufw` yourself and then re-run
+the installer, which allows 80, 443 and the Postgres lane publicly and the database lanes to
+Docker's address pools only.
+
+Every port below is the DEFAULT. If you moved a lane with `INSTA_OSS_LANE_PG_PORT` and the two
+keys beside it, allow the port you moved it to, or `ufw enable` closes the lane your clients are
+actually using. `sh install.sh --print-ssh-advice` prints this recipe with your own values
+already filled in, which is the copy to use:
+
+```bash
+ufw allow OpenSSH           # or `ufw allow <your-ssh-port>/tcp` if sshd is not on 22
+ufw allow 80,443,5432/tcp   # 5432 is the DEFAULT Postgres lane: use yours if you moved it
+ufw enable
+```
+
+Allow SSH before you enable it, every time, and allow every port ssh may be reachable on. Asking
+`sshd -T` alone is the trap, not the check: on Ubuntu 24.04 SSH is socket-activated and the
+documented way to move it is `systemctl edit ssh.socket` with `ListenStream=2222`, which leaves
+`sshd_config` at `#Port 22`. So on the box that moved SSH to 2222, `sshd -T` still answers 22 and
+an `enable` that trusts it locks you out. Ask all three sources and allow every port any of them
+names:
+
+```bash
+sshd -T | awk '/^port /{print $2}'                      # the effective sshd config
+systemctl show ssh.socket sshd.socket --value -p Listen  # socket activation
+ss -tlnpH | grep -i ssh                                  # what is listening now
+```
+
+An enable without the right port looks fine from the session that ran it, because established
+connections survive, and locks you out on the next reconnect.
+
+The installer never touches SSH rules, in either direction: your access is yours to preserve. It
+prints this recipe with your detected SSH ports AND your resolved lane ports filled in when it
+finds no active firewall, and the rules it adds itself are only for the ports InstaCloud OSS serves,
+at the values it resolved rather than at the defaults. The
+tighter option, and the one to ask for if you want it, is binding the redis and mongodb lanes to
+the docker bridge instead of `0.0.0.0`; today `INSTA_OSS_LANE_BIND` moves all the lanes together,
+Postgres included, so it is not a per-lane switch yet.
+
+None of this is because Redis and MongoDB are special: it is because an internet-facing one on a
+box someone forgot about is among the most reliably abused things on the internet, and neither has
+Postgres's record behind TLS. Reach them from your apps, from the box itself, or across a VPN or
+an SSH tunnel you control. MySQL does not multiplex, so each MySQL service gets its own plaintext
+port, printed in its credentials, and the same two rules apply to it.
+
+A sleeping database wakes on connect. The first connection can take a few seconds; after that it
+is a normal local Postgres.
+
+## Buckets
+
+`AWS_ENDPOINT_URL_S3` is `https://s3.<domain>`. Both request styles work against it: path-style
+(`https://s3.example.com/<bucket>/<key>`) and virtual-hosted
+(`https://<bucket>.s3.example.com/<key>`), which is what most SDKs send by default. That second
+form is two labels under your domain, so under `INSTA_OSS_TLS=custom` the certificate you supply
+has to carry `*.s3.<domain>` as well as `*.<domain>`; the installer requires both. Under `acme`
+and `internal` the bucket name gets its own certificate on demand like any other host. A bucket that
+you have made public serves anonymous GET and HEAD requests from the same host, while signed and
+non-GET requests go to the S3 API.
+
+## Inside a branch
+
+Containers reach every one of those names too, resolving to the box itself, so an app can use its
+own `DATABASE_URL`, `AWS_ENDPOINT_URL_S3`, `api.<domain>` and the custom domains of its own
+compute groups with no change between local development and the server. The daemon injects the
+names into every container it creates. A sleeping database wakes when the app connects to it.
+
+## Local mode
+
+No TLS, no domain. Apps are on `http://<group>-<project>-<branch>.localhost:8080` and databases on
+`127.0.0.1:<port>` with a per-service port from the lane range. Inside containers the same
+databases are at `host.docker.internal:<port>`. There is no `s3.` host: the S3 API stays on
+`http://127.0.0.1:3900`.

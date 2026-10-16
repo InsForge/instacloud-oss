@@ -1,0 +1,52 @@
+code: open-slide
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# The runtime is what ships to npm as @open-slide/core; the workspace in the image is what
+# @open-slide/cli scaffolds. Both come from this repository, and the runtime is the pin.
+upstream:
+  repo: open-slide/open-slide
+  package: "@open-slide/core"
+  pinned: "2.0.1"
+  license: MIT
+
+services:
+  # Named for the template, not "web": three templates sharing one service name collided on the
+  # same branch, the second overwriting the first (QA.md finding 1).
+  open-slide:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/open-slide:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 8080
+    healthcheck: /             # nginx answers 401 unauthenticated, which counts as healthy
+    # The browser reaches this INBOUND, so wake-on-request works: nothing in the dev server runs
+    # on a timer, and a deck nobody is looking at does not need a machine. Costs a cold boot.
+    alwaysOn: false
+    volume: true  # mounts at /data, which holds slides/, themes/ and assets/
+    env:
+      required:
+        # Neither a `default:` nor a `generate:`, matching the other gated templates: this service
+        # writes files to the volume on request, so the operator picks the credential and nothing
+        # falls back. No 186-byte cap here: that limit is ttyd's, nginx basic auth has no such edge.
+        ADMIN_USERNAME:
+          description: "Username for the editor sign-in. Pick your own; it may not contain a colon"
+        ADMIN_PASSWORD:
+          description: "Password for the editor sign-in. Pick a strong one: it is all that stands between the URL and an editor that writes files"
+
+meta:
+  name: open-slide
+  tagline: React slide decks with an in-browser editor and present mode
+  # Not in the console's current set. open-slide is neither an agent, an LLM, a datastore, an
+  # automation runner nor a CRM, and filing it under one of those would mis-describe it in the
+  # gallery; AGENTS.md asks for a proposal instead of `other`. See the PR.
+  category: automation
+  tags: [productivity, ai]
+  # amd64 only by declaration rather than by upstream limit: everything the image installs is
+  # JavaScript on a multi-arch node base, but the npm install pulls the native bindings Vite 8
+  # and Tailwind 4 ship per platform, and nobody has run that install under QEMU or on an arm64
+  # machine. Adding arm64 means doing that, not editing this line.
+  architectures: [amd64]
+  logo: ./logo.png
+  links:
+    upstream: https://github.com/open-slide/open-slide
+    documentation: https://open-slide.dev/docs

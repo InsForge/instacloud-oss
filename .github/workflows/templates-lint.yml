@@ -3,11 +3,13 @@ on:
   pull_request:
     paths:
       - "templates/**"
+      - "ui/src/lib/template-categories.json"
       - ".github/workflows/templates-lint.yml"
   push:
     branches: [main, devel]
     paths:
       - "templates/**"
+      - "ui/src/lib/template-categories.json"
       - ".github/workflows/templates-lint.yml"
 permissions:
   contents: read
@@ -28,6 +30,8 @@ jobs:
           cache-dependency-path: templates/package-lock.json
       - run: npm ci
       - run: npm run lint
+      # Against production's GET /template-categories: lint stays offline, this one cannot.
+      - run: npm run check-categories
       # Lives here rather than in its own workflow: it reuses this job's checkout and npm ci
       # (js-yaml, to read `version` and the draft flag on both revisions), and PRs are where the
       # block belongs. A missing bump must be caught before merge, not after the image is gone.

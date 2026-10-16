@@ -1,0 +1,42 @@
+<clickhouse>
+    <!-- Every path the server writes to, moved onto the platform's volume.
+
+         The volume mounts at /data and nothing else, a Dockerfile VOLUME is not honoured, and the
+         stock config.xml spells each of these as an absolute path under /var/lib/clickhouse rather
+         than relative to <path>. So setting <path> alone would leave tmp, user_files, the SQL-created
+         users and the format schemas on the container's root filesystem, which is wiped on restart:
+         every user created with CREATE USER would be gone after a redeploy while the tables they
+         were granted on survived. There is no environment variable for any of them, which is why
+         this file exists and why the template builds an image at all.
+
+         The entrypoint reads these back with `clickhouse extract-from-config`, which merges config.d,
+         so it creates and chowns exactly these directories before dropping to the clickhouse user. -->
+    <path>/data/clickhouse/</path>
+    <tmp_path>/data/clickhouse/tmp/</tmp_path>
+    <user_files_path>/data/clickhouse/user_files/</user_files_path>
+    <format_schema_path>/data/clickhouse/format_schemas/</format_schema_path>
+    <custom_cached_disks_base_directory>/data/clickhouse/caches/</custom_cached_disks_base_directory>
+    <user_directories>
+        <local_directory>
+            <path>/data/clickhouse/access/</path>
+        </local_directory>
+    </user_directories>
+
+    <!-- `insta compute logs` reads the container's stdout, and the stock config logs only to a file
+         under /var/log. Console logging is autodetected from whether stdout is a tty, which in a
+         container it is not, so it has to be asked for. At `information` rather than the file's
+         `trace`: the trace stream is tens of lines per query and unreadable on a shared log pipe,
+         and the file keeps it for anyone who shells in. -->
+    <logger>
+        <console>1</console>
+        <console_log_level>information</console_log_level>
+        <!-- The file log stays, at the stock `trace`, for anyone who shells in. What does not stay
+             is the stock rotation policy of 1000M x 10, which allows 10 GB of it on a container
+             root filesystem the server itself measures at 1 GiB and warns about on every boot
+             ("Available disk space for logs at server startup is too low (1GiB)"). 100M x 3 is a
+             rotating set that cannot outgrow the filesystem it sits on. Deliberately NOT moved to
+             the volume: that would spend a user's disk on log files. -->
+        <size>100M</size>
+        <count>3</count>
+    </logger>
+</clickhouse>

@@ -3,7 +3,7 @@
 Autonomous AI agent from Nous Research, with chat in the browser and messaging channels you
 connect when you want them.
 
-[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/insta-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/hermes)
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/hermes)
 
 ## Overview
 
@@ -84,7 +84,9 @@ managed daemon the dashboard's System and Channels pages control.
 
 ## Links
 
+- Architectures: `linux/amd64` and `linux/arm64`. Upstream publishes both and this image only
+  adds an entrypoint.
 - Documentation: <https://hermes-agent.nousresearch.com/docs/>
 - Upstream: <https://github.com/NousResearch/hermes-agent>
-- Image: `docker.io/nousresearch/hermes-agent`, pinned to `v2026.8.27`
+- Image: `docker.io/nousresearch/hermes-agent`
 - License: MIT (upstream `NousResearch/hermes-agent`).

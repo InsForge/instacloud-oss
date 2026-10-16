@@ -1,0 +1,67 @@
+code: laya
+version: 0.2.0
+maintainer: official
+sourceRepo: InsForge/instacloud-oss
+
+upstream:
+  repo: tonychang04/laya-template
+  # The template packages the repository's own deploy/app.py, so the pin that matters is the
+  # commit, not the PyPI release: `pip install laya==0.3.4` would not carry deploy/app.py at all.
+  commit: c9dcaab6da74ce5c34a66ef84f2503c77e4e619a
+  pinned: "0.3.4"
+  model: convaiinnovations/laya (typed-decisions checkpoint, ModernBERT-large, 421M)
+  license: Apache-2.0
+
+services:
+  laya:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/laya:0.2.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 8080
+    # Upstream's own liveness route. There is no route at `/` in deploy/app.py, so the gate would
+    # read a 404 there; this template's serve.py adds a redirect at `/` for humans and leaves the
+    # gate pointed here. /healthz answers 200 the moment uvicorn binds, before the checkpoint has
+    # finished loading, and reports `model_loaded` and `load_seconds` in its body.
+    healthcheck: /healthz
+    # No volume on purpose. The 842 MB checkpoint is baked into the image and HF_HUB_OFFLINE keeps
+    # the container from reaching the Hub at all, so there is nothing per-deployment to persist:
+    # state in, decision out, nothing written. A disk here would only hold a second copy.
+    env:
+      fixed:
+        PORT: "8080"
+        # Where the build cached the checkpoint. app.py calls laya.load("convaiinnovations/laya",
+        # subfolder="typed-decisions"), and the image ran that exact call at build time, so this
+        # resolves to a cache hit rather than a download.
+        HF_HOME: /opt/hf
+        # A miss would otherwise become an 842 MB download on a machine with no Hub credentials:
+        # slow, silent and different from what was tested. Fail instead.
+        HF_HUB_OFFLINE: "1"
+        # transformers probes for TensorFlow at import and its abseil runtime can deadlock model
+        # construction. Upstream sets both in its own CI for the same reason; laya is torch-only.
+        USE_TF: "0"
+        USE_TORCH: "1"
+        TOKENIZERS_PARALLELISM: "false"
+      required:
+        # Neither a `default:` nor a `generate:`, matching the terminal templates. This service is
+        # an inference endpoint on the public internet whose cheapest request costs a few hundred
+        # milliseconds of CPU, so an unauthenticated one is a free compute faucet for whoever finds
+        # the URL. A key written here would be the same one on every deploy in the world,
+        # and a generated one would be stored write-only where the operator could never read it
+        # back. The console renders one empty field and will not submit until it is filled.
+        API_KEY:
+          description: "Paste an API key of your choosing; it guards every route except /healthz. Send `Authorization: Bearer <key>`, or HTTP basic auth with username `api` and the key as the password"
+
+meta:
+  name: Laya
+  tagline: "Open-source Jev alternative: route, classify, score and gate on CPU"
+  category: llm
+  tags: [llm, ai]
+  # amd64 only, declared rather than hoped for. The image installs CPU torch and bakes the
+  # checkpoint by running a real prediction at build time; doing that under QEMU for the arm64 leg
+  # is the slow part of an already long build, and nothing has proved it starts on arm64. See the
+  # Architectures table in ../README.md for what it would take to add the second row.
+  architectures: [amd64]
+  draft: false
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/tonychang04/laya-template
+    model: https://huggingface.co/convaiinnovations/laya

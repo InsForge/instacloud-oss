@@ -13,5 +13,10 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts"],
+  // The helper tests are run by the ROOT vitest (vitest.config.ts includes ui/src/lib), and there
+  // is deliberately no vitest install under ui/. They must therefore stay out of the dashboard's
+  // own typecheck, or `npm ci && npm run build` in this directory alone cannot resolve `vitest` --
+  // which is exactly what the Dockerfile's ui stage does.
+  "exclude": ["src/**/*.test.ts"]
 }

@@ -2,7 +2,7 @@
 
 Self-hosted LLM router with fallback across 40+ providers.
 
-[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/insta-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/9router)
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/9router)
 
 ## Overview
 
@@ -48,6 +48,8 @@ The service listens on port 20128, is health-checked on `/api/health`, and store
 
 ## Links
 
+- Architectures: `linux/amd64` and `linux/arm64`. Upstream publishes both, and this image pins
+  the multi-arch index rather than one platform's manifest.
 - Upstream: <https://github.com/decolua/9router>
-- Image: `docker.io/decolua/9router`, pinned to `0.5.55` (by digest, via `./Dockerfile`)
+- Image: `docker.io/decolua/9router`, pinned by digest via `./Dockerfile`
 - License: MIT (upstream `decolua/9router`).

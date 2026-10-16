@@ -1,0 +1,105 @@
+code: opendots
+version: 0.1.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# Upstream publishes no image, no tag and no release, so the image is built here from a commit
+# (see ./Dockerfile). `pinned` carries the version the repository calls itself, which is what the
+# catalog shows; `commit` is what actually gets built.
+upstream:
+  repo: CopilotKit/OpenDots
+  pinned: "0.1.0"
+  commit: 625452e06cde74cb25b0ce319e2c1be0488f5a5f
+  license: MIT
+
+services:
+  web:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/opendots:0.1.0   # built from ./Dockerfile by templates-build-images.yml
+    # Upstream's own port. The platform injects its own PORT equal to this, and the server reads it.
+    port: 4310
+    # The server mounts the built client at `*`, so `/` answers 200 with index.html whether or not
+    # anyone has signed in: the owner token gates `/api/*` only. There is no dedicated health route.
+    healthcheck: /
+    # Scheduled tasks are a first-class feature here: src/server/runner.ts starts on boot and fires
+    # saved tasks on their own interval (60s and up). Nothing inbound would wake a stopped machine
+    # for one, which is the n8n case rather than the browser-terminal one.
+    alwaysOn: true
+    volume: true  # mounts at /data
+    env:
+      fixed:
+        # The platform proxy reaches the service over the network, so loopback is not an option.
+        # Binding anything but loopback makes OWNER_TOKEN mandatory upstream (src/server/index.ts
+        # throws on a token shorter than 24 characters before it binds), which is why that variable
+        # is required below rather than optional.
+        HOST: 0.0.0.0
+        # Everything durable: the SQLite file holds Spaces, pages, Dots, settings, memories and
+        # scheduled tasks. Conversation history lives in CopilotKit Threads, not here.
+        DATABASE_PATH: /data/opendots.sqlite
+        # Owns the persistent Intelligence conversations, and upstream's docs say to keep it stable.
+        # Changing it on a running instance orphans the threads the existing pages point at.
+        OWNER_ID: opendots-owner
+        # The exact origin the API accepts. Left unset, the server falls back to the origin it
+        # reconstructs from the request, which behind the platform's TLS terminator is the http://
+        # form of the same host, so every browser call would be refused as cross-origin.
+        APP_ORIGIN: ${services.web.url}
+      required:
+        # The app's only credential. OpenDots compares it timing-safely against the Bearer token on
+        # every `/api/*` call, and its sign-in screen is a single field you paste it into. Neither a
+        # `default:` nor a `generate:`, matching the other templates that put a credential in front
+        # of a service: a template variable is stored write-only, so a generated value would be one
+        # the operator could never read back, and a shared default would be the same password on
+        # every deploy in the world. At least 24 characters, or the server refuses to start.
+        OWNER_TOKEN:
+          description: "Owner access token, at least 24 characters. You paste this into the OpenDots sign-in screen; it is the app's only password, and the server refuses to start with a shorter one"
+      optional:
+        # The three below are what upstream calls the setup state: without them the app opens,
+        # Spaces and pages work and are editable, and chat, calls, scheduled tasks and Slack report
+        # "setup required" (src/server/platform-config.ts lists exactly these three as missing).
+        # Optional rather than required because the app is designed to run in that state and says so
+        # on its own setup screen, and because three third-party keys at the deploy form is a wall
+        # in front of a template whose document half needs none of them.
+        CPK_INTELLIGENCE_API_KEY:
+          description: "CopilotKit Intelligence project key, for conversations, threads and calls. Run `npx copilotkit@latest login` then `npx copilotkit@latest project select`. Without it the app opens in setup state and only the document side works"
+        OPENAI_API_KEY:
+          description: "Key for the OpenAI-compatible provider the Dots run on. Needed together with OPENAI_MODEL before any Dot will answer"
+        OPENAI_MODEL:
+          description: "Model id the Dots run, for example gpt-5. Needed together with OPENAI_API_KEY; the app reports both as missing until they are set"
+        OPENAI_BASE_URL:
+          description: "OpenAI-compatible endpoint, when the provider is not OpenAI itself. Defaults to https://api.openai.com/v1"
+        WEB_SEARCH_PROVIDER:
+          description: "Public-web search for the Dots: `parallel` (the default, anonymous MCP unless PARALLEL_API_KEY is set), `browser` (needs a browser service this template does not deploy), or `disabled`"
+        PARALLEL_API_KEY:
+          description: "Bearer key for Parallel, for production rate limits. The default provider works anonymously for light use"
+        VOICE_API_KEY:
+          description: "Realtime speech provider key, for calls. Calls also need the Intelligence key above"
+        VOICE_MODEL:
+          description: "Realtime speech model id. Calls stay off until this and VOICE_API_KEY are both set"
+        VOICE_NAME:
+          description: "Realtime speech voice. Defaults to marin"
+        SLACK_CHANNEL_NAME:
+          description: "Managed CopilotKit Channels declaration name for Slack, not a Slack #channel name. Slack needs this plus SLACK_TEAM_ID and SLACK_USER_IDS"
+        SLACK_TEAM_ID:
+          description: "Slack workspace id allowed to mention your Dots"
+        SLACK_USER_IDS:
+          description: "Comma-separated Slack user ids allowed to mention your Dots. The integration answers nobody else"
+        SLACK_DOT_ID:
+          description: "Which Dot answers in Slack. Defaults to the initial Dot"
+        COPILOTKIT_TELEMETRY_DISABLED:
+          description: "Set to true to switch off the CopilotKit SDK's usage telemetry, which is on by default and is separate from conversation data"
+
+meta:
+  name: OpenDots
+  tagline: Self-hosted AI coworkers with shared documents, chat and calls
+  category: ai-agent
+  tags: [ai-agent, ai]
+  # amd64 only by declaration rather than by upstream limit: everything in the build is JavaScript
+  # and the node:24-bookworm-slim base carries both, so there is no architecture-specific step to
+  # fail. What has not happened is anyone running the npm install and the vite build under QEMU or
+  # on an arm64 machine. Adding the row means doing that, not editing this line.
+  architectures: [amd64]
+  logo: ./logo.svg   # upstream's own favicon (public/favicon.svg), the only mark it ships
+  draft: false
+  links:
+    upstream: https://github.com/CopilotKit/OpenDots
+    documentation: https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP.md

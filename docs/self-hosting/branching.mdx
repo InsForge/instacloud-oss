@@ -1,0 +1,109 @@
+---
+title: "Branching"
+description: "A branch forks the database files and the volumes on disk, so a parent at rest clones in about a second at any size."
+---
+
+## What a branch is here
+
+A branch is a real environment: its own Postgres container, its own bucket, its own app
+containers, its own managed databases, all keyed by the ref (`<project>-<branch>`) and all on their
+own hostnames. Nothing is shared with the source branch after the fork.
+
+## Where the data lives
+
+Under the data directory, `/var/lib/instacloud` on a server and `~/.insta-oss` on a laptop:
+
+```
+pg/<ref>/<id>/      Postgres data directory, bind-mounted into the container
+vol/<ref>/<id>/     a compute volume, mounted at /data
+md/<ref>/<rd|my|mo>-<id>/   managed database data (redis, mysql, mongodb)
+garage/             the object store metadata and data
+```
+
+Directories are keyed by immutable ids, never by the name you can rename.
+
+## How a clone works
+
+`insta branch create feat --from main` does this to the Postgres service:
+
+1. Check that the source is at rest. A database here sleeps when nothing is using it, so the
+   parent of a branch is normally stopped, and a stopped data directory is one nothing is writing.
+2. Copy the data directory with a reflink copy. The filesystem shares the blocks and only
+   divergent writes allocate anything, so this is a metadata operation: sub-second whether the
+   database is 100 MB or 100 GB.
+3. Start the new container on the copy. Postgres runs its normal crash recovery, which is what it
+   does after any unclean stop, and comes up with the data as of the moment the source stopped.
+
+Nothing is woken to be cloned: the files are on disk either way.
+
+A RUNNING source is streamed with `pg_basebackup` instead, and so is any source on a filesystem
+without reflink support. Same result, but the time is proportional to the size of the database.
+Copying a live data directory file by file is not safe at any speed: the server keeps writing
+through the copy, so the result would be assembled out of several different moments and might not
+recover at all. Postgres allows a file-level copy only against a stopped server, an atomic
+filesystem snapshot, or its own backup protocol, so an always-on database always streams. The
+[install](/self-hosting/install#reflinks) page has the reflink check and how to get one.
+
+Either way, `insta agent events` records what happened:
+
+```bash
+insta agent events --json
+# branch.created  {"from":"main","db":{"method":"reflink","ms":180},"volumes":1}
+```
+
+`db.method` is `reflink` or `basebackup`, and it is the fastest way to confirm that reflinks are
+actually working on your box.
+
+`INSTA_OSS_FORK` decides which of the two is allowed: `auto` (the default) reflinks when it can and
+streams when it cannot, `reflink` refuses the fork rather than falling back, and `basebackup`
+always streams. Set it to `reflink` on a box where a silent fall back to a copy proportional to the
+database would be worse than an error. `reflink` refuses a fork of a running database too: the
+safety rule is not something a setting turns off, so stop the source or let it sleep first.
+
+## Volumes fork too
+
+Every compute volume is reflink-copied along with the database, so a branch starts with the files
+its source had.
+
+Unlike the database, a volume is copied whether or not its app is running. The database has a
+consistent alternative for the live case (`pg_basebackup` streams it), and an inconsistent copy of
+a database does not survive its own crash recovery. A volume has neither: nothing can stream an
+arbitrary application's files consistently, so the choice is between copying a live directory and
+failing every branch create of an app that is awake. InstaCloud OSS copies. What the branch gets is
+each file as it stood when the walk reached it, which is many moments of the tree and not one: a
+crash or a power cut freezes a single instant, and this does not, so an invariant that spans two
+files (a log and the record it describes, a rename and the index entry for it) can land broken in
+a way no crash would produce. An app that only appends, or that fsyncs a single file, is fine; one
+whose consistency spans files is not. If a group writes data that cannot take that, stop it first
+with `insta compute stop <group>`, or let the idle sweep put it to sleep, and then create the
+branch.
+
+<Note>
+This is a difference from the hosted platform, where a new branch gets an empty volume. Here the
+volume is forked, because forking files is what the local filesystem is good at.
+</Note>
+
+## Buckets
+
+Objects are copied with `rclone sync` into the new bucket for the branch. This is a real copy, so
+it is proportional to how much you have stored.
+
+## Managed databases
+
+Redis, MySQL and MongoDB services start empty on a new branch, the same as on the hosted platform.
+They are caches and side stores, and a copy is rarely what you want.
+
+## A new branch sleeps
+
+Every service of a new branch is created and then left asleep: the app containers are created and
+not started, and the databases are provisioned, readied, and then stopped. The first request to
+the branch wakes what it needs. Always-on services are the exception and stay up.
+
+That is what makes it cheap to leave ten branches lying around. See
+[sleep and wake](/self-hosting/sleep).
+
+## Upgrading from an older install
+
+Installs before the fork model kept Postgres data in named Docker volumes, which cannot be
+reflinked. The first boot after the upgrade moves that data into `pg/<ref>/<id>/` for you, one
+service at a time, and logs each move. Nothing to run by hand.

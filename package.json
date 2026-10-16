@@ -1,27 +1,32 @@
 {
-  "name": "@insforge/insta-oss",
-  "version": "0.1.0",
+  "name": "@insforge/instacloud-oss",
+  "version": "0.4.1",
   "description": "Self-hostable runtime for branchable, agent-native environments: per-project database, object storage, and app containers; every branch is a disposable isolated clone. Driven by the standard insta CLI.",
   "type": "module",
   "bin": {
-    "insta-oss": "src/main.ts"
+    "instacloud-oss": "src/main.ts"
   },
   "scripts": {
     "dev": "tsx src/main.ts",
+    "start": "tsx src/main.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "build:ui": "npm --prefix ui install && npm --prefix ui run build"
+    "build:ui": "npm --prefix ui install && npm --prefix ui run build",
+    "build:image": "docker build --build-arg VERSION=$(node -p \"require('./package.json').version\") -t instacloud:dev .",
+    "docs:openapi": "node scripts/sync-openapi-docs.mjs",
+    "docs:openapi:check": "node scripts/sync-openapi-docs.mjs --check"
   },
   "license": "Apache-2.0",
   "dependencies": {
     "@fastify/static": "^7.0.4",
-    "fastify": "^4.28.0"
+    "fastify": "^4.28.0",
+    "tsx": "^4.19.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.0.0",
     "vitest": "^2.1.0"
@@ -31,7 +36,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/InsForge/insta-oss.git"
+    "url": "https://github.com/InsForge/instacloud-oss.git"
   },
   "keywords": [
     "branchable-environments",

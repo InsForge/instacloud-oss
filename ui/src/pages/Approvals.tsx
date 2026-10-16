@@ -4,6 +4,7 @@ import { Button, cn } from '@insforge/ui'
 import { api, relTime } from '../api'
 import { usePoll } from '../hooks'
 import { ErrorNote } from '../components/ui'
+import { ConsolePage } from '../components/console/ConsolePage'
 
 export function Approvals() {
   const { projectId } = useParams() as { projectId: string }
@@ -21,13 +22,8 @@ export function Approvals() {
   const decided = (approvals ?? []).filter((a) => a.status !== 'pending').slice(-10).reverse()
 
   return (
-    <div className="mx-auto flex w-full max-w-[64rem] flex-col gap-4">
-      <div>
-        <h1 className="text-[32px] leading-12 font-bold">Approvals</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Actions your policy gates behind a human. Grants are one-shot: the requester retries and consumes it.
-        </p>
-      </div>
+    <ConsolePage title="Approvals"
+      subtitle="Actions your policy gates behind a human. Grants are one-shot: the requester retries and consumes it.">
 
       {pending.length === 0 && (
         <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
@@ -65,6 +61,6 @@ export function Approvals() {
           </div>
         </>
       )}
-    </div>
+    </ConsolePage>
   )
 }

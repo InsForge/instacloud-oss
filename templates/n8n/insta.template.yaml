@@ -1,5 +1,5 @@
 code: n8n
-version: 1.3.1
+version: 1.5.1
 maintainer: official
 sourceRepo: InsForge/insta-oss
 
@@ -39,6 +39,10 @@ meta:
   tagline: Visual workflow automation with 400+ integrations
   category: automation
   tags: [automation, ai]
+  # Architectures the published image carries. A box on anything else is told at deploy time
+  # rather than left to fail on the pull: the official image publishes both and nothing is rebuilt
+  # here.
+  architectures: [amd64, arm64]
   logo: ./logo.svg
   links:
     upstream: https://github.com/n8n-io/n8n

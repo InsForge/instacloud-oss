@@ -2,7 +2,7 @@
 
 Visual workflow automation with 400+ integrations.
 
-[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/insta-oss@main/assets/deploy-button.svg)](https://console.instacloud.com/templates/n8n)
+[![Deploy on InstaCloud](https://cdn.jsdelivr.net/gh/InsForge/instacloud-oss@main/assets/deploy-button.svg)](https://instacloud.com/templates/n8n)
 
 ## Overview
 
@@ -87,7 +87,8 @@ fair-code upstreams. Read the upstream license before using it commercially.
 
 ## Links
 
+- Architectures: `linux/amd64` and `linux/arm64`, as published by the official image.
 - Documentation: <https://docs.n8n.io>
 - Upstream: <https://github.com/n8n-io/n8n>
-- Image: `docker.io/n8nio/n8n`, pinned to `2.36.5`
+- Image: `docker.io/n8nio/n8n`
 - License: Sustainable Use License (see <https://github.com/n8n-io/n8n/blob/master/LICENSE.md>).

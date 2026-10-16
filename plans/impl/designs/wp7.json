@@ -1,0 +1,407 @@
+{
+ "wp": "WP7 Dashboard (ui/)",
+ "summary": "Extend the Vite + @insforge/ui dashboard (ui/src, 16 files, ~1.7k lines today) so it is the self-host console: an auth gate that detects local vs server mode from GET /me, a Setup page (first admin via POST /auth/signup then POST /auth/login), a Login page, an Account > API tokens page over GET/POST/DELETE /tokens that prints the exact `insta login --api-key` line, a two-lane Deploy dialog (image via POST /projects/:id/deploy, template via POST /projects/:id/template-deployments with a required/optional variable form and a step poller on GET /template-deployments/:id), a Templates gallery over GET /templates and GET /templates/:code, a service detail page with Settings (rename, always-on, cpu/memory limits, volume) and a Domains section over the cloud's compute/domain routes, and service rows that show hostnames, the Sleeping state from GET /projects/:id/runtime-health, a Wake button (POST .../start, compute only, as on the cloud) and an always-on toggle. Every network call maps to a route that exists in insta-platform (cited per route). Server-only UI is hidden in local mode; nothing in the dashboard wakes a sleeping service except an explicit Wake, so the console's own polling never holds services awake. All new helpers are pure .ts modules under ui/src/lib with vitest tests run from the root config; the daemon-side contract additions get fake-adapter tests in test/server.test.ts.",
+ "files": [
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/api.ts",
+   "change": "Add types: Me (discriminated union {mode:'local'}|{mode:'server',user:PublicUser}|{mode:'setup'}|{mode:'login'}), PublicUser, ApiToken, TemplateListItem, TemplateDetail, TemplateVariable, TemplateDeployment, ServiceLimits, RuntimeHealthRow, DomainResult, DbInstance. Extend Service with always_on?, image?, port?, volume_gib?, template_code?, template_logo_url? and redefine endpoint as a full URL (scheme included) for compute and host:port for databases while domain stays a bare host[:port] (cloud Service.domain). Add methods: me(), login(email,password), logout(), signup(email,password,name?), tokens(), createToken(name,expiresInDays?), revokeToken(id), templates(), template(code), deployTemplate(p,{templateCode,branch,variables}), templateDeployment(id), deployImage(p,{image,port,group,branch}), addService(p,{type,name,branch,public?,image?,port?,alwaysOn?,volumeGib?}) replacing addComputeService, runtimeHealth(p,branch), setAlwaysOn(p,sid,enabled), limits(p,sid), setLimits(p,sid,{memoryMb,cpu?}), dbInstance(p,branch), dbSettings(p,branch,{scaleToZero?,cpu?,memory?}), domains(p,branch,group), addDomain(p,{hostname,branch,group}), domainStatus(p,{hostname,branch,group}), removeDomain(p,{hostname,branch,group}). In call(): keep the 202 approval_required detection before the ok branch (a 202 template-deployment accept has no status:'approval_required' and falls through as ok); on status 401 and when location.pathname is not /login or /setup, call the registered onUnauthorized hook (set by AuthGate) instead of returning an error. Add apiUrlForCli() = origin with a leading 'console.' label replaced by 'api.', else origin."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/App.tsx",
+   "change": "Wrap Routes in <AuthGate> (new component). Add top-level routes /setup (Setup), /login (Login), /account/tokens (Tokens, inside a minimal AccountShell with a back link). Add project-scoped routes services/:sid (ServiceDetail) and templates (Templates). Home keeps the projects redirect; AuthGate decides before Home renders."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/components/AuthGate.tsx",
+   "change": "New. Calls api.me() once on mount and exposes {mode,user,refresh} through React context (useAuth()). Renders nothing until the answer arrives; mode 'setup' -> <Navigate to=/setup>, 'login' -> <Navigate to={`/login?next=${path}`}> unless already there, 'local'|'server' -> children. Registers api.onUnauthorized = () => setMode('login')."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/pages/Setup.tsx",
+   "change": "New. First-run page (server mode only; if useAuth().mode !== 'setup' redirect to /). Form: email, password (min 8, matching the cloud's schema), confirm password, optional name. Submit: POST /auth/signup then POST /auth/login; then step 2 'Create a CLI token' (inline TokenCreate component with name prefilled 'laptop') showing the one-time key and the exact `insta login --api-key <key> --api-url <apiUrlForCli()>` line with CopyButton; 'Go to dashboard' -> refresh() then navigate('/')."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/pages/Login.tsx",
+   "change": "New. Email + password form over POST /auth/login; on 200 refresh() and navigate(safeNext ?? '/'); 401 -> 'Wrong email or password.'; 403 -> message from body. Mirrors the console AuthShell layout (title, subtitle, centered card) without OAuth buttons."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/pages/Tokens.tsx",
+   "change": "New. Account > API tokens: table (name, prefix + bullets, created, last used, expires) from GET /tokens filtered !revokedAt; create row (name input, optional expiry Select 30/90/365/never) -> POST /tokens -> one-time reveal panel (key, CopyButton, the `insta login --api-key` line); revoke via ConfirmDialog -> DELETE /tokens/:id. Reuses TokenCreate from components/TokenCreate.tsx (shared with Setup)."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/components/TokenCreate.tsx",
+   "change": "New. The create + reveal widget used by Setup and Tokens."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/components/Layout.tsx",
+   "change": "TopBar: replace the static 'local' label with mode-aware identity: local -> 'local'; server -> user.email with a DropdownMenu (API tokens -> /account/tokens, Sign out -> POST /auth/logout then navigate /login). SideBar: add SideItem Templates (lucide LayoutTemplate) under the branch section after Service. Keep the daemon health dot."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/components/ui.tsx",
+   "change": "Replace StatusDot(runtime) with StatusCell({row, health, waking, onWake}) rendering the derived ServiceStatus (lib/status.ts): Online, Sleeping (+ Wake button for compute), Stopped, Suspended, Starting/Waking (spinner), Crashed, Not deployed, unknown. Add HostLink({domain, endpoint}) rendering the bare hostname with an external link when endpoint starts with http, plus CopyButton. Add TemplateLogo({src}) with fallback tile. Keep Modal, Chip, ErrorNote, TypeIcon."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/pages/Services.tsx",
+   "change": "Header gains a primary 'Deploy' button (opens DeployDialog) next to 'Add Service'. Row columns: Service (TypeIcon or template logo, name; click navigates to services/:sid), Status (StatusCell from runtime-health merged by serviceId), URL (HostLink), Always on (Switch for compute and managed rows; postgres row's switch drives database/settings scaleToZero), Updated, kebab. Kebab: compute Start/Stop/Suspend/Restart/Rename/Remove; storage Make public/private; postgres and managed rows: Remove (server route now allows it per project-parity WP) and Rename for managed. Poll: services and runtime-health every 5 s, 2 s while any service is waking. Empty state when services.length===0. Replace AddDialog with components/AddServiceDialog.tsx."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/components/AddServiceDialog.tsx",
+   "change": "New (moved out of Services.tsx). Type Select (postgres, storage, compute, redis, mysql, mongodb), name Input (lower-kebab validation), compute extras: image (optional), port (default 8080), Always on Switch (default off), Volume Switch + size (Gi); storage extra: Public Switch. Submits POST /projects/:id/services with branch = current branch. 409 -> 'name already used'."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/components/DeployDialog.tsx",
+   "change": "New. Tabs Image | Template. Image lane: image (required), port (number, default 8080), target Select (existing compute services + 'New service' with a name input) -> POST /projects/:id/deploy {image, port, group, branch}; 202 approval -> ApprovalPrompt retry. Template lane: TemplatePicker (search + category rail + rows) -> TemplateDeployForm (variables) -> POST template-deployments -> DeploymentProgress (step list + per-service states + urls + error/logsTail). Opened from Services and from Templates (preselected code)."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/components/TemplateDeployForm.tsx",
+   "change": "New. Renders required then optional (collapsed 'Optional (N)') variables per lib/templateVars.ts rules; secret-looking names as password inputs with reveal; disabled Deploy until canSubmit; server 400 missing_variables marks fields."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/components/DeploymentProgress.tsx",
+   "change": "New. Polls GET /template-deployments/:id every 2 s (CLI cadence) until status in succeeded|failed|partial or 15 min; renders the four steps (create services, write variables, deploy, health check) with done/active/pending marks, services list with state badges and URL links, error and logsTail in a <pre>."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/pages/Templates.tsx",
+   "change": "New. Gallery: SearchInput, category rail (categories derived from the list, 'all' first, counts), card grid (logo, name, tagline, category Badge, version, license). Card click opens TemplateDetailDialog: name, tagline, upstream links, services summary (name, type, port, volume, alwaysOn), variables (required/optional with descriptions), readme via components/Markdown.tsx, footer 'Deploy to <branch>' -> DeployDialog template lane with the code preselected. Data via GET /templates (one-shot, 60 s poll) and GET /templates/:code on open."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/components/Markdown.tsx",
+   "change": "New, dependency-free (about 80 lines): headings, paragraphs, fenced code, inline code, bold, links (rel=noreferrer, http(s) only), unordered/ordered lists; raw HTML is escaped, never rendered."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/pages/ServiceDetail.tsx",
+   "change": "New. Route services/:sid. Header: TypeIcon/logo, name, StatusCell with Wake, HostLink. Tabs (Tabs/Tab as in Logs.tsx): Overview (image, port, volume, desired state, template code, last update; compute only shows Restart) and Settings. Settings sections: General (rename via POST .../rename), Sleep (Always on Switch: compute/managed -> PUT .../always-on; postgres -> PATCH /database/settings {scaleToZero: !enabled}, read from GET /database/instance), Resources (compute/managed: cpu and memory inputs bounded by cap from GET .../limits, Save -> PUT .../limits; postgres: cpu/memory quantity inputs -> PATCH /database/settings {cpu,memory}, read cpuMilli/memoryMib from /database/instance), Volume (read-only size from GET .../volume; grow via PUT), Domains (compute only, components/DomainsSection.tsx; hidden when GET compute/domains answers 501), Danger (Remove service, gated service.remove)."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/components/DomainsSection.tsx",
+   "change": "New. List from GET /projects/:id/compute/domains?branch&group; Add dialog (hostname Input validated by the cloud's HOSTNAME_RE, POST compute/domain, gated deploy -> ApprovalPrompt); per-domain card: hostname, stage badge (lib/domains.ts), hint line, DNS records table (type, name, value, CopyButton), Verify (GET compute/domain?hostname), Remove (ConfirmDialog, DELETE compute/domain)."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/pages/DatabaseInsight.tsx",
+   "change": "When any of the three reads fails with status 503 and message matching /sleeping/, stop polling (usePoll enabled=false) and render EmptyState 'Postgres is sleeping' with copy: wakes on the next connection; turn on Always on in the service settings to keep it warm; button 'Service settings' -> services/pg-db. Resume polling on 'Check again'."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/pages/Logs.tsx",
+   "change": "No route change (docker logs of a stopped container do not wake it). Add a muted note when runtime-health says standby for the selected component: 'Sleeping; showing the last lines before it went to sleep.'"
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/pages/Environments.tsx",
+   "change": "Copy only: 'its own Postgres (data forked at the file level), its own bucket (objects copied), and a redeploy of every app; a new environment starts asleep unless a service is always on.' No em dashes."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/hooks.ts",
+   "change": "usePoll gains an options bag {intervalMs, enabled} (enabled=false skips the fetch and timer; keeps data). Add useWaking(): a Map<serviceId, startedAt> with wake(sid) and a derived anyWaking flag; entries clear when health reports healthy or crashed, or after 60 s."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/lib/status.ts",
+   "change": "New pure module: deriveStatus(row: Service, health?: RuntimeHealthRow, waking?: boolean): ServiceStatus. Rules in the algorithm section."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/lib/templateVars.ts",
+   "change": "New pure module: flattenVariables(detail), isSecretName(name), canSubmit(vars, values), payloadVariables(values) (drops empty strings), applyMissing(body) for the 400 missing_variables shape."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/lib/domains.ts",
+   "change": "New pure module: domainStage(result) -> 'active'|'verifying'|'needs-records'|'error'; HOSTNAME_RE; normalizeHostInput(raw)."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/lib/apiUrl.ts",
+   "change": "New pure module: apiUrlForCli(origin: string): string; cliLoginLine(key, origin)."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/src/lib/status.test.ts, templateVars.test.ts, domains.test.ts, apiUrl.test.ts",
+   "change": "New vitest unit tests for the pure modules (run by the root vitest config)."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/vite.config.ts",
+   "change": "API_PREFIXES: add '/auth', '/api', '/templates', '/template-deployments', '/regions' so dev proxying reaches the daemon for the new calls (today: '/projects','/orgs','/me','/tokens','/healthz' at ui/vite.config.ts:6)."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/ui/index.html",
+   "change": "Title 'InstaCloud' stays repo-neutral; no change beyond a <meta name=color-scheme>."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/vitest.config.ts",
+   "change": "New (root): include ['test/**/*.test.ts', 'ui/src/lib/**/*.test.ts']; exclude integration files unless RUN_DOCKER_TESTS is set (integrator decides; keep today's default behaviour if the file already exists elsewhere)."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/src/server.ts",
+   "change": "Owned by other WPs but required by this one (listed for the reconciler): isApiPath (src/server.ts:672-673) must also match '/auth', '/api', '/templates', '/template-deployments'; obsCode (src/server.ts:84) maps a message containing 'sleeping' to 503; the SPA fallback keeps serving index.html for /setup, /login, /account/*, /p/*."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/test/server.test.ts",
+   "change": "Contract tests the dashboard depends on (see tests)."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/COMPATIBILITY.md",
+   "change": "Rows for login/logout, tokens, compute limits/always-on, templates, custom domains flip from 501 to implemented (server mode); note local mode keeps login unnecessary. No em dashes in new copy."
+  },
+  {
+   "path": "/Users/gary/projects/instacloud/insta-oss/.claude/worktrees/serverless/docs/self-hosting/setup.md and docs/self-hosting/dashboard.md",
+   "change": "Setup page walkthrough, token login line, what Sleeping means in the dashboard, Domains section. No em dashes."
+  }
+ ],
+ "sharedSurface": {
+  "types": "src/types.ts additions the dashboard reads (owners in brackets):\n\n// Branch.apps[group] (scheduler WP + limits WP)\napps: Record<string, { image: string; port: number; url: string; updatedAt?: number; desiredState?: 'running'|'stopped'|'suspended';\n  alwaysOn?: boolean;               // PUT \u2026/always-on; default from INSTA_OSS_ALWAYS_ON_DEFAULT (false)\n  limits?: { cpu: number; memoryMb: number }; // PUT \u2026/limits -> --cpus/--memory\n  sleptAt?: number | null;          // set by the idle sweep / eviction when it docker-stops a RUNNING-intent service; cleared on wake/start/deploy. Distinguishes 'standby' from 'crashed' in runtimeHealth.\n}>\n// Branch (scheduler WP)\ndbAlwaysOn?: boolean;               // PATCH /database/settings {scaleToZero: !x}; GET /database/instance echoes scaleToZero = !dbAlwaysOn\ndbSleptAt?: number | null;\ndbLimits?: { cpuMilli: number; memoryMib: number }; // PATCH /database/settings {cpu:'2', memory:'4Gi'}\nmanaged?: Record<string, { password: string; alwaysOn?: boolean; sleptAt?: number | null; limits?: { cpu: number; memoryMb: number } }>\n// Project (router WP)\ndomains?: Array<{ hostname: string; branch: string; group: string; addedAt: number }>\n// State (identity WP), src/state.ts\nauth?: { admin?: { email: string; name?: string; passwordHash: string; salt: string; createdAt: number };\n         sessions: Record<string /*token*/, { expiresAt: number; createdAt: number }>;\n         tokens: Array<{ id: string; name: string; prefix: string; hash: string; scopes: string[]; createdAt: string; lastUsedAt: string|null; expiresAt: string|null; revokedAt: string|null }> }\n\nWire shapes the UI consumes (all cloud shapes):\n- services[] rows (engine.services, src/engine.ts:413-470): add always_on (compute + managed), image, port (compute; cloud Service.image/port openapi.yaml:326+), template_code/template_logo_url (optional, from the template-deployment record), domain = bare host[:port] (cloud 'default access domain (postgres/compute)'), endpoint = full URL for compute ('https://web-shop-main.<domain>' or 'http://web-shop-main.localhost:<port>' in local mode) and 'host:port' for postgres/managed, '<bucket>.s3.<domain>' for storage.\n- runtime-health rows (src/engine.ts:718-750): status 'standby' when the container is exited AND (desiredState != 'running' OR sleptAt is set); 'crashed' only when exited, desired running and sleptAt is null; 'starting' while a wake is in flight (scheduler marks wakingSince).\n- GET /me in server mode without a session: 401 { error: 'setup required' } when state.auth.admin is absent, else 401 { error: 'unauthorized' } (cloud Error shape openapi.yaml:61-66); 200 { user, via:'jwt'|'api' } with a session or insta_ bearer; local mode unchanged (src/server.ts:55).\n- POST /auth/signup in server mode: 200 {} (status is optional in the cloud schema, platform server.ts:634) when no admin exists and the password has 8+ chars; 403 { error } once an admin exists; 400 on validation. No session is created (the UI logs in next).\n- POST /auth/login: 200 AuthResult (accessToken, refreshToken, expiresIn, user) AND Set-Cookie: instad_session=<accessToken>; HttpOnly; SameSite=Lax; Path=/; Secure when the request arrived over https (x-forwarded-proto from the edge). POST /auth/logout: { ok: true } and clears the cookie. The bearer check accepts Authorization: Bearer <session|insta_ token> OR the cookie.\n- GET /templates -> { templates: TemplateListItem[] } with code, version, maintainer, source, name, tagline, category, tags, logoUrl (recommend a data: URI built from templates/<code>/logo.svg|png, else null), license, updatedAt, totalProjects/activeProjects/successRate/deploymentCount/activeDeploymentCount (0/0/null/0/0 locally). GET /templates/:code -> { template: TemplateDetail } with services map, variables.{required,optional}: TemplateVariable[] {name, description, required, default, generate, editable}, readme, documentationUrl, upstream.\n- POST /projects/:id/template-deployments -> 202 { deploymentId, deployment } or 202 { status:'approval_required', action, approvalId }; 400 { error:'missing_variables', missing:[{name,key,description}] }. GET /template-deployments/:id -> TemplateDeployment { id, status: running|succeeded|failed|partial, step: create_services|write_variables|deploy|health_check, templateCode, templateVersion, projectId, branchId, services:[{name, serviceId, url, state: pending|created|deployed|healthy|failed}], error?, logsTail?, createdAt }.\n- GET /projects/:id/compute/domains?branch&group -> { items: DomainResult[] }; DomainResult = { hostname, flyApp (the daemon puts the container name), configured, status: 'pending'|'active'|'error'|'not added', dns: [{ type:'CNAME'|'A', name, value, note?, status?: 'ok'|'missing'|'mismatch' }], service, region: 'local', ssl?: 'pending'|'issued', errorReason?, origin?, originOk? }.",
+  "config": "Read by the daemon, not the SPA (the SPA infers everything from routes and location):\n- INSTA_OSS_MODE=local|server (default local; server when INSTA_OSS_DOMAIN is set). Server mode turns on the auth gate, /auth/* and /tokens, cookie sessions.\n- INSTA_OSS_DOMAIN: install domain; api.<domain> and console.<domain> both route to the daemon's fastify listener (router WP), so the SPA stays same-origin. The SPA derives the CLI api url from its own origin (console. -> api.).\n- INSTA_OSS_UI_DIST (exists, src/server.ts:671).\n- INSTA_OSS_ALWAYS_ON_DEFAULT (default false): the alwaysOn used when POST /services or a template omit it; the Add Service dialog sends alwaysOn explicitly so the knob only affects CLI/template callers.\n- INSTA_OSS_SESSION_TTL_HOURS (default 720) for the cookie/session expiry; the SPA handles a 401 by returning to /login.\n- ui/vite.config.ts VITE_INSTA_API (exists) for dev proxying.",
+  "engineSeams": "Functions the dashboard calls through server.ts (owner WP in brackets; this WP only consumes them):\n- engine.services(projectId, branch): emit always_on, image, port, template_code, template_logo_url, bare domain + URL endpoint [router WP + project-parity WP].\n- engine.runtimeHealth(projectId, branch): standby vs crashed via sleptAt; 'starting' during wake [scheduler WP].\n- engine.lifecycle(projectId, sid, 'start', branch): the Wake door; clears desiredState stop intent and sleptAt, calls scheduler.wake (which may evict under RAM pressure) [scheduler WP]. Compute only, as the cloud (openapi.yaml:5264 'Start a compute service').\n- engine.setAlwaysOn(projectId, sid, enabled, branch?) -> { service } for compute and managed; engine.dbSettings(projectId, {scaleToZero}, branch) persists dbAlwaysOn; engine.dbInstance echoes scaleToZero and cpuMilli/memoryMib [scheduler WP].\n- engine.serviceLimits(projectId, sid) -> { limits, cap, volume? } and engine.setServiceLimits(projectId, sid, {memoryMb, cpu?}) -> { service, limits, cap }; cap = host cpu count and total RAM rounded to 256 MB; memoryMb must be a multiple of 256 (cloud rule) [scheduler WP].\n- engine.listDomains/addDomain/domainStatus/removeDomain(projectId, {hostname, branch, group}) -> DomainResult [router WP]; 501 in local mode so the SPA hides the section.\n- engine.templatesList(query?, category?), templateDetail(code), deployTemplate(projectId, {templateCode, branch, variables, deploymentId?}), templateDeployment(id) [templates WP].\n- engine.addService(projectId, {type, name, branch, public, image, port, alwaysOn, volumeGib}) replacing fixedService for postgres/storage [project-parity WP].\n- engine.dbMetricsSnapshot/dbActivity/dbQueryStats/dbInsight: when the branch database is asleep throw Error('database is sleeping: it wakes on the next connection') and do NOT wake; server maps 'sleeping' -> 503 [scheduler WP]. runtimeMetrics/runtimeLogs read docker and never wake.\n- server.ts: auth preHandler (identity WP) exempts /healthz, /auth/*, /api/auth/*, /templates, /templates/:code (public on the cloud, platform server.ts:2614 security: []), and static/SPA paths; isApiPath extended; the router's HTTP lane must not stamp activity for api./console. hosts.",
+  "routes": [
+   {
+    "method": "GET",
+    "path": "/me",
+    "request": "cookie or Bearer",
+    "response": "200 { user: PublicUser, via } | 401 { error: 'setup required' | 'unauthorized' }",
+    "cloudEvidence": "openapi.yaml:2800-2830; insta-platform src/server.ts:785-803; daemon today src/server.ts:55"
+   },
+   {
+    "method": "POST",
+    "path": "/auth/signup",
+    "request": "{ email, password (min 8), name? }",
+    "response": "200 {} | 400 | 403 { error }",
+    "cloudEvidence": "openapi.yaml:2415-2472; insta-platform src/server.ts:612-635"
+   },
+   {
+    "method": "POST",
+    "path": "/auth/login",
+    "request": "{ email, password }",
+    "response": "200 AuthResult + Set-Cookie instad_session | 401 { error }",
+    "cloudEvidence": "openapi.yaml:2514-2554; insta-platform src/server.ts:665-680; CLI insta-cli src/commands/auth.ts:35-40 uses the same route"
+   },
+   {
+    "method": "POST",
+    "path": "/auth/logout",
+    "request": "{} (empty body allowed)",
+    "response": "200 { ok: true } + cookie cleared",
+    "cloudEvidence": "openapi.yaml:2586-2599; insta-platform src/server.ts:705-720"
+   },
+   {
+    "method": "GET",
+    "path": "/tokens",
+    "request": "session",
+    "response": "200 { tokens: ApiToken[] }",
+    "cloudEvidence": "openapi.yaml:11458-11476; insta-platform src/server.ts:4712-4724; ApiToken schema openapi.yaml:242-274; console profile-dialog.tsx:246-260"
+   },
+   {
+    "method": "POST",
+    "path": "/tokens",
+    "request": "{ name, expiresInDays? }",
+    "response": "201 { token: 'insta_\u2026', record: ApiToken }",
+    "cloudEvidence": "openapi.yaml:11478-11522; insta-platform src/server.ts:4726-4752"
+   },
+   {
+    "method": "DELETE",
+    "path": "/tokens/:tokenId",
+    "request": "",
+    "response": "200 { ok: true } | 404",
+    "cloudEvidence": "openapi.yaml:11524-11548; insta-platform src/server.ts:4754-4768"
+   },
+   {
+    "method": "GET",
+    "path": "/orgs/local/projects, /projects/:id/branches, /projects/:id/services?branch=",
+    "request": "",
+    "response": "unchanged shapes; services rows gain always_on/image/port/domain/endpoint",
+    "cloudEvidence": "openapi.yaml:3622, 3849, 4148-4180; daemon src/server.ts:158, 175, 275"
+   },
+   {
+    "method": "GET",
+    "path": "/projects/:id/runtime-health?branch=",
+    "request": "",
+    "response": "{ services: [{ serviceId, status: healthy|crashed|starting|standby|none|unknown, machines, failing }] }",
+    "cloudEvidence": "openapi.yaml:6083-6150; daemon src/server.ts:535-539, src/engine.ts:718-750; console service-status.tsx:79-86 renders standby as 'Sleeping'"
+   },
+   {
+    "method": "POST",
+    "path": "/projects/:id/services/:sid/start|stop|suspend|restart?branch=",
+    "request": "",
+    "response": "{ service, state }",
+    "cloudEvidence": "openapi.yaml:5264 (start = wake, clears stop intent), 5309, 5355, 5401; daemon src/server.ts:323-342"
+   },
+   {
+    "method": "PUT",
+    "path": "/projects/:id/services/:sid/always-on",
+    "request": "{ enabled: boolean }",
+    "response": "200 { service } | 400 | 404",
+    "cloudEvidence": "openapi.yaml:6027-6082; insta-platform src/server.ts:2167; CLI compute.ts:598; daemon 501 today src/server.ts:505"
+   },
+   {
+    "method": "GET",
+    "path": "/projects/:id/services/:sid/limits",
+    "request": "",
+    "response": "{ limits: {cpu, memoryMb}, cap: {cpu, memoryMb, volumeGib}, volume?: {sizeGib, mountPath} }",
+    "cloudEvidence": "openapi.yaml:5583-5640; insta-platform src/server.ts:2003; CLI compute.ts:735; console service-settings.tsx:363-410; daemon 501 today src/server.ts:503"
+   },
+   {
+    "method": "PUT",
+    "path": "/projects/:id/services/:sid/limits",
+    "request": "{ memoryMb (multiple of 256), cpu? }",
+    "response": "{ service, limits, cap } | 202 approval | 400",
+    "cloudEvidence": "openapi.yaml:5640-5766; insta-platform src/server.ts:2024; CLI compute.ts:745; daemon 501 today src/server.ts:504"
+   },
+   {
+    "method": "GET",
+    "path": "/projects/:id/database/instance?branch=",
+    "request": "",
+    "response": "{ id, name, state, host, port, scaleToZero, cpuMilli?, memoryMib?, volumeSize, volumeGib, cap }",
+    "cloudEvidence": "openapi.yaml:7391-7453; CLI db.ts:66; console db-scale-to-zero-row.tsx:40-47; daemon src/server.ts:428, src/engine.ts:1016-1030"
+   },
+   {
+    "method": "PATCH",
+    "path": "/projects/:id/database/settings?branch=",
+    "request": "{ scaleToZero?: boolean, cpu?: '2', memory?: '4Gi', volumeSize?: '10Gi' }",
+    "response": "the instance object",
+    "cloudEvidence": "openapi.yaml:7454-7552 (fields connectionPooling, deletionProtection, scaleToZero, cpu, memory, idleTimeout, volumeSize); CLI db.ts:23 and :115; daemon src/server.ts:434, src/engine.ts:1033-1049"
+   },
+   {
+    "method": "POST",
+    "path": "/projects/:id/services/:sid/rename",
+    "request": "{ name }",
+    "response": "{ service }",
+    "cloudEvidence": "openapi.yaml:5060; daemon src/server.ts:373"
+   },
+   {
+    "method": "GET",
+    "path": "/projects/:id/services/:sid/volume",
+    "request": "",
+    "response": "{ sizeGib, mountPath }",
+    "cloudEvidence": "openapi.yaml:5767; daemon src/server.ts:398"
+   },
+   {
+    "method": "POST",
+    "path": "/projects/:id/services",
+    "request": "{ type: postgres|storage|compute|redis|mysql|mongodb, name, branch?, public?, image?, port?, alwaysOn?, volumeGib? }",
+    "response": "201 { service } | 202 approval | 409",
+    "cloudEvidence": "openapi.yaml:4180-4330 (image, port, alwaysOn, volumeGib, public fields); cap per type per branch insta-platform src/config.ts:469-474 (free 5); console create-service-dialog.tsx:106-126; daemon src/server.ts:281-317"
+   },
+   {
+    "method": "DELETE",
+    "path": "/projects/:id/services/:sid",
+    "request": "",
+    "response": "{ teardown? } | 202",
+    "cloudEvidence": "openapi.yaml:4870-4930; daemon src/server.ts:620-631 (postgres/storage 501 today, project-parity WP lifts it)"
+   },
+   {
+    "method": "POST",
+    "path": "/projects/:id/deploy",
+    "request": "{ image, port?, group?, branch? }",
+    "response": "{ url, branch, group } | 202 approval",
+    "cloudEvidence": "openapi.yaml:6730-6812; daemon src/server.ts:232-239"
+   },
+   {
+    "method": "GET",
+    "path": "/templates",
+    "request": "?query=&category= (optional; the SPA filters client-side)",
+    "response": "{ templates: TemplateListItem[] }",
+    "cloudEvidence": "openapi.yaml:6814-6848; insta-platform src/server.ts:2614-2637 (security: []); CLI template.ts:312; console templates.ts:3-4, template-picker.tsx:104-130"
+   },
+   {
+    "method": "GET",
+    "path": "/templates/:code",
+    "request": "",
+    "response": "{ template: TemplateDetail } | 404",
+    "cloudEvidence": "openapi.yaml:6849-6881; insta-platform src/server.ts:2638; CLI template.ts:319, 366-368"
+   },
+   {
+    "method": "POST",
+    "path": "/projects/:id/template-deployments",
+    "request": "{ templateCode, branch, variables: Record<string,string>, deploymentId? }",
+    "response": "202 { deploymentId, deployment } | 202 approval_required | 400 missing_variables | 409",
+    "cloudEvidence": "openapi.yaml:6882-7021; insta-platform src/server.ts:2679-2760; CLI template.ts:381-395"
+   },
+   {
+    "method": "GET",
+    "path": "/template-deployments/:id",
+    "request": "",
+    "response": "TemplateDeployment",
+    "cloudEvidence": "openapi.yaml:7022-7048 and schema 2107-2173; insta-platform src/server.ts:2762; CLI template.ts:283-302 polls every 2 s with steps create_services|write_variables|deploy|health_check"
+   },
+   {
+    "method": "GET",
+    "path": "/projects/:id/compute/domains?branch=&group=",
+    "request": "",
+    "response": "{ items: DomainResult[] } | 501 in local mode",
+    "cloudEvidence": "insta-platform src/server.ts:2797-2801 (route table; hidden from the spec); console custom-domain-tab.tsx:89-131 reads it on load (#292)"
+   },
+   {
+    "method": "POST",
+    "path": "/projects/:id/compute/domain",
+    "request": "{ hostname, branch, group }",
+    "response": "DomainResult | 202 approval (deploy gate) | 409",
+    "cloudEvidence": "insta-platform src/server.ts:2781-2788; CLI compute.ts:288; daemon 501 today src/server.ts:509"
+   },
+   {
+    "method": "GET",
+    "path": "/projects/:id/compute/domain?hostname=&branch=&group=",
+    "request": "",
+    "response": "DomainResult (status 'not added' when unknown)",
+    "cloudEvidence": "insta-platform src/server.ts:2789-2795; deploy.ts:589-603; CLI compute.ts:305; daemon 501 today src/server.ts:510"
+   },
+   {
+    "method": "DELETE",
+    "path": "/projects/:id/compute/domain",
+    "request": "{ hostname, branch, group }",
+    "response": "{ hostname, flyApp } | 202 approval",
+    "cloudEvidence": "insta-platform src/server.ts:2802-2808; CLI compute.ts:315; daemon 501 today src/server.ts:511"
+   },
+   {
+    "method": "GET",
+    "path": "/projects/:id/database/metrics|activity|query-stats?branch=",
+    "request": "",
+    "response": "unchanged, plus 503 { error: 'database is sleeping\u2026' } when the branch database is asleep (daemon-internal status on a cloud route)",
+    "cloudEvidence": "openapi.yaml:9507, 9616, 9679; daemon src/server.ts:122-140"
+   },
+   {
+    "method": "POST",
+    "path": "/projects/:id/approvals/:aid/approve|deny",
+    "request": "{ always? }",
+    "response": "{ approval }",
+    "cloudEvidence": "openapi.yaml:11275, 11319; daemon src/server.ts:271-272 (unchanged, reused by ApprovalPrompt for every new gated call)"
+   }
+  ]
+ },
+ "algorithm": "A. Boot and mode detection (AuthGate, api.me)\n1. On first render AuthGate calls GET /me with the browser's cookies (same origin, fetch default credentials). Map: 200 with user.id === 'local' -> mode 'local'; 200 otherwise -> mode 'server' with user; 401 and body.error starts with 'setup required' -> 'setup'; any other 401 -> 'login'; network failure -> the existing 'daemon unreachable' CenterNote.\n2. mode 'setup' -> Navigate /setup (replace). mode 'login' -> Navigate `/login?next=<encoded pathname+search>` unless pathname is /login or /setup. Otherwise render children. The context value {mode, user, refresh} is read by Layout (TopBar), Setup, Login, Tokens, Services (server-only affordances).\n3. api.call: after fetch, if res.status === 401 and pathname not in {/login,/setup}, invoke api.onUnauthorized() (AuthGate sets mode 'login', which triggers the redirect) and still return {kind:'error',status:401}. Never redirect on 401 from /auth/login itself (wrong password).\n4. Local mode never shows Setup, Login, Tokens, the user menu or the Domains section; the Services always-on switches and Sleeping states still render (the scheduler runs in local mode too).\n\nB. Setup page\n1. Guard: if useAuth().mode !== 'setup' -> Navigate '/'.\n2. Form validation client-side: email non-empty and contains '@'; password length >= 8 (cloud minLength, openapi.yaml:2434); confirm === password. Submit disabled otherwise.\n3. Submit: r1 = POST /auth/signup {email, password, name?}. 403 -> show 'An admin already exists. Sign in instead.' with a link to /login. 400 -> body.error. 200 -> r2 = POST /auth/login {email, password}; on 200 the cookie is set by the response; call refresh() (re-runs GET /me) and move to step 2.\n4. Step 2 'Create a CLI token' embeds TokenCreate with name default 'laptop'. POST /tokens {name} -> 201 {token, record}. Show token once in a monospace box with CopyButton, and the line `insta login --api-key <token> --api-url <apiUrlForCli(location.origin)>` with its own CopyButton. Note: 'This key is shown once.' 'Skip' and 'Open dashboard' both navigate('/').\n5. apiUrlForCli(origin): parse URL; if hostname starts with 'console.' replace that label with 'api.' and keep protocol and port; else return origin unchanged (local mode, raw IP). Pure, unit-tested.\n\nC. Login page\n1. Fields email, password; submit -> POST /auth/login. 200 -> refresh() then navigate(safeNext) where safeNext = next param only if it starts with '/' and not '//' else '/'. 401 -> 'Wrong email or password.' 403/other -> body.error. Enter key submits.\n2. A 'First run? Create the admin' link appears only when GET /me answered setup required (mode 'setup'); otherwise not shown.\n\nD. Tokens page (/account/tokens)\n1. Guard: mode must be 'server' (local -> Navigate '/').\n2. usePoll(api.tokens, [], 30000). Rows: tokens.filter(t => !t.revokedAt) sorted by createdAt desc. Columns: name; `${prefix}\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022`; relTime(createdAt); lastUsedAt ? relTime : 'never'; expiresAt ? date : 'never'.\n3. Create: name required (trim), optional expiry Select (30, 90, 365 days, never) -> POST /tokens {name, expiresInDays?}. On 201 render the reveal panel (same as Setup step 2) and reload the list. 400 -> error under the input.\n4. Revoke: kebab -> ConfirmDialog 'Revoking <name> immediately breaks anything using it.' -> DELETE /tokens/:id -> reload. 404 -> 'Already revoked.' then reload.\n\nE. Sign out (TopBar menu)\nPOST /auth/logout {} -> regardless of result, navigate('/login') and call refresh(); the daemon clears the cookie.\n\nF. Services page\n1. Data: services = usePoll(api.services(p,branch)), health = usePoll(api.runtimeHealth(p,branch)); both intervalMs = anyWaking ? 2000 : 5000. Index health by serviceId.\n2. deriveStatus(row, h, waking) (ui/src/lib/status.ts), evaluated in this order:\n   a. waking -> {kind:'waking', label:'Waking'} (spinner).\n   b. no h or h.status === 'unknown' -> if row.runtime is 'online' -> online, else unknown ('\u2014').\n   c. h.status 'healthy' -> online (green dot 'Online').\n   d. h.status 'starting' -> starting (spinner 'Starting').\n   e. h.status 'crashed' -> crashed (destructive 'Crashed', title 'Not answering on its port; check Logs').\n   f. h.status 'none' -> none ('Not deployed').\n   g. h.status 'standby': if row.type === 'compute' and row.desired_state === 'stopped' -> stopped ('Stopped'); if row.desired_state === 'suspended' -> suspended ('Suspended'); else sleeping ('Sleeping', muted dot, title 'Idle; wakes on the next request' for compute, 'Idle; wakes on the next connection' for databases). wakeable = kind === 'sleeping' && row.type === 'compute'.\n   Storage rows have no health row (cloud omits storage) -> show '\u2014' unless row.runtime given (today's field), then Online/Stopped.\n3. Wake: the Wake button (compute + sleeping only, per the cloud's start route) calls POST .../start?branch=; on ok: waking.wake(sid) (records Date.now()); on approval -> ApprovalPrompt with retry; on error -> ErrorNote. useWaking clears an entry when the next health read says healthy or crashed, or when Date.now() - startedAt > 60000 (the router's hold bound). Database rows show no Wake button; their Sleeping label says wakes on connect.\n4. URL column: HostLink shows row.domain (bare host[:port]); if row.endpoint matches /^https?:\\/\\// render as <a href target=_blank rel=noreferrer>; else plain text; CopyButton copies endpoint when present else domain. For a sleeping compute service the link keeps working (the router wakes on request); tooltip says so.\n5. Always on column: compute and managed rows render <Switch checked={!!row.always_on}> -> PUT .../always-on {enabled}; on ok reload; 202 -> ApprovalPrompt (the cloud route is ungated, the daemon keeps it ungated; the handler is still written through the approval-aware path). Postgres row: Switch checked = !dbInstance.scaleToZero (usePoll(api.dbInstance(p,branch), 15000)); disabled until the instance read lands (console db-scale-to-zero-row.tsx:40-61); toggle -> PATCH /database/settings?branch= {scaleToZero: !checked} -> reload. Storage: no switch.\n6. Row kebab: compute: Start/Stop/Suspend when online else Start; Restart (POST .../restart, gated deploy); Rename; Remove (X). Managed: Rename, Remove. Postgres: Remove (only when the project has more than one postgres? No: the daemon decides; the UI shows Remove and surfaces 409/501 messages). Storage: Make Public/Private, Remove.\n7. Header: 'Deploy' (primary) opens DeployDialog; 'Add Service' (secondary) opens AddServiceDialog. Empty state when services.length === 0: 'No services yet. Add a database or storage, or deploy an app or a template.'\n8. Row click (name cell) -> navigate(`services/${row.id}`).\n\nG. Service detail page (services/:sid)\n1. Find the row in api.services; 404 -> back to the list. Header: name, StatusCell with Wake, HostLink, template badge when template_code.\n2. Tabs Overview | Settings (Tabs/Tab from @insforge/ui as in Logs.tsx:55-58).\n3. Settings > General: name Input + Save -> POST .../rename {name}; 409 shown inline.\n4. Settings > Sleep: Switch 'Always on' with hint 'Never put to sleep when idle. Off: sleeps after the idle window and wakes on the next request (compute) or connection (databases).' Same calls as F.5. For compute with desired_state 'stopped' the hint adds 'This service is stopped; Start it to re-enable wake on request.'\n5. Settings > Resources (compute and managed): usePoll(api.limits(p,sid), 30000) -> inputs cpu (integer 1..cap.cpu) and memory (MB, step 256, 256..cap.memoryMb); a caption 'This machine: <cap.cpu> vCPU, <cap.memoryMb> MB'. Save -> PUT .../limits {memoryMb, cpu}; validation before send: memoryMb % 256 === 0, cpu >= 1; 400 shown inline; 202 -> ApprovalPrompt. Postgres: inputs cpu (vCPU, string like '2') and memory ('4Gi') from dbInstance.cpuMilli/1000 and memoryMib/1024 -> PATCH /database/settings {cpu, memory}.\n6. Settings > Volume: GET .../volume -> 'sizeGib Gi mounted at mountPath'; grow input -> PUT .../volume {sizeGib} (grow-only; 400 inline). 404 -> 'No volume' with 'Attach' (PUT with a size).\n7. Settings > Domains (compute only): on mount GET /compute/domains?branch&group. 501 -> hide the whole section (local mode); 404 -> treat as empty. Add: hostname normalized (lowercase, strip scheme/path/trailing dot) and validated by the cloud's rule /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,}$/ -> POST /compute/domain {hostname, branch, group}; 202 -> ApprovalPrompt retry; 409 -> body.error ('already attached'). Card per item: hostname, stage badge from domainStage(r): r.status === 'error' or r.errorReason -> 'error'; r.configured && r.status === 'active' && no dns[].status in {missing, mismatch} -> 'active'; some dns[].status === 'ok' or r.ssl === 'pending' -> 'verifying'; else 'needs-records'. Hints: active 'Serving over HTTPS.'; verifying 'Records found. The certificate is being issued; click Verify to re-check.'; needs-records 'Create the DNS records below at your DNS provider, then click Verify.'; error r.errorReason. DNS table rows: type, name, value (CopyButton each). Verify -> GET /compute/domain?hostname&branch&group -> replace the card's result; toast-like inline note when the stage changes. Remove -> ConfirmDialog -> DELETE /compute/domain {hostname, branch, group} -> reload.\n8. Settings > Danger: Remove service -> ConfirmDialog -> DELETE /projects/:id/services/:sid -> navigate back.\n\nH. Deploy dialog\n1. Tabs Image | Template; both submit into the current URL branch.\n2. Image lane: image Input (required, trimmed), port Input (number, default 8080), target Select listing compute rows plus 'New service\u2026' which reveals a name Input (lower-kebab). Submit -> POST /projects/:id/deploy {image, port, group, branch}. Result ok -> close, reload services, and mark the group waking (the container is starting). 202 approval -> ApprovalPrompt with retry(submit). 400 -> inline error.\n3. Template lane, phase 1 (pick): TemplatePicker over GET /templates: SearchInput filters client-side on code, name, tagline, tags (the fields the cloud's ?query matches, console templates.ts:282-290); category rail lists 'all' plus categories present in the query-filtered set with counts. Row click -> GET /templates/:code -> phase 2.\n4. Phase 2 (form) uses lib/templateVars.ts: flattenVariables(detail) = [...detail.variables.required.map(v=>({...v,required:true})), ...detail.variables.optional.map(v=>({...v,required:false}))] de-duplicated by name (first wins, required OR-ed), the CLI's rule (template-manifest.ts:206-224). For each variable: mustFill = required && generate == null && default === undefined. Render required group first, optional group collapsed as 'Optional (N)'. Input placeholder: generate ? 'generated on deploy' : default !== undefined ? `default: ${default}` : ''. isSecretName(name) = /(PASSWORD|SECRET|TOKEN|_KEY$|API_KEY|PRIVATE)/.test(name) -> type=password with an eye toggle. canSubmit(vars, values) = every mustFill var has values[name].trim() !== ''. payloadVariables(values) drops keys whose trimmed value is '' (the platform treats blank as absent; templates/scripts/variables-lib.mjs:14-20, CLI template.ts:153-165).\n5. Submit -> POST /projects/:id/template-deployments {templateCode, branch, variables}. Responses: 202 with status 'approval_required' -> ApprovalPrompt retry(submit) (gates may chain: service.add, secrets.write, deploy; each retry may 202 again with a new action until accepted). 202 with deploymentId -> phase 3. 400 with error === 'missing_variables' -> mark each missing[].name (or .key) as required-empty and keep the form. 409 -> inline body.error (in progress, copy cap). 404 -> 'Template not found.'\n6. Phase 3 DeploymentProgress: poll GET /template-deployments/:id every 2000 ms (CLI cadence, template.ts:302) until status in {succeeded, failed, partial} or 15 min. stepIndex = ['create_services','write_variables','deploy','health_check'].indexOf(step); mark steps < stepIndex done, stepIndex active, rest pending; succeeded marks all done. Services list: name, state badge (pending/created/deployed muted; healthy success; failed destructive), url link when present. failed/partial: show error and logsTail in a scrollable <pre>. Buttons: 'Close' (always), 'Open service' when exactly one service has a url. On close reload services and mark the new groups waking if health is not yet healthy.\n7. The dialog is also opened from Templates with {templateCode} preselected: it jumps straight to phase 2.\n\nI. Templates gallery page (/p/:projectId/:branch/templates)\n1. usePoll(api.templates, [], 60000) (one fetch per minute; the catalog is static locally). Search and category as in H.3. Grid of cards: TemplateLogo(logoUrl) with a fallback tile (first letter), name, tagline (line-clamp 2), Badge category label (map: ai-agent -> 'AI agent', otherwise the raw value with dashes to spaces), version, license when not null.\n2. Card click -> GET /templates/:code -> TemplateDetailDialog: header (logo, name, tagline, maintainer, version, links: upstream repo, documentationUrl), Services table (name, type, image, port, volume yes/no, always on yes/no) from the services map, Variables (required with descriptions; optional collapsed), README rendered by components/Markdown.tsx (raw HTML escaped), footer 'Deploy to <branch>' -> DeployDialog(templateCode).\n3. Sidebar item 'Templates' after 'Service'.\n\nJ. Add Service dialog\n1. Type Select default 'compute'. Name Input validated /^[a-z0-9]([a-z0-9-]{0,37}[a-z0-9])?$/ (the cloud's lower-kebab, max 39). compute: image (optional), port (default 8080, only when image set), Always on Switch (default off, hint 'Off: sleeps when idle and wakes on request'), Volume Switch + size Gi (default 1). storage: Public Switch. postgres/redis/mysql/mongodb: name only.\n2. Submit -> POST /projects/:id/services {type, name, branch, ...(compute: image?, port?, alwaysOn, volumeGib?), ...(storage: public)}. 201 -> close, reload. 202 -> ApprovalPrompt retry. 409 -> 'A <type> named <name> already exists.' 400 -> body.error (for example the per-type cap).\n\nK. Database page sleeping state\n1. The three reads keep their intervals (10/10/15 s). When a read fails with status 503 and /sleeping/i.test(message): set sleeping=true, disable all three polls (usePoll enabled=false), render EmptyState (icon Moon) 'Postgres is sleeping' + body 'It wakes on the next connection. Turn on Always on in the service settings to keep it warm.' + buttons 'Service settings' (navigate services/pg-db) and 'Check again' (re-enable polls once).\n2. Nothing on this page wakes the database; the daemon's observability reads never wake (engine seam).\n\nL. Visibility matrix (mode -> shown)\nlocal: Services, Environments, Templates, Deploy, Add Service, ServiceDetail (Domains hidden after 501), Sleeping/Wake, Always on, Logs, Database, Secrets, Approvals, Operations, Usage, Settings. Hidden: Setup, Login, Tokens, user menu.\nserver: everything above plus Setup (once), Login, /account/tokens, user menu, Domains.\n\nM. Routing and static serving\n1. SPA client routes added: /setup, /login, /account/tokens, /p/:projectId/:branch/templates, /p/:projectId/:branch/services/:sid. None collides with an API prefix: isApiPath (src/server.ts:672-673) matches exact '/tokens' or '/tokens/\u2026', so '/account/tokens' falls to index.html; '/auth', '/api', '/templates', '/template-deployments' must be added to isApiPath so a browser hitting /templates gets JSON as on the cloud (the SPA gallery lives under /p/\u2026/templates).\n2. ui/vite.config.ts API_PREFIXES gains '/auth', '/api', '/templates', '/template-deployments', '/regions'. Dev cookie flow works because the proxy is same host (localhost) and the daemon sets Secure only over https.\n3. Fetches stay same-origin with default credentials; no Authorization header is ever stored in the browser (the session is the HttpOnly cookie), so the SPA holds no secret except a just-minted token shown once.\n\nN. Polling and sleep interaction (invariant)\nThe dashboard's periodic reads are: /orgs/local/projects, /branches, /services, /runtime-health, /approvals, /healthz, /secrets/tree, /operations, /events, /policy, /logs, /metrics, /database/*, /tokens, /templates. All are answered from state.json, docker ps/logs/stats, or a 503 sleeping answer; none passes through a router lane, so an open dashboard tab never keeps a service awake. Only Wake (POST start), Deploy, template deploy, Restart, and clicking a service URL wake anything.",
+ "tests": [
+  "Fake-adapter (test/server.test.ts, no Docker): server mode without admin: GET /me -> 401 { error: 'setup required' }; POST /auth/signup {email,password<8} -> 400; valid -> 200 {}; second signup -> 403; POST /auth/login wrong password -> 401; right -> 200 AuthResult with accessToken/refreshToken/expiresIn/user and a Set-Cookie instad_session HttpOnly SameSite=Lax; GET /projects/x with only the cookie -> not 401; GET /me with the cookie -> 200 { user, via: 'jwt' }; POST /auth/logout -> { ok: true } and Set-Cookie clearing; GET /me after logout -> 401 { error: 'unauthorized' }.",
+  "Fake-adapter: local mode (INSTA_OSS_MODE unset): GET /me -> { user: { id: 'local' } } unchanged; /auth/login -> 501 or 404? Decide: 501 notCloud message 'auth is not needed in local mode' (assert the code, so the SPA's mode logic is exercised by a contract, not by a guess).",
+  "Fake-adapter: GET /tokens (cookie) -> { tokens: [] }; POST /tokens { name: 'laptop' } -> 201 { token: /^insta_[A-Za-z0-9_-]{24,}$/, record: { id, name, prefix: token.slice(0,12)?, scopes: [], createdAt, lastUsedAt: null, expiresAt: null, revokedAt: null } }; GET /me with Authorization: Bearer <token> -> 200 { via: 'api' }; DELETE /tokens/:id -> { ok: true }; bearer after revoke -> 401; DELETE unknown -> 404; POST /tokens with expiresInDays: 30 -> expiresAt about 30 days out.",
+  "Fake-adapter: GET /projects/:id/services rows carry always_on (compute default false, or the manifest/template value), image, port, domain as bare host (no scheme, matches /^[a-z0-9.-]+(:\\d+)?$/) and endpoint as a URL for compute; postgres domain 'pg-<ref>.<domain>' and endpoint host:5432.",
+  "Fake-adapter: runtime-health: a compute service whose container is exited with desiredState running and sleptAt set -> status 'standby'; exited with sleptAt null -> 'crashed'; desiredState stopped -> 'standby'; pg with dbSleptAt -> 'standby'.",
+  "Fake-adapter: PUT .../always-on { enabled: true } -> 200 { service: { always_on: true } }; missing enabled -> 400; storage service -> 400; the services list reflects it. PATCH /database/settings { scaleToZero: false } -> instance echoes scaleToZero false and GET /database/instance agrees.",
+  "Fake-adapter: GET .../limits -> { limits: { cpu, memoryMb }, cap: { cpu, memoryMb, volumeGib } } (cap from the host reader, injectable in tests); PUT { memoryMb: 512 } -> derives cpu; { memoryMb: 500 } -> 400 (multiple of 256); { memoryMb: cap+256 } -> 400; response carries { service, limits, cap }.",
+  "Fake-adapter: GET /templates -> templates[] with code/version/name/tagline/category/tags/logoUrl/license for every directory under templates/ that carries insta.template.yaml (8 today); GET /templates/hermes -> template.variables.required has ADMIN_USERNAME and ADMIN_PASSWORD with descriptions, optional has OPENROUTER_API_KEY; GET /templates/nope -> 404. Both routes answer without a session in server mode (cloud security: []).",
+  "Fake-adapter: POST /projects/:id/template-deployments { templateCode: 'hermes', branch: 'main', variables: {} } -> 400 { error: 'missing_variables', missing: [{ name: 'ADMIN_USERNAME', key, description }, \u2026] }; with both required -> 202 { deploymentId, deployment: { status: 'running', step: 'create_services' } }; GET /template-deployments/:id progresses (with the fake compute adapter) to succeeded with services[0].url set to the router hostname; a governance policy deploy=approve makes the POST answer 202 { status: 'approval_required', action: 'deploy', approvalId }.",
+  "Fake-adapter: GET /projects/:id/compute/domains?branch=main&group=web -> { items: [] } in server mode and 501 in local mode; POST /compute/domain { hostname: 'Shop.Example.com' } -> 200 { hostname: 'shop.example.com', configured: false, status: 'pending', dns: [{ type: 'CNAME', name: 'shop.example.com', value: 'web-<ref>.<domain>' }], service: 'web', region: 'local' }; list now has 1; GET /compute/domain?hostname=\u2026 -> same row; DELETE -> { hostname, flyApp }; list empty; POST with an invalid hostname -> 400; policy deploy=approve -> 202.",
+  "Fake-adapter: GET /projects/:id/database/metrics on a sleeping branch db -> 503 { error: /sleeping/ } and the fake db adapter records no query (observability never wakes).",
+  "Fake-adapter: SPA fallback: GET /setup, /login, /account/tokens, /p/x/main/templates return index.html when ui/dist exists; GET /templates returns JSON (isApiPath).",
+  "UI unit tests (vitest, pure modules under ui/src/lib, included by the root vitest config): status.test.ts covers every branch of deriveStatus (the table in algorithm F.2, including storage rows and unknown health); templateVars.test.ts: flatten/de-dup with required OR, mustFill rules for generate/default, canSubmit, payloadVariables drops blanks, applyMissing reads name or key, isSecretName cases; domains.test.ts: domainStage for the four stages plus HOSTNAME_RE accept/reject and normalizeHostInput; apiUrl.test.ts: console.x -> api.x keeps port and protocol, raw IP/localhost unchanged, cliLoginLine format.",
+  "Build gate: `npm run build:ui` (tsc --noEmit + vite build) stays green; no new runtime dependency in ui/package.json (Markdown renderer is hand-written; Switch, Tabs, Select, Badge, CopyButton, ConfirmDialog, SearchInput, Skeleton, EmptyState all exist in @insforge/ui 0.1.7 exports).",
+  "Docker integration (integrator only, never run by parallel implementers): none owned by this WP. The public e2e step 'setup page and token login' is a curl script: POST /auth/signup, POST /auth/login (capture cookie), POST /tokens, `insta login --api-key \u2026 --api-url https://api.<domain>`, `insta status`. A browser-level check of the dashboard is a later playwright step, not in v1."
+ ],
+ "risks": [
+  "Setup-vs-login discrimination rides on the 401 error text of GET /me ('setup required'); it is daemon-internal on both ends and pinned by a contract test, but any rewording breaks first-run. Alternative considered: a server-side redirect of '/' to '/setup' from the SPA fallback; rejected because the SPA cannot then distinguish after client-side navigation.",
+  "POST /auth/signup answering 200 {} relies on 'status' being optional in the cloud schema (platform server.ts:634 Type.Optional). If the reconciler prefers { status: 'verification_sent' } for byte parity, the Setup page must not read it either way (it does not).",
+  "Cookie sessions on a cloud API surface: the cloud's actor() reads only Bearer (platform server.ts:299-307). Accepting an HttpOnly cookie is a daemon-internal addition; CSRF exposure is bounded by SameSite=Lax plus JSON bodies (cross-site simple requests cannot carry application/json without a preflight), but the identity WP must reject state-changing requests whose Origin header is present and not the console origin.",
+  "The daemon's `endpoint` field changes meaning for compute (today host:port without scheme, src/engine.ts:465; target full URL). It is a dashboard-only additive field, but any script reading it breaks; the reconciler should confirm no CLI/MCP consumer.",
+  "Wake is compute-only because the cloud's start route is compute-only (openapi.yaml:5264). Users may expect a Wake on a sleeping Postgres row; the dashboard says 'wakes on the next connection' and offers Always on. If Tony wants a DB wake button, the only contract-clean door is making a database read a wake door, which contradicts the 'observability never wakes' rule.",
+  "The Database page shows a sleeping empty state instead of live signals; until the scheduler WP lands the 503 'sleeping' answer, the page keeps polling a stopped container and shows a 502 error (today's obsCode, src/server.ts:84).",
+  "Custom-domain UX depends on the router WP's DomainResult fields (dns[].status, ssl, errorReason). If the edge reports nothing per record, every domain renders as 'needs-records' until configured flips; acceptable, and the Verify button re-reads.",
+  "Templates gallery logos: recommending data: URIs in logoUrl (schema says 'absolute https URL') is a shape nuance the templates WP owns; the UI handles null and any URL, so the fallback tile covers the worst case.",
+  "Multiple postgres/storage per project (decision 6) means the dashboard can no longer assume ids 'pg-db' and 'st-store' (today src/engine.ts:434, 440; DatabaseInsight links to services/pg-db). The Database page must pick the first postgres row from /services when there are several; a per-service database picker is deferred to #18.",
+  "Polling load: Services page issues two reads every 5 s (2 s while waking) plus TopBar/SideBar polls; on a 2 GiB VPS this is negligible, but the state.ts write lock (spec, src/state.ts:31-37) must not serialize reads behind router stamps.",
+  "ApprovalPrompt retry loops for template deploys can chain three gates (service.add, secrets.write, deploy); each grant is one-shot, so a user who closes the prompt mid-chain leaves a consumed grant and must retry the deploy; matches the CLI's behaviour."
+ ],
+ "openQuestions": [
+  "Should GET /templates and GET /templates/:code stay public in server mode (cloud: security: [], platform server.ts:2614/2638) or be behind the session like every other route per spec section 2? Recommendation: public, matching the cloud; nothing sensitive is in the catalog.",
+  "Always-on switch label: mirror the console's inverse 'Scale to zero' switch (service-settings.tsx:161-187) or the CLI verb 'always-on'? Design uses 'Always on'; a one-line change either way.",
+  "Should the Add Service dialog default Always on to off (serverless by default on one node) while the cloud defaults compute to always-on (services.ts:98-99, INSTA_COMPUTE_ALWAYS_ON_DEFAULT)? Design sends the switch value explicitly and defaults off; confirm with the scheduler WP's INSTA_OSS_ALWAYS_ON_DEFAULT.",
+  "Local mode hostnames: does `domain` carry a port ('web-shop-main.localhost:8080') or does the router bind a privileged port so domains are bare? The UI treats domain as opaque host[:port] either way; the manifest parity question belongs to the router WP.",
+  "Does the reconciler want the plural GET /projects/:id/compute/domains (cloud route table only, hidden from openapi, platform server.ts:2797) in the fixed route list? Without it the Domains section cannot enumerate on load (the console hit this as #292).",
+  "Token expiry: cloud POST /tokens accepts expiresInDays; should the self-host default be 'never' (design) or a finite default?",
+  "Should the postgres row expose limits through PATCH /database/settings {cpu, memory} in v1 (design includes it, read from cpuMilli/memoryMib on /database/instance), or only compute/managed via /limits?",
+  "UI test runner placement: run ui/src/lib tests from the root vitest config (design, no new dependency) versus adding vitest to ui/package.json; the former needs the root tsconfig/eslint to include ui/src/lib/*.ts."
+ ],
+ "dependsOn": [
+  "WP identity (M0): server mode flag, admin in state, /auth/signup|login|logout with cookie + bearer, /me 401 discriminator, /tokens routes, isApiPath and SPA fallback additions, auth preHandler exemptions.",
+  "WP router (M1): hostnames in services rows (domain/endpoint), api./console. host routing to the daemon so the SPA stays same-origin, compute/domain(s) routes and DomainResult, 501 for domains in local mode.",
+  "WP scheduler (M2): sleptAt marks and runtime-health standby/starting mapping, wake through POST start, always-on and limits routes, dbInstance scaleToZero/cpuMilli/memoryMib, 503 'sleeping' on database observability reads, INSTA_OSS_ALWAYS_ON_DEFAULT.",
+  "WP templates (M4): /templates, /templates/:code, template-deployments routes and shapes, logoUrl policy, missing_variables 400.",
+  "WP project parity (M4): POST /projects/:id/services for every type with image/port/alwaysOn/volumeGib/public, empty project create, DELETE for postgres/storage, multiple postgres per project (Database page picks the first postgres row)."
+ ]
+}

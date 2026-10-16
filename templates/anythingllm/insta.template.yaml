@@ -1,0 +1,86 @@
+code: anythingllm
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+upstream:
+  repo: Mintplex-Labs/anything-llm
+  image: docker.io/mintplexlabs/anythingllm
+  pinned: "1.17.0"
+  license: MIT
+
+# Three values the operator never needs to read back, so they belong here rather than in
+# `required`, where a generator would mint a secret into a write-only store.
+#
+# JWT_SECRET is not optional despite reading like it. Single-user password mode checks
+# `!AUTH_TOKEN || !JWT_SECRET` and calls next() when either is missing, so a deploy with a password
+# and no JWT secret serves the whole app unauthenticated and says nothing about it.
+#
+# SIG_KEY and SIG_SALT are the passphrase and salt for the scrypt key AnythingLLM encrypts stored
+# data with. Left unset the server self-assigns random ones at boot and writes them to its .env; the
+# entrypoint keeps that file, but declaring them here means the key is the platform's and stays
+# stable even if the file is ever lost, instead of turning every encrypted row undecryptable.
+generated:
+  jwt_secret: secret:32
+  sig_key: secret:32
+  sig_salt: secret:32
+
+services:
+  anythingllm:
+    type: web
+    # Built from ./Dockerfile by templates-build-images.yml. The overlay exists only to redirect
+    # two paths onto the volume; see the Dockerfile for why neither is reachable with env alone.
+    image: ghcr.io/insforge/insta-oss/templates/anythingllm:1.0.0
+    port: 3001
+    # The server answers 200 with {"online":true} here, unauthenticated, and this is the same path
+    # upstream's own container HEALTHCHECK probes. `/` serves the SPA and would also answer 200,
+    # but it is the frontend bundle rather than a statement about the server.
+    healthcheck: /api/ping
+    # Nothing fires from inside the process: chats, embedding and document upload are all driven by
+    # an inbound request, which is itself what wakes the machine. Scheduled agent jobs are the one
+    # exception, and the README says so: switch this on if you create any.
+    alwaysOn: false
+    volume: true
+    env:
+      fixed:
+        # The image's own default, and the path the entrypoint turns into a symlink to /data/storage.
+        # Pointing it at /data directly would split the install in half: the Prisma datasource URL is
+        # the literal `file:../storage/anythingllm.db`, not env-driven, so the SQLite database would
+        # stay on the container filesystem while the documents moved to the volume.
+        STORAGE_DIR: /app/server/storage
+        SERVER_PORT: "3001"
+      generated:
+        JWT_SECRET: ${jwt_secret}
+        SIG_KEY: ${sig_key}
+        SIG_SALT: ${sig_salt}
+      required:
+        # One variable, not the usual pair: AnythingLLM's single-user mode is a password and nothing
+        # else, and its sign-in screen has no username field. Neither a `default:` nor a
+        # `generate:` on purpose. This password is the only thing between the URL and a workspace
+        # holding your documents and your provider keys, and a template variable is stored
+        # write-only, so a generated one would be a password nobody could ever read back.
+        ADMIN_PASSWORD:
+          description: "Password for the AnythingLLM sign-in screen. Pick your own: there is no username, this is the whole credential, and it also unlocks the admin settings where your LLM provider keys are stored"
+      # Everything else is set in the app's own Settings pages after deploy, which is where the
+      # provider list, the model picker and the API-key fields live. The two declared here are a
+      # deploy-form convenience for someone who already holds the key: filled in, the instance
+      # answers its first chat without a settings visit, and leaving both blank is a normal deploy
+      # that lands on the onboarding screen instead.
+      optional:
+        LLM_PROVIDER:
+          description: "Which LLM to chat with, as AnythingLLM's own provider id (e.g. openai, anthropic, gemini, ollama). Leave blank to choose one on the onboarding screen after deploy"
+        OPEN_AI_KEY:
+          description: "OpenAI API key (platform.openai.com/api-keys), used when LLM_PROVIDER is openai. Leave blank to add a key for any provider later under Settings > AI Providers"
+
+meta:
+  name: AnythingLLM
+  tagline: Private ChatGPT over your own documents
+  category: llm
+  tags: [llm, ai, rag]
+  # Architectures the published image carries. Upstream's 1.17.0 index carries both and this
+  # overlay adds only an entrypoint, so there is nothing architecture-specific to build.
+  architectures: [amd64, arm64]
+  logo: ./logo.svg
+  links:
+    upstream: https://github.com/Mintplex-Labs/anything-llm
+    documentation: https://docs.anythingllm.com

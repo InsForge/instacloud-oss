@@ -1,0 +1,91 @@
+# Studio has no auth and its machine has a public URL, so only gateway-signed requests get through.
+admin:
+  address:
+    socket_address:
+      address: 127.0.0.1
+      port_value: 9901
+
+static_resources:
+  listeners:
+    - name: studio
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 3000
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                '@type': >-
+                  type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: studio
+                normalize_path: true
+                merge_slashes: true
+                route_config:
+                  name: studio
+                  virtual_hosts:
+                    - name: studio
+                      domains:
+                        - '*'
+                      routes:
+                        # The platform's health gate: upstream's Studio healthcheck, open without the token.
+                        - match:
+                            path: /healthz
+                          route:
+                            cluster: studio
+                            prefix_rewrite: /api/platform/profile
+                            timeout: 30s
+                          typed_per_filter_config:
+                            envoy.filters.http.rbac:
+                              '@type': >-
+                                type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute
+                              rbac:
+                                rules:
+                                  action: ALLOW
+                                  policies:
+                                    allow_all:
+                                      permissions:
+                                        - any: true
+                                      principals:
+                                        - any: true
+                        - match:
+                            prefix: /
+                          route:
+                            cluster: studio
+                            timeout: 60s
+                          request_headers_to_remove:
+                            - x-insta-studio-token
+                http_filters:
+                  - name: envoy.filters.http.rbac
+                    typed_config:
+                      '@type': >-
+                        type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBAC
+                      rules:
+                        action: ALLOW
+                        policies:
+                          gateway:
+                            permissions:
+                              - any: true
+                            principals:
+                              - header:
+                                  name: x-insta-studio-token
+                                  string_match:
+                                    exact: '${STUDIO_TOKEN}'
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      '@type': >-
+                        type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: studio
+      type: STATIC
+      connect_timeout: 5s
+      load_assignment:
+        cluster_name: studio
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 3001

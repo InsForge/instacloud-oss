@@ -1,0 +1,112 @@
+code: documenso
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+# The official image with an entrypoint on top (see ./Dockerfile). Nothing about the application is
+# rebuilt: the Remix build, the Prisma migrations and the server are all upstream's, and
+# upstream's own docker/start.sh still runs as the last line of the entrypoint.
+upstream:
+  repo: documenso/documenso
+  image: docker.io/documenso/documenso
+  pinned: v2.20.0
+  license: AGPL-3.0-only
+
+generated:
+  # Signs the session cookie. Generated rather than required: nobody ever needs to read it back,
+  # and a required variable is stored write-only, so a value minted into one is lost on submit.
+  nextauth_secret: secret:64
+  # Encrypts the secrets Documenso keeps in its own database: TOTP secrets, API tokens and the
+  # per-organisation email transport config. Rotating either would make those rows unreadable, so
+  # both are generated once at deploy and then left alone.
+  encryption_key: secret:64
+  encryption_secondary_key: secret:64
+
+services:
+  db:
+    type: postgres
+
+  app:
+    type: web
+    image: ghcr.io/insforge/insta-oss/templates/documenso:1.0.0   # built from ./Dockerfile by templates-build-images.yml
+    port: 3000
+    # Upstream's own health route. It answers 200 once Prisma can reach the database, and the
+    # server only starts listening after `prisma migrate deploy` has finished, so a pass means the
+    # schema is there too. A missing signing certificate is reported as `warning` and still 200;
+    # only a database it cannot query makes it 500. `/` answers 200 as well, but it is the marketing
+    # redirect shell rather than a statement about readiness.
+    healthcheck: /api/health
+    # Documenso's default jobs provider is `local`: a job is triggered by the request that created
+    # it, over an internal HTTP call to this same service, so an idle machine is woken by the
+    # inbound request that needs it. There is no scheduler and no queue consumer to keep warm.
+    alwaysOn: false
+    # The signing certificate the entrypoint generates, at /data/signing/cert.p12. Documents
+    # themselves do not live here: NEXT_PUBLIC_UPLOAD_TRANSPORT is `database`, so the PDFs are rows
+    # in the managed Postgres above.
+    volume: true
+    env:
+      fixed:
+        PORT: "3000"
+        # What Documenso writes into signing links, emails and webhook payloads. Wrong here and
+        # every link it mails points somewhere that is not this deployment.
+        NEXT_PUBLIC_WEBAPP_URL: ${services.app.url}
+        # The address the server calls itself on to run a background job. Staying inside the
+        # machine keeps a job off the public edge and out of the request path it was spawned from.
+        NEXT_PRIVATE_INTERNAL_WEBAPP_URL: http://localhost:3000
+        # Upstream's default, and the one that needs no second service: an uploaded PDF is a row in
+        # Postgres. The `s3` transport is the alternative and it is not wired up here.
+        NEXT_PUBLIC_UPLOAD_TRANSPORT: database
+        NEXT_PRIVATE_JOBS_PROVIDER: local
+        # File-based PKCS#12 signing, against the certificate ./entrypoint.sh generates on first
+        # boot. `gcloud-hsm` and `csc` are the other two transports and neither is wired up here.
+        NEXT_PRIVATE_SIGNING_TRANSPORT: local
+        NEXT_PRIVATE_SIGNING_LOCAL_FILE_PATH: /data/signing/cert.p12
+        # Plain authenticated SMTP, which is what the four required variables below describe.
+        # Documenso also speaks `resend`, `smtp-api` and `mailchannels`; those take different
+        # variables and are not wired up here.
+        NEXT_PRIVATE_SMTP_TRANSPORT: smtp-auth
+      platform:
+        NEXT_PRIVATE_DATABASE_URL: ${{services.db.DATABASE_URL}}
+      generated:
+        NEXTAUTH_SECRET: ${nextauth_secret}
+        NEXT_PRIVATE_ENCRYPTION_KEY: ${encryption_key}
+        NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY: ${encryption_secondary_key}
+      required:
+        # Documenso cannot be signed into without working email. Sign-up does not sign you in: it
+        # mails a confirmation link, and /signin refuses an account whose email is unverified
+        # (packages/auth/server/routes/email-password.ts). Signing invitations, completion
+        # notices and password resets are email too. So these four are what the deploy form asks
+        # for, and a deployment without them would have no way in.
+        NEXT_PRIVATE_SMTP_HOST:
+          description: "SMTP server hostname, e.g. `smtp.resend.com` or `email-smtp.us-east-1.amazonaws.com`. From your email provider; Documenso cannot be signed into without one, because sign-up is confirmed by email"
+        NEXT_PRIVATE_SMTP_USERNAME:
+          description: "Username for that SMTP server. From your email provider; often an API key id rather than an address"
+        NEXT_PRIVATE_SMTP_PASSWORD:
+          description: "Password or API key for that SMTP server. From your email provider"
+        NEXT_PRIVATE_SMTP_FROM_ADDRESS:
+          description: "Address every Documenso email is sent from, e.g. `documenso@yourdomain.com`. It has to be one your SMTP provider lets you send as, or the provider will reject the message"
+      optional:
+        NEXT_PRIVATE_SMTP_PORT: "Port on the SMTP server. Defaults to 587, which is STARTTLS submission; use 465 with NEXT_PRIVATE_SMTP_SECURE set to true for implicit TLS"
+        NEXT_PRIVATE_SMTP_SECURE: "Set to true to open the connection in TLS from the first byte, which is what port 465 wants. Leave empty for 587"
+        NEXT_PRIVATE_SMTP_FROM_NAME: "Display name on the From header. The entrypoint uses `Documenso` when this is empty"
+        NEXT_PRIVATE_SIGNING_LOCAL_FILE_CONTENTS: "Your own PKCS#12 signing certificate, base64 encoded. Set this and the entrypoint generates nothing: the self-signed certificate it would otherwise make is fine for testing, but a signature anyone else has to trust needs a certificate from a CA. Documenso reads only the legacy PKCS#12 ciphers, so export it with `-keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1`"
+        NEXT_PRIVATE_SIGNING_PASSPHRASE: "Passphrase for that certificate. Only meaningful alongside NEXT_PRIVATE_SIGNING_LOCAL_FILE_CONTENTS: the generated one has none"
+        NEXT_PUBLIC_DISABLE_SIGNUP: "Set to true to close sign-up once your own accounts exist. The URL is public, so until you do, anyone who finds it can create an account"
+        NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS: "Comma-separated email domains allowed to sign up, e.g. `yourcompany.com`. A narrower alternative to closing sign-up outright"
+        NEXT_PUBLIC_DOCUMENT_SIZE_UPLOAD_LIMIT: "Largest upload Documenso offers, in MB. Defaults to 5. Every PDF is stored as a row in Postgres here, so raising it raises what the database holds"
+        NEXT_PRIVATE_DOCUMENSO_LICENSE_KEY: "Enterprise license key, from Documenso. Only needed for the enterprise features; everything in the AGPL build works without it"
+
+meta:
+  name: Documenso
+  tagline: Self-hosted document signing with a real PDF signature
+  # The nearest category in the closed set: Documenso automates a document's route through its
+  # signers, with webhooks and an API around it. See the PR for whether this wants one of its own.
+  category: automation
+  tags: [documents, signing]
+  # Upstream's v2.20.0 index carries both, and the overlay is a shell script and a chmod.
+  architectures: [amd64, arm64]
+  logo: ./logo.png
+  draft: false
+  links:
+    upstream: https://github.com/documenso/documenso
+    documentation: https://docs.documenso.com/docs/self-hosting

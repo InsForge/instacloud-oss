@@ -53,7 +53,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 RUN npm install -g --allow-scripts=bun bun && npm cache clean --force
 
 # upstream pin: keep in sync with insta.template.yaml (upstream.pinned)
-RUN npm install -g @anthropic-ai/claude-code@2.1.235
+RUN npm install -g @anthropic-ai/claude-code@2.1.296
 
 ENV HOME=/data/home
 # ~/.local/bin is on the volume. /.insta/tools/bin is the platform toolbox (gh), when mounted.

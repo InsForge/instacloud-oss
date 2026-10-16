@@ -1,5 +1,5 @@
 # Pinned by index digest, not by one of its children, so the arm64 half resolves too.
-FROM docker.io/mintplexlabs/anythingllm:1.17.0@sha256:f26f30df46916b6e953e3a47ca98f48817726e3df635e62d4bfdd133292ecfff
+FROM docker.io/mintplexlabs/anythingllm:1.18.0@sha256:5461782e7db41318a516925949a8f8366e258dd576411fca7961fe77dff054cc
 
 # Two paths upstream writes to are not reachable from the manifest, and both of them are state.
 #

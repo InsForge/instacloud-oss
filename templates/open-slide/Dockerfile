@@ -31,7 +31,7 @@ RUN npx --yes @open-slide/cli@${OPEN_SLIDE_CLI_VERSION} init . --use-npm --no-gi
 # upstream pin: keep in sync with insta.template.yaml (upstream.pinned). The scaffold declares a
 # caret range for the runtime, which would move under a rebuild and silently change what a
 # deployed instance gets on its next image pull.
-ARG OPEN_SLIDE_VERSION=2.0.1
+ARG OPEN_SLIDE_VERSION=2.2.0
 RUN npm install --save-exact @open-slide/core@${OPEN_SLIDE_VERSION} \
     && test "$(node -p "require('/opt/open-slide/node_modules/@open-slide/core/package.json').version")" = "${OPEN_SLIDE_VERSION}" \
     && ./node_modules/.bin/open-slide --version

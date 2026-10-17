@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkServiceRuntime, checkTypedFields } from './service-runtime.mjs';
+import { checkServiceRuntime, checkServiceSource, checkServiceWays, checkTypedFields } from './service-runtime.mjs';
 
 describe('checkServiceRuntime', () => {
   it('passes a service without the fields', () => {
@@ -58,5 +58,61 @@ describe('checkTypedFields', () => {
     for (const type of ['web', 'postgres']) {
       expect(checkTypedFields('x', { type, public: true }).errors, type).toEqual(['x: public is only valid on a storage service']);
     }
+  });
+});
+
+describe('checkServiceSource', () => {
+  it('passes a service without source', () => {
+    expect(checkServiceSource('app', { type: 'web', image: 'i:1' })).toEqual({ errors: [], warnings: [] });
+  });
+  it('takes owner and repo with the optional fields, and warns that it is cloud-only', () => {
+    const source = { owner: 'acme', repo: 'shop', branch: 'main', rootDir: 'apps/web', buildCommand: 'pnpm build' };
+    expect(checkServiceSource('app', { type: 'web', source })).toEqual({ errors: [], warnings: ['app: source is cloud-only today, the self-hosted runtime refuses it'] });
+  });
+  it('refuses a source that is not a map', () => {
+    for (const source of ['acme/shop', null, ['acme', 'shop']]) {
+      expect(checkServiceSource('app', { type: 'web', source }).errors, String(source)).toEqual(['app: source must be a map with owner and repo']);
+    }
+  });
+  it('refuses a key the platform does not take, and a missing owner or repo', () => {
+    expect(checkServiceSource('app', { type: 'web', source: { repo: 'shop', commit: 'abc' } }).errors)
+      .toEqual(['app: source.commit is not a source field', 'app: source.owner must be a non-empty string']);
+    expect(checkServiceSource('app', { type: 'web', source: { owner: 'acme', repo: ' ' } }).errors).toEqual(['app: source.repo must be a non-empty string']);
+  });
+});
+
+describe('checkServiceWays', () => {
+  const source = { owner: 'acme', repo: 'shop' };
+  const imageBuild = 'app: image and build are mutually exclusive: drop build:, keep image:';
+  const sourceWith = (other) => `app: source and ${other} are mutually exclusive: keep one`;
+  it('takes exactly one of image, build and source', () => {
+    for (const svc of [{ image: 'i:1' }, { build: 'Dockerfile' }, { source }]) {
+      expect(checkServiceWays('app', svc), JSON.stringify(svc)).toEqual({ errors: [] });
+    }
+  });
+  it('asks for one when none is given, and an empty or null image or build with nothing else is none', () => {
+    for (const svc of [{}, { image: '' }, { build: '' }, { image: null }, { image: '', build: '' }]) {
+      expect(checkServiceWays('app', svc).errors, JSON.stringify(svc)).toEqual(['app: needs image, build or source']);
+    }
+  });
+  it('refuses image and build together with the existing sentence', () => {
+    expect(checkServiceWays('app', { image: 'i:1', build: 'Dockerfile' }).errors).toEqual([imageBuild]);
+  });
+  it('refuses source beside image or build', () => {
+    expect(checkServiceWays('app', { image: 'i:1', source }).errors).toEqual([sourceWith('image')]);
+    expect(checkServiceWays('app', { build: 'Dockerfile', source }).errors).toEqual([sourceWith('build')]);
+  });
+  it('counts a key by presence, so an empty or null image or build beside another way is still refused', () => {
+    for (const extra of [{ image: '' }, { image: null }]) {
+      expect(checkServiceWays('app', { source, ...extra }).errors, JSON.stringify(extra)).toEqual([sourceWith('image')]);
+    }
+    for (const extra of [{ build: '' }, { build: null }]) {
+      expect(checkServiceWays('app', { source, ...extra }).errors, JSON.stringify(extra)).toEqual([sourceWith('build')]);
+    }
+    expect(checkServiceWays('app', { image: 'i:1', build: '' }).errors).toEqual([imageBuild]);
+  });
+  it('reads a null source as present, never as absent', () => {
+    expect(checkServiceWays('app', { source: null })).toEqual({ errors: [] });
+    expect(checkServiceWays('app', { image: 'i:1', source: null }).errors).toEqual([sourceWith('image')]);
   });
 });

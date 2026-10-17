@@ -48,3 +48,18 @@ If a deploy fails, check `insta build . --explain` for build-side problems, `ins
 <Note>
 On self-hosted InstaCloud OSS, source deploys build locally with Docker (there is no remote builder, so `insta build logs` is cloud-only) and `insta compute logs --deploy` is cloud-only. `insta secrets bind` answers `501`: every compute container already receives each service's credentials under their own names, so read those (`insta secrets list` names them) or set your own with `insta secrets set`. The command-by-command list is in [COMPATIBILITY.md](https://github.com/InsForge/instacloud-oss/blob/main/COMPATIBILITY.md).
 </Note>
+
+## Roll back a deploy
+
+If a version serves and then breaks, list the service's deployments and put an earlier one back. Nothing is rebuilt.
+
+```bash
+insta compute deployments
+insta compute rollback
+```
+
+`insta compute deployments` lists the newest first and marks the one that is live. With no `--to`, `insta compute rollback` picks the newest successful deployment before the live one whose image differs from the live image. `--to <id>` takes a full id or a unique 8-character prefix. It asks you to confirm on a terminal, and anywhere else it needs `--yes`.
+
+A rollback restores that deployment's image, port and start command. It keeps the service's current variables, scale and domains, and it does not roll back volumes or databases. A deployment from before deploy history was recorded (`backfilled` in `--json`) restores only its image, and the service keeps its current port and start command.
+
+If auto-deploy from GitHub was on, a rollback also pauses it, so the next push does not replace the version you just restored. A service whose auto-deploy was already off is left as it was. To fix forward, push the fix, then turn Auto-deploy back on in the console under Settings → Source and press Deploy now there, since turning Auto-deploy on deploys nothing by itself.

@@ -146,7 +146,7 @@ On self-hosted InstaCloud OSS, `secrets bind` answers `501`: every compute conta
 
 ### domain
 
-Attach or check a hostname on a compute service. Buying a domain through InstaCloud (`search`, `buy`) is cloud-only.
+Attach or check a hostname on a compute service. For a domain you own, attach a subdomain such as `www.example.com` and add the CNAME and TXT records that `attach` prints at your DNS provider. To serve the root domain, redirect it to `www` at your DNS provider. Buying a domain through InstaCloud and delegating a domain registered elsewhere are not offered right now.
 
 ```bash
 insta domain attach app.example.com --group web

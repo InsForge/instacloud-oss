@@ -46,7 +46,7 @@ const HEALTHCHECK_RE = /^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]*$/
 /** Env names, the same grammar user secrets use (platform secretNames.ts USER_SECRET_NAME_RE). */
 export const ENV_NAME_RE = /^[A-Z][A-Z0-9_]{0,63}$/
 /** Every key a service may carry (the platform's TEMPLATE_FIELDS), spec and volumeGib included so their own refusals fire. */
-const SERVICE_KEYS = ['type', 'image', 'build', 'port', 'healthcheck', 'volume', 'volumeGib', 'spec', 'alwaysOn', 'command', 'mountPath', 'env', 'pgVersion', 'public']
+const SERVICE_KEYS = ['type', 'image', 'build', 'port', 'healthcheck', 'healthcheckTimeout', 'volume', 'volumeGib', 'spec', 'alwaysOn', 'command', 'mountPath', 'env', 'pgVersion', 'public']
 
 export type TemplateVarSpec = {
   description?: string
@@ -76,6 +76,10 @@ export type TemplateService = {
   build?: string
   port?: number
   healthcheck?: string
+  /** Seconds the health gate waits for this service before calling the deploy failed. Omitted
+   *  means the daemon's default. A service that is known to be quick declares a smaller number so
+   *  a broken deploy says so sooner; one with migrations to run declares a larger one. */
+  healthcheckTimeout?: number
   /** Needs a /data disk. Boolean: the daemon owns the size (INSTA_OSS_TEMPLATE_VOLUME_GIB). */
   volume?: boolean
   /** Opt out of sleep AT CREATION: a service whose work arrives on an OUTBOUND connection (a chat
@@ -263,7 +267,7 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
     // so a manifest has nothing to configure on it and anything it set would be silently ignored.
     // Refused with the field named. pgVersion and public are the one field each takes.
     if (type === 'postgres' || type === 'storage') {
-      for (const field of ['image', 'build', 'port', 'healthcheck', 'volume', 'volumeGib', 'spec', 'alwaysOn', 'command', 'mountPath'] as const) {
+      for (const field of ['image', 'build', 'port', 'healthcheck', 'healthcheckTimeout', 'volume', 'volumeGib', 'spec', 'alwaysOn', 'command', 'mountPath'] as const) {
         if (rawSvc[field] !== undefined) return bad(`${at}.${field}: a ${type} service is platform-managed and carries no ${field} (declare it bare: { type: ${type} })`)
       }
       // env must be absent or an EXACT empty shell (known group names, each an empty map): the
@@ -303,6 +307,17 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
       if (!Number.isInteger(port) || port < 1 || port > 65535) return bad(`${at}.port must be an integer port`)
     }
     const healthcheck = rawSvc.healthcheck !== undefined ? scalarString(rawSvc.healthcheck, `${at}.healthcheck`) : undefined
+    let healthcheckTimeout: number | undefined
+    if (rawSvc.healthcheckTimeout !== undefined) {
+      // Type first, then the range. Coercing instead lets `true` through, because Number(true)
+      // is 1 and 1 is a whole number of seconds inside the bounds.
+      healthcheckTimeout = typeof rawSvc.healthcheckTimeout === 'number' ? rawSvc.healthcheckTimeout : NaN
+      // Bounded at both ends. Zero or a negative would fail the deploy before the first poll, and
+      // a typo with an extra digit would park one for hours instead of reporting it.
+      if (!Number.isInteger(healthcheckTimeout) || healthcheckTimeout < 1 || healthcheckTimeout > 900) {
+        return bad(`${at}.healthcheckTimeout must be a whole number of seconds from 1 to 900`)
+      }
+    }
     // Stored rows still carry `spec`. Ignored, not refused, unless the manifest is AUTHORED here.
     if (opts?.rejectAuthoredSizing && rawSvc.spec !== undefined) {
       return bad(`${at}.spec: compute size is the daemon's to choose, remove this field`)
@@ -311,6 +326,11 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
     if (rawSvc.alwaysOn !== undefined) {
       if (typeof rawSvc.alwaysOn !== 'boolean') return bad(`${at}.alwaysOn must be a boolean`)
       alwaysOn = rawSvc.alwaysOn
+    }
+    // It times the probe of `healthcheck`, so without one there is nothing for it to time and a
+    // manifest carrying it is saying something the daemon will not do.
+    if (healthcheckTimeout !== undefined && healthcheck === undefined) {
+      return bad(`${at}.healthcheckTimeout has no healthcheck to time, declare one or drop it`)
     }
     if (healthcheck !== undefined) {
       if (!healthcheck.startsWith('/')) return bad(`${at}.healthcheck must be an absolute path (start with /)`)
@@ -390,6 +410,7 @@ export function parseTemplateManifest(input: unknown, opts?: { rejectAuthoredSiz
 
     services[name] = {
       type, image, build, port, healthcheck, volume, alwaysOn,
+      ...(healthcheckTimeout !== undefined ? { healthcheckTimeout } : {}),
       ...(command !== undefined ? { command } : {}),
       ...(mountPath !== undefined ? { mountPath } : {}),
       env: { fixed, generated: generatedEnv, platform, required, optional },

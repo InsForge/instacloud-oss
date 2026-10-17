@@ -56,7 +56,7 @@ test('local defaults: 127.0.0.1:8080, ~/.insta-oss, no auth, localhost domain, s
   expect(cfg.sleep).toEqual({ enabled: true, idleComputeSec: 300, idleDbSec: 600, sweepSec: 30, createGraceSec: 600, stopGraceSec: 10, stopGraceDbSec: 30, wakeTimeoutSec: 60, wakeProtectSec: 60, ramFloorPct: 15, memBudgetMb: null, alwaysOnDefault: true })
   expect(cfg.data).toEqual({ helperImage: 'node:22-alpine', fork: 'auto', migrate: true, sweepOrphans: false })
   expect(cfg.services).toEqual({ maxPerType: 5 })
-  expect(cfg.templates).toEqual({ volumeGib: 10, healthTimeoutMs: 90000, healthPollMs: 3000 })
+  expect(cfg.templates).toEqual({ volumeGib: 10, healthTimeoutMs: 300000, healthPollMs: 3000 })
   expect(cfg.extraListenHosts).toEqual([])
   expect(cfg.version).toBe(JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')).version)
   expect(Object.isFrozen(cfg)).toBe(true)

@@ -72,8 +72,8 @@ const EXCLUDE = [
   /^\w+ \/projects\/\{id\}\/github\//, // GitHub App flows need the interactive link above
   /\/database\/console\//,             // the console's data browser
   /\/(terminal-ticket|ssh-cert|ssh-target)$/, // CLI / console transport for shells
-  // Paused on the platform (SUP2-306): new domain orders (instacloud-platform#689) and new BYO zone
-  // delegations (#687). Search still answers but only feeds a purchase. Drop these when un-pausing.
+  // Paused on the platform: new domain orders and new delegations of domains registered elsewhere.
+  // Search still answers but only feeds a purchase. Drop these when un-pausing.
   /^GET \/orgs\/\{orgId\}\/domains\/search$/,
   /^POST \/orgs\/\{orgId\}\/domains\/orders$/,
   /^POST \/orgs\/\{orgId\}\/zones$/,

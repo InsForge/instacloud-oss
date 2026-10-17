@@ -72,10 +72,12 @@ const EXCLUDE = [
   /^\w+ \/projects\/\{id\}\/github\//, // GitHub App flows need the interactive link above
   /\/database\/console\//,             // the console's data browser
   /\/(terminal-ticket|ssh-cert|ssh-target)$/, // CLI / console transport for shells
-  // Paused on the platform: new domain orders and new delegations of domains registered elsewhere.
-  // Search still answers but only feeds a purchase. Drop these when un-pausing.
+  // Paused on the platform: new domain orders, reopening an unpaid order's checkout, and new
+  // delegations of domains registered elsewhere. Search still answers but only feeds a purchase.
+  // Drop these when un-pausing.
   /^GET \/orgs\/\{orgId\}\/domains\/search$/,
   /^POST \/orgs\/\{orgId\}\/domains\/orders$/,
+  /^POST \/orgs\/\{orgId\}\/domains\/orders\/\{orderId\}\/checkout$/,
   /^POST \/orgs\/\{orgId\}\/zones$/,
 ]
 

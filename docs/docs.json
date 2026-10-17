@@ -226,7 +226,6 @@
                       "PATCH /orgs/{orgId}/domains/{domainName}/records/{recordId}",
                       "DELETE /orgs/{orgId}/domains/{domainName}/records/{recordId}",
                       "GET /orgs/{orgId}/domains/orders",
-                      "POST /orgs/{orgId}/domains/orders/{orderId}/checkout",
                       "GET /orgs/{orgId}/zones",
                       "DELETE /orgs/{orgId}/zones/{domainName}",
                       "GET /orgs/{orgId}/zones/{domainName}/records",

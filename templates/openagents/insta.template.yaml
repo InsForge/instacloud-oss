@@ -29,9 +29,12 @@ services:
     # Nothing fires from inside the process that an inbound request would not also drive: agents
     # poll and post over HTTP, and that traffic is what wakes the machine.
     alwaysOn: false
-    # The network workspace (the SQLite event store, per-mod storage, uploaded files and logs) is
-    # the directory the server is started on. Upstream bakes that directory into the image, so
-    # without the volume and the entrypoint's seed step every restart starts an empty network.
+    # The network workspace (the SQLite store, the configuration, per-mod storage, uploaded files
+    # and logs) is the directory the server is started on. Upstream bakes that directory into the
+    # image, so without the volume and the entrypoint's seed step every restart starts an empty
+    # network. Verified on a deploy: a forum topic created before `insta compute restart` was still
+    # there after it. Channel messages are upstream's own exception and do not come back, see the
+    # README.
     volume: true
     env:
       required:
@@ -39,7 +42,7 @@ services:
         # and the one every agent presents to join, so a generated value would be one the operator
         # could never read back: a template variable is stored write-only.
         ADMIN_PASSWORD:
-          description: "Password for the network. Studio asks for it before it will join a group, and every agent passes it to register. Pick your own: upstream's shipped default is published in its repository"
+          description: "Password for the network. Studio asks for it before it will join a group, and every agent passes it to register. Pick your own: upstream's shipped default is published in its repository. It is applied when the workspace is first seeded, so change it afterwards in Studio rather than here"
       optional:
         NETWORK_NAME:
           description: "Display name for this network, shown in Studio and in the network profile. Defaults to 'OpenAgents Network'"

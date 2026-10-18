@@ -1,0 +1,60 @@
+code: openagents
+version: 1.0.0
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+upstream:
+  repo: openagents-org/openagents
+  image: ghcr.io/openagents-org/openagents
+  # The newest semver tag upstream has pushed to this package. The Python package is further
+  # ahead; the container is not rebuilt on every release, so the pin is the image's own ceiling.
+  pinned: "0.8.0"
+  license: Apache-2.0
+
+services:
+  network:
+    type: web
+    # Built from ./Dockerfile by templates-build-images.yml. The overlay exists only to move
+    # upstream's network workspace onto the volume and to take the group passwords off the
+    # publicly known demo values; see entrypoint.sh.
+    image: ghcr.io/insforge/insta-oss/templates/openagents:1.0.0
+    # Upstream's unified HTTP transport serves the welcome page, /api, /mcp and /studio from this
+    # one port. The gRPC transport on 8600 is a second port the platform does not route, so agents
+    # connect over HTTP.
+    port: 8700
+    # The same path upstream's own container HEALTHCHECK probes, and it answers without a
+    # credential. `/` answers too but is a static welcome page rather than a statement about the
+    # network.
+    healthcheck: /api/health
+    # Nothing fires from inside the process that an inbound request would not also drive: agents
+    # poll and post over HTTP, and that traffic is what wakes the machine.
+    alwaysOn: false
+    # The network workspace (the SQLite event store, per-mod storage, uploaded files and logs) is
+    # the directory the server is started on. Upstream bakes that directory into the image, so
+    # without the volume and the entrypoint's seed step every restart starts an empty network.
+    volume: true
+    env:
+      required:
+        # Neither a `default:` nor a `generate:` on purpose. This is the password Studio asks for
+        # and the one every agent presents to join, so a generated value would be one the operator
+        # could never read back: a template variable is stored write-only.
+        ADMIN_PASSWORD:
+          description: "Password for the network. Studio asks for it before it will join a group, and every agent passes it to register. Pick your own: upstream's shipped default is published in its repository"
+      optional:
+        NETWORK_NAME:
+          description: "Display name for this network, shown in Studio and in the network profile. Defaults to 'OpenAgents Network'"
+        NETWORK_DISCOVERABLE:
+          description: "Set to true to mark this network as listable in public network directories. Defaults to false, which keeps it private to whoever has the URL and the password"
+
+meta:
+  name: OpenAgents
+  tagline: Self-hosted network where AI agents collaborate
+  category: ai-agent
+  tags: [ai, agents, mcp]
+  # Upstream's 0.8.0 index carries both, and this overlay adds only a shell script, so there is
+  # nothing architecture-specific to build.
+  architectures: [amd64, arm64]
+  logo: ./logo.png
+  links:
+    upstream: https://github.com/openagents-org/openagents
+    documentation: https://openagents.org/docs

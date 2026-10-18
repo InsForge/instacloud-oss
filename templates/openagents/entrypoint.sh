@@ -37,10 +37,19 @@ with open(path) as fh:
 net = cfg.setdefault("network", {})
 net["name"] = os.environ["NETWORK_NAME"]
 
-# One password for the whole network. requires_password=True is what makes it mandatory: with it
-# false, an agent that presents nothing is waved through into the default group.
+# One password for the whole network.
+#
+# requires_password=True alone does not close it. Upstream ships default_agent_group: guest with
+# no "guest" entry under agent_groups, and a group that is not declared has no password to check:
+# on a network deployed with requires_password=True and nothing else changed, Studio offered
+# "guest (default), no password required" and a join with no credential registered and showed up
+# in /api/health under group "guest". So the default group is declared here too, carrying the same
+# hash as the rest, which is what leaves no passwordless way in.
 digest = hashlib.sha256(os.environ["ADMIN_PASSWORD"].encode()).hexdigest()
-for group in (net.get("agent_groups") or {}).values():
+groups = net.setdefault("agent_groups", {})
+default_group = net.get("default_agent_group") or "guest"
+groups.setdefault(default_group, {"description": "Default group", "metadata": {}})
+for group in groups.values():
     group["password_hash"] = digest
 net["requires_password"] = True
 

@@ -12,6 +12,9 @@ upstream:
 # Declare once, reference many: one generated value can be reused across services and vars
 generated:
   gateway_token: secret:64
+  # Telegram signs every webhook update with this; the gateway refuses to start webhook mode
+  # without one. Only the machine and Telegram ever see it, so a minted value is the right kind.
+  telegram_webhook_secret: secret:32
 
 services:
   hermes:
@@ -19,16 +22,40 @@ services:
     image: ghcr.io/insforge/insta-oss/templates/hermes:2.4.0   # built from ./Dockerfile by templates-build-images.yml
     port: 8080
     healthcheck: /api/status
-    # Channels arrive on OUTBOUND connections (Telegram long poll, Slack Socket Mode, ...),
-    # so an idle machine stops and nothing can wake it.
-    alwaysOn: true
+    # No alwaysOn since 2.4.0: the dashboard is reached INBOUND, Telegram arrives on an INBOUND
+    # webhook (TELEGRAM_WEBHOOK_URL below) and so does Slack (SLACK_EVENTS_URL below; this image
+    # runs Slack over the Events API only, Socket Mode is not offered), all traffic the platform's
+    # router can see and wake a stopped machine for, so the platform's scale-to-zero default
+    # applies. Discord (gateway) is an OUTBOUND connection the router never sees: on a
+    # scaled-to-zero machine it drops when the machine stops and cannot wake it, so a Discord
+    # deployment must turn always-on on from the console. The README's scale-to-zero section and
+    # the variable descriptions below say so.
     volume: true
     env:
       fixed:
         HERMES_HOME: /data/.hermes
-        HERMES_DASHBOARD_PORT: "8080"
+        # The dashboard listens on 8081, a port the platform does not route, behind nginx, which
+        # owns the routed port 8080 and publishes the Telegram and Slack webhook paths beside it.
+        # See nginx.conf and the bind note in entrypoint.sh.
+        HERMES_DASHBOARD_PORT: "8081"
+        # The gateway registers this URL with Telegram on connect and serves it on the loopback
+        # port below; nginx forwards /telegram there. Inert until a Telegram bot token is set,
+        # whether at deploy time or later from the dashboard's Channels page.
+        TELEGRAM_WEBHOOK_URL: ${services.hermes.url}/telegram
+        TELEGRAM_WEBHOOK_PORT: "8443"
+        TELEGRAM_WEBHOOK_HOST: 127.0.0.1
+        # Slack's Events API request URL, served by the patched adapter (see the Dockerfile) on the
+        # loopback port below; nginx forwards /slack/events there. With this set, a Slack bot token
+        # without SLACK_SIGNING_SECRET is a configuration error the gateway reports by name instead
+        # of silently falling back to Socket Mode. Unlike Telegram, Slack does not learn this URL
+        # from the bot: the operator pastes it into the Slack app's Event Subscriptions page, where
+        # Slack verifies it on the spot (the README and the dashboard's Channels page walk through it).
+        SLACK_EVENTS_URL: ${services.hermes.url}/slack/events
+        SLACK_EVENTS_PORT: "8444"
+        SLACK_EVENTS_HOST: 127.0.0.1
       generated:
         HERMES_GATEWAY_TOKEN: ${gateway_token}
+        TELEGRAM_WEBHOOK_SECRET: ${telegram_webhook_secret}
       required:
         # Neither a `default:` nor a `generate:`, matching the other agent UIs: the operator types
         # both or does not deploy. A generated password would be one NOBODY can read back, since a
@@ -45,18 +72,18 @@ services:
         OPENROUTER_API_KEY:
           description: "OpenRouter API key the agent uses for model calls (openrouter.ai/keys). Leave blank to add it later on the dashboard's API Keys page; chat starts answering once a provider key is set"
         TELEGRAM_BOT_TOKEN:
-          description: "Telegram bot token, created with @BotFather. Leave blank to connect channels later from the dashboard's Channels page"
+          description: "Telegram bot token, created with @BotFather. Telegram connects over an inbound webhook, so this channel keeps working on a scale-to-zero machine. Leave blank to connect channels later from the dashboard's Channels page"
         TELEGRAM_ALLOWED_USERS:
           # The adapter compares user ids and never reads usernames; the old wording silently locked owners out.
           description: "Comma-separated numeric Telegram user IDs allowed to use the bot (not @usernames; get yours from @userinfobot)"
         DISCORD_BOT_TOKEN:
-          description: "Discord bot token from the Discord Developer Portal. Leave blank to connect channels later from the dashboard"
+          description: "Discord bot token from the Discord Developer Portal. Discord needs an always-on machine (it delivers messages over a connection the bot opens). Leave blank to connect channels later from the dashboard"
         DISCORD_ALLOWED_USERS:
           description: "Comma-separated numeric Discord user IDs allowed to use the bot"
         SLACK_BOT_TOKEN:
-          description: "Slack bot token (xoxb-...). Slack needs SLACK_APP_TOKEN too; both can also be set later from the dashboard"
-        SLACK_APP_TOKEN:
-          description: "Slack app-level token (xapp-...) for Socket Mode; pairs with SLACK_BOT_TOKEN"
+          description: "Slack bot token (xoxb-...) from OAuth & Permissions. Slack events reach this deployment over Slack's inbound Events API, so the bot keeps working on a scale-to-zero machine; SLACK_SIGNING_SECRET is needed with it"
+        SLACK_SIGNING_SECRET:
+          description: "Slack app signing secret (Basic Information > App Credentials). After deploy, point the app's Event Subscriptions request URL at <service URL>/slack/events and turn Socket Mode off in the Slack app; the dashboard's Channels page shows the exact URL"
         SLACK_ALLOWED_USERS:
           description: "Comma-separated Slack member IDs allowed to use the bot (e.g. U01ABC2DEF3)"
 

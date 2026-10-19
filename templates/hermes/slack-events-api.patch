@@ -1,0 +1,250 @@
+--- a/plugins/platforms/slack/adapter.py
++++ b/plugins/platforms/slack/adapter.py
+@@ -34,6 +34,17 @@
+     AsyncSocketModeHandler = Any
+     AsyncWebClient = Any
+ 
++# InstaCloud template patch: slack_bolt's aiohttp helpers for the inbound Events API transport
++# (see SlackAdapter._start_events_server). Its own try block on purpose: a missing piece here must
++# disable only that transport, never Socket Mode above.
++try:
++    from slack_bolt.adapter.aiohttp import to_bolt_request as _slack_to_bolt_request
++    from slack_bolt.adapter.aiohttp import to_aiohttp_response as _slack_to_aiohttp_response
++
++    SLACK_EVENTS_HTTP_AVAILABLE = True
++except ImportError:
++    SLACK_EVENTS_HTTP_AVAILABLE = False
++
+ import sys
+ from pathlib import Path as _Path
+ 
+@@ -1163,6 +1174,15 @@
+         # user messages without bot_id/subtype=bot_message markers.
+         self._user_is_bot_cache: Dict[Tuple[str, str], bool] = {}
+         self._socket_mode_task: Optional[asyncio.Task] = None
++        # Events API transport (InstaCloud template patch). Set from
++        # SLACK_SIGNING_SECRET plus SLACK_EVENTS_URL in connect(): Slack then
++        # POSTs events to an inbound aiohttp listener instead of the bot
++        # holding a Socket Mode connection open, which is traffic a
++        # scale-to-zero platform can see and wake a stopped machine for.
++        # None means Socket Mode, upstream's default.
++        self._events_url: Optional[str] = None
++        self._signing_secret: Optional[str] = None
++        self._events_runner: Optional[Any] = None
+         # Multi-workspace support
+         self._team_clients: Dict[str, Any] = {}  # team_id → WebClient
+         self._team_bot_user_ids: Dict[str, str] = {}  # team_id → bot_user_id
+@@ -1468,6 +1488,20 @@
+         through that would race a moving target. See
+         slackapi/python-slack-sdk#1913.
+         """
++        # Events API mode: stop the inbound listener instead. Same call sites
++        # (reconnect, disconnect, failed start), so one place covers both.
++        runner = self._events_runner
++        self._events_runner = None
++        if runner is not None:
++            try:
++                await runner.cleanup()
++            except Exception as e:  # pragma: no cover - defensive logging
++                logger.warning(
++                    "[Slack] Error while stopping the Events API listener: %s",
++                    e,
++                    exc_info=True,
++                )
++
+         handler = self._handler
+         task = self._socket_mode_task
+         self._handler = None
+@@ -1487,6 +1521,68 @@
+                     e,
+                     exc_info=True,
+                 )
++
++    async def _start_events_server(self) -> None:
++        """Serve Slack's Events API over an inbound HTTP listener.
++
++        InstaCloud template patch. Slack POSTs each event to SLACK_EVENTS_URL,
++        which the reverse proxy in front of the container forwards to this
++        listener. Inbound traffic is what a scale-to-zero platform can see and
++        wake a stopped machine for; the outbound Socket Mode connection
++        upstream defaults to is invisible to it. Bolt's request handler
++        verifies every request against SLACK_SIGNING_SECRET, answers Slack's
++        url_verification challenge itself, and acknowledges an event before
++        the listeners run, so Slack's 3 second deadline holds while the
++        machine is awake. A retry Slack sends because its first attempt found
++        the machine asleep is a duplicate message event, which
++        _handle_slack_message already drops by message ts (self._dedup).
++        """
++        if not self._app or not self._events_url or not self._signing_secret:
++            raise RuntimeError(
++                "Events API mode requires an initialized app, SLACK_EVENTS_URL "
++                "and SLACK_SIGNING_SECRET"
++            )
++        if not SLACK_EVENTS_HTTP_AVAILABLE:
++            raise RuntimeError(
++                "slack_bolt's aiohttp adapter is not importable; Events API mode unavailable"
++            )
++        from urllib.parse import urlparse
++        from aiohttp import web
++
++        path = urlparse(self._events_url).path or "/slack/events"
++        host = (os.getenv("SLACK_EVENTS_HOST") or "127.0.0.1").strip()
++        port = int((os.getenv("SLACK_EVENTS_PORT") or "8444").strip())
++
++        bolt_app = self._app
++
++        async def _events(request: web.Request) -> web.StreamResponse:
++            # The same dispatch slack_bolt's own aiohttp examples use: signature
++            # verification, url_verification and the ack all happen inside it.
++            # Both helpers are coroutines in current slack_bolt and plain
++            # functions in older releases; await whichever comes back.
++            bolt_req = _slack_to_bolt_request(request)
++            if hasattr(bolt_req, "__await__"):
++                bolt_req = await bolt_req
++            bolt_resp = await bolt_app.async_dispatch(bolt_req)
++            response = _slack_to_aiohttp_response(bolt_resp)
++            if hasattr(response, "__await__"):
++                response = await response
++            return response
++
++        app = web.Application()
++        app.router.add_post(path, _events)
++        runner = web.AppRunner(app, access_log=None)
++        await runner.setup()
++        site = web.TCPSite(runner, host, port)
++        await site.start()
++        self._events_runner = runner
++        logger.info(
++            "[Slack] Events API listener on http://%s:%d%s, public URL %s",
++            host,
++            port,
++            path,
++            self._events_url,
++        )
+ 
+     async def _socket_transport_connected(self) -> Optional[bool]:
+         """Best-effort check of current Socket Mode transport state."""
+@@ -1618,6 +1714,9 @@
+         self._ensure_socket_watchdog()
+ 
+     def _ensure_socket_watchdog(self) -> None:
++        if self._events_url:
++            # Events API mode has no Socket Mode transport to watch.
++            return
+         if self._socket_watchdog_task is None or self._socket_watchdog_task.done():
+             task = asyncio.create_task(self._socket_watchdog_loop())
+             self._socket_watchdog_task = task
+@@ -2039,6 +2138,29 @@
+             app_token = get_secret("SLACK_APP_TOKEN")
+         except UnscopedSecretError:
+             app_token = os.getenv("SLACK_APP_TOKEN")
++
++        # InstaCloud template patch: a signing secret plus a public events URL
++        # selects the inbound Events API transport, where the app-level token
++        # (Socket Mode only) is not needed. See _start_events_server.
++        try:
++            signing_secret = get_secret("SLACK_SIGNING_SECRET")
++        except UnscopedSecretError:
++            signing_secret = os.getenv("SLACK_SIGNING_SECRET")
++        events_url = (os.getenv("SLACK_EVENTS_URL") or "").strip()
++        if signing_secret and events_url:
++            self._events_url = events_url
++            self._signing_secret = str(signing_secret).strip()
++            if app_token:
++                logger.warning(
++                    "[Slack] Both SLACK_SIGNING_SECRET and SLACK_APP_TOKEN are set: "
++                    "using the Events API at %s and ignoring the app token. Turn "
++                    "Socket Mode OFF in the Slack app, or Slack keeps delivering "
++                    "events over Socket Mode and nothing reaches this URL.",
++                    events_url,
++                )
++        else:
++            self._events_url = None
++            self._signing_secret = None
+ 
+         if not raw_token:
+             logger.error(
+@@ -2055,8 +2177,32 @@
+                 retryable=False,
+             )
+             return False
+-        if not app_token:
++        if events_url and not signing_secret:
++            # InstaCloud template patch: with a public events URL configured this
++            # deployment receives Slack events inbound, so a bot token without the
++            # signing secret is a configuration error to report by name, not a
++            # reason to fall back to Socket Mode (an outbound connection a
++            # scale-to-zero machine cannot keep alive).
+             logger.error(
++                "[Slack] SLACK_SIGNING_SECRET not set — this deployment receives "
++                "Slack events over the Events API at %s and needs the app's signing "
++                "secret to verify them. Paste it from Basic Information > App "
++                "Credentials, set the Slack app's Event Subscriptions request URL "
++                "to that address, turn Socket Mode off, then restart the gateway.",
++                events_url,
++            )
++            self._set_fatal_error(
++                "missing_slack_signing_secret",
++                "SLACK_SIGNING_SECRET not configured. This deployment receives Slack "
++                f"events over the Events API at {events_url}: paste the app's signing "
++                "secret (Basic Information > App Credentials), set the Slack app's "
++                "Event Subscriptions request URL to that address, turn Socket Mode "
++                "off, then restart the gateway.",
++                retryable=False,
++            )
++            return False
++        if not app_token and not self._events_url:
++            logger.error(
+                 "[Slack] SLACK_APP_TOKEN not set — this is a permanent config "
+                 "error; set SLACK_APP_TOKEN via `hermes gateway setup` "
+                 "or in the active profile's ~/.hermes/.env file, then restart "
+@@ -2112,9 +2258,14 @@
+ 
+         lock_acquired = False
+         try:
+-            if not self._acquire_platform_lock(
+-                "slack-app-token", app_token, "Slack app token"
+-            ):
++            # InstaCloud template patch: the one-gateway-per-app lock keys on the
++            # app-level token, which the Events API transport does not have (the
++            # lock path would call .encode() on None). Key it on the bot token then.
++            if self._events_url:
++                lock_args = ("slack-events-bot-token", str(raw_token), "Slack bot token")
++            else:
++                lock_args = ("slack-app-token", app_token, "Slack app token")
++            if not self._acquire_platform_lock(*lock_args):
+                 return False
+             lock_acquired = True
+             self._running = False
+@@ -2169,6 +2320,9 @@
+             self._app = AsyncApp(
+                 token=primary_token,
+                 client=primary_client,
++                # None under Socket Mode (upstream's default); the Events API
++                # listener needs it to verify Slack's request signatures.
++                signing_secret=self._signing_secret,
+                 before_authorize=_slack_per_request_proxy_middleware(proxy_url),
+             )
+             _apply_slack_proxy(self._app.client, proxy_url)
+@@ -2431,7 +2585,10 @@
+             # down whatever we managed to start, leave ``_running=False``, and
+             # let the ``finally`` block release the platform lock cleanly.
+             try:
+-                self._start_socket_mode_handler()
++                if self._events_url:
++                    await self._start_events_server()
++                else:
++                    self._start_socket_mode_handler()
+                 self._running = True
+                 self._ensure_socket_watchdog()
+             except Exception:
+@@ -2445,7 +2602,8 @@
+                 raise
+ 
+             logger.info(
+-                "[Slack] Socket Mode connected (%d workspace(s))",
++                "[Slack] %s connected (%d workspace(s))",
++                "Events API listener" if self._events_url else "Socket Mode",
+                 len(self._team_clients),
+             )
+ 

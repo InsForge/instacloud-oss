@@ -1,5 +1,5 @@
 code: openagents
-version: 1.0.0
+version: 1.0.1
 maintainer: official
 sourceRepo: InsForge/instacloud-oss
 
@@ -17,7 +17,7 @@ services:
     # Built from ./Dockerfile by templates-build-images.yml. The overlay exists only to move
     # upstream's network workspace onto the volume and to take the group passwords off the
     # publicly known demo values; see entrypoint.sh.
-    image: ghcr.io/insforge/insta-oss/templates/openagents:1.0.0
+    image: ghcr.io/insforge/insta-oss/templates/openagents:1.0.1
     # Upstream's unified HTTP transport serves the welcome page, /api, /mcp and /studio from this
     # one port. The gRPC transport on 8600 is a second port the platform does not route, so agents
     # connect over HTTP.
@@ -28,19 +28,19 @@ services:
     healthcheck: /api/health
     # Not the scheduler case the other always-on templates are: nothing fires from inside this
     # process that an inbound request would not also drive. It is on for persistence. The
-    # messaging mod holds channel history in memory and writes it out only from `shutdown()`, so
-    # a machine that scaled to zero on an idle network would come back with every channel empty
-    # and nobody would have restarted anything to cause it. Observed on a deploy: a read of
-    # `#general` that had returned the posted message came back `total_count: 0` after the
-    # machine went through a stop and a start. This bills around the clock and buys channels that
-    # last as long as the machine does. A restart still clears them, and the README says so.
+    # messaging mod batches channel history, writing it out every 50 messages or every 10
+    # minutes (`_save_interval` and `dump_interval_minutes` in its storage helper), so whatever
+    # arrived since the last write is in memory only. A machine that scaled to zero on a quiet
+    # network would drop it, and nobody would have restarted anything to cause it. Observed on a
+    # deploy: one message posted to `#general`, far short of either threshold, read back
+    # `total_count: 0` after a stop and a start. This bills around the clock.
     alwaysOn: true
     # The network workspace (the SQLite store, the configuration, per-mod storage, uploaded files
     # and logs) is the directory the server is started on. Upstream bakes that directory into the
     # image, so without the volume and the entrypoint's seed step every restart starts an empty
     # network. Verified on a deploy: a forum topic created before `insta compute restart` was still
-    # there after it. Channel messages are upstream's own exception and do not come back, see the
-    # README.
+    # there after it. Channel messages are the exception because the messaging mod batches its
+    # writes rather than because of the volume, see the README.
     volume: true
     env:
       required:

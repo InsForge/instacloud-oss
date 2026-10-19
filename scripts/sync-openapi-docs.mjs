@@ -11,9 +11,10 @@
 // nothing here is hand-typed. What this script adds is (1) the split by which API token can call
 // an operation, mirroring the platform's own route classification (insta-platform
 // src/auth/tokenScope.ts classifyTokenRoute), (2) a curation list that drops browser-only and
-// console-internal transport routes, (3) page titles short enough for a sidebar, (4) the public
-// base URL, which the platform's own document does not carry, (5) normalizing the platform's
-// 3.0-style `nullable: true` schemas into 3.1 type unions (this document declares openapi 3.1),
+// console-internal transport routes and the entry points of paused features, (3) page titles
+// short enough for a sidebar, (4) the public base URL, which the platform's own document does not
+// carry, (5) normalizing the platform's 3.0-style `nullable: true` schemas into 3.1 type unions
+// (this document declares openapi 3.1),
 // and (6) forcing two header parameters that are documented as mandatory and 400 when absent to
 // `required: true`, since the platform's generated flag has not caught up with that route.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
@@ -71,6 +72,13 @@ const EXCLUDE = [
   /^\w+ \/projects\/\{id\}\/github\//, // GitHub App flows need the interactive link above
   /\/database\/console\//,             // the console's data browser
   /\/(terminal-ticket|ssh-cert|ssh-target)$/, // CLI / console transport for shells
+  // Paused on the platform: new domain orders, reopening an unpaid order's checkout, and new
+  // delegations of domains registered elsewhere. Search still answers but only feeds a purchase.
+  // Drop these when un-pausing.
+  /^GET \/orgs\/\{orgId\}\/domains\/search$/,
+  /^POST \/orgs\/\{orgId\}\/domains\/orders$/,
+  /^POST \/orgs\/\{orgId\}\/domains\/orders\/\{orderId\}\/checkout$/,
+  /^POST \/orgs\/\{orgId\}\/zones$/,
 ]
 
 // ---- 3. presentation --------------------------------------------------------------------------

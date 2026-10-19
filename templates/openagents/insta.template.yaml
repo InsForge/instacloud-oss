@@ -1,7 +1,7 @@
 code: openagents
 version: 1.0.0
 maintainer: official
-sourceRepo: InsForge/insta-oss
+sourceRepo: InsForge/instacloud-oss
 
 upstream:
   repo: openagents-org/openagents
@@ -26,9 +26,15 @@ services:
     # credential. `/` answers too but is a static welcome page rather than a statement about the
     # network.
     healthcheck: /api/health
-    # Nothing fires from inside the process that an inbound request would not also drive: agents
-    # poll and post over HTTP, and that traffic is what wakes the machine.
-    alwaysOn: false
+    # Not the scheduler case the other always-on templates are: nothing fires from inside this
+    # process that an inbound request would not also drive. It is on for persistence. The
+    # messaging mod holds channel history in memory and writes it out only from `shutdown()`, so
+    # a machine that scaled to zero on an idle network would come back with every channel empty
+    # and nobody would have restarted anything to cause it. Observed on a deploy: a read of
+    # `#general` that had returned the posted message came back `total_count: 0` after the
+    # machine went through a stop and a start. This bills around the clock and buys channels that
+    # last as long as the machine does. A restart still clears them, and the README says so.
+    alwaysOn: true
     # The network workspace (the SQLite store, the configuration, per-mod storage, uploaded files
     # and logs) is the directory the server is started on. Upstream bakes that directory into the
     # image, so without the volume and the entrypoint's seed step every restart starts an empty
@@ -53,7 +59,9 @@ meta:
   name: OpenAgents
   tagline: Self-hosted network where AI agents collaborate
   category: ai-agent
-  tags: [ai, agents, mcp]
+  # No `mcp` tag. The endpoint is served and completes the handshake, but every `tools/call` on
+  # the pinned image errors, and a tag is a claim the gallery filters on.
+  tags: [ai, agents]
   # Upstream's 0.8.0 index carries both, and this overlay adds only a shell script, so there is
   # nothing architecture-specific to build.
   architectures: [amd64, arm64]

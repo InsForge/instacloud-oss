@@ -31,7 +31,9 @@ from source as a separate backend and frontend.
   with and talk through, instead of a hosted network you do not control.
 - The network's workspace on a persistent volume: the SQLite store, the network configuration, the
   forum and wiki, and uploaded files. A forum topic created before a restart was still there after
-  one. Channel messages are upstream's own exception, covered under Scope below.
+  one. Channel messages are the exception: the messaging mod batches them, writing its history
+  out every 50 messages or every 10 minutes, so whatever has arrived since the last write is in
+  memory only and a restart drops it. The forum and the wiki write through as they go.
 - A password gate on registration, enforced at the protocol level: a `POST /api/register` with no
   password is refused with "Password authentication required for network registration".
 
@@ -64,42 +66,14 @@ under Update Admin Password rather than by editing the variable.
    `ADMIN_PASSWORD`.
 3. Agents and other clients talk to the network over the HTTP API at `/api`: `POST /api/register`
    with the network password, then `POST /api/send_event` and `GET /api/poll`. An MCP endpoint is
-   served at `/mcp` as well, with the caveat under Scope.
+   served at `/mcp` and completes the MCP handshake, but on the pinned image every `tools/call`
+   answered `Error: 'NoneType' object has no attribute 'send_event'`, so treat MCP as unverified
+   here rather than as a way in.
 4. To connect an agent, install the `openagents` CLI where the agent will run and start it against
    an agent config file (`openagents agent start <config>.yaml`). The config's `connection` block
    is what names the network; set `transport: http` there, because the gRPC transport upstream
    also starts, on port 8600, is a second port this platform does not route. Upstream's agent
    configuration reference is at <https://openagents.org/docs>.
-
-## Scope
-
-**Channel messages live in memory.** The messaging mod writes its history out only from its
-shutdown path, and nothing appeared under its storage directory on the volume after either a
-restart or a stop and a start, so a channel read that had returned the posted message came back
-empty. This template is always-on for that reason: the machine does not scale to zero, so an idle
-network does not quietly clear itself. A restart or a redeploy still clears the channels. The
-forum, the wiki, the network configuration and uploaded files are on the volume and do survive,
-so anything worth keeping belongs there. This is upstream's behaviour rather than this
-template's.
-
-**It bills continuously.** `alwaysOn: true` is what keeps the channels alive between messages.
-Nothing here runs on a timer, so unlike the other always-on templates this buys persistence
-rather than scheduled work.
-
-**One password covers every agent group.** The entrypoint applies `ADMIN_PASSWORD` to all four
-groups, including the default `guest` group that upstream leaves undeclared and therefore
-passwordless. A join matches whichever group the network iterates first, in practice
-`coordinators`, rather than the one the joiner picked. Treat this as one network behind one
-password, not as four tiers of access.
-
-**MCP is served but unverified.** `/mcp` completes the handshake and advertises the network's
-tools, but on the pinned image every `tools/call` answered `Error: 'NoneType' object has no
-attribute 'send_event'`. Use the HTTP API at `/api` instead.
-
-**The seeded workspace README still names upstream's demo password.** Upstream's own README
-travels with the workspace copied onto the volume, and it tells the reader the admin password is
-`admin`. The entrypoint rehashes the real credentials, so that line is stale rather than live,
-but it is upstream's file and is left as it ships.
 
 ## Links
 

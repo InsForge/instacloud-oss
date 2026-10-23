@@ -100,7 +100,7 @@ export interface TemplateDeploymentRecord {
   step: 'create_services' | 'write_variables' | 'deploy' | 'health_check'
   services: Record<string, {
     serviceName: string; serviceId?: string; type: 'web' | 'postgres'
-    image?: string; port?: number; healthcheck?: string; volumeGib?: number; alwaysOn?: boolean
+    image?: string; port?: number; healthcheck?: string; healthcheckTimeout?: number; volumeGib?: number; alwaysOn?: boolean
     env: Record<string, { source: 'fixed' | 'generated' | 'platform' | 'required' | 'optional'; generator?: string; value?: string; ref?: string }>
     url?: string; state: 'pending' | 'created' | 'deployed' | 'healthy' | 'failed'
   }>

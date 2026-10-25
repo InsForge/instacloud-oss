@@ -67,6 +67,8 @@ The CLI's linked directory does not carry over: project-scoped tools take an exp
 | `insta_set_compute_state` | Start, stop, suspend, or restart a compute service |
 | `insta_get_service_status` | A service's desired versus actual runtime state |
 | `insta_exec_compute_command` | Run a single command on a compute service and return the result |
+| `insta_list_deployments` | List a compute service's deployments, newest first, with which one is live |
+| `insta_rollback_service` | Put an earlier deployment back without a rebuild, keeping current variables and pausing auto-deploy if it was on |
 
 ## Secrets
 

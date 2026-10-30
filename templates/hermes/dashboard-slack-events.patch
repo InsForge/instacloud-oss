@@ -1,0 +1,120 @@
+--- a/hermes_cli/web_server.py
++++ b/hermes_cli/web_server.py
+@@ -8895,11 +8895,18 @@
+         "required_env": ("DISCORD_BOT_TOKEN",),
+     },
+     "slack": {
++        # InstaCloud template patch: this image runs Slack over the inbound Events API (see
++        # plugins/platforms/slack/adapter.py), so the card asks for the signing secret instead
++        # of the Socket Mode app-level token.
+         "name": "Slack",
+-        "description": "Use Hermes from Slack via Socket Mode. Add allowed Slack member IDs so connected bots can respond.",
++        "description": (
++            "Use Hermes from Slack over the Events API: Slack posts each event to this "
++            "deployment's URL, so the bot keeps working on a machine that scales to zero. "
++            "Add allowed Slack member IDs so connected bots can respond."
++        ),
+         "docs_url": "https://api.slack.com/apps",
+-        "env_vars": ("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SLACK_ALLOWED_USERS"),
+-        "required_env": ("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"),
++        "env_vars": ("SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_ALLOWED_USERS"),
++        "required_env": ("SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET"),
+     },
+     "mattermost": {
+         "name": "Mattermost",
+@@ -9152,6 +9159,26 @@
+ # toggles, Twilio, HASS, Email, etc.). Anything missing from OPTIONAL_ENV_VARS
+ # falls back here so the UI can still render a friendly label.
+ _MESSAGING_ENV_FALLBACKS: dict[str, dict[str, Any]] = {
++    # InstaCloud template patch: the Events API credential the Slack card asks for. The help text
++    # spells out the request URL this deployment serves, read from the environment the template
++    # sets, so the operator can paste it into the Slack app without looking anything up.
++    "SLACK_SIGNING_SECRET": {
++        "description": (
++            "Slack app signing secret, used to verify the events Slack posts to this deployment. "
++            "Basic Information > App Credentials > Signing Secret."
++        ),
++        "prompt": "Slack Signing Secret",
++        "help": (
++            "In the Slack app: turn Socket Mode OFF, open Event Subscriptions, enable events and "
++            "set the Request URL to "
++            + (os.environ.get("SLACK_EVENTS_URL") or "<this deployment's URL>/slack/events")
++            + " (keep the dashboard open while Slack verifies it), subscribe to the bot events "
++            "message.im, message.channels, message.groups, message.mpim and app_mention, then "
++            "reinstall the app to the workspace."
++        ),
++        "url": "https://api.slack.com/apps",
++        "password": True,
++    },
+     "SIGNAL_HTTP_URL": {
+         "description": "signal-cli REST API base URL, e.g. http://127.0.0.1:8080",
+         "prompt": "Signal bridge URL",
+@@ -9484,6 +9511,14 @@
+ 
+ def _messaging_env_info(key: str) -> dict[str, Any]:
+     info = OPTIONAL_ENV_VARS.get(key) or _MESSAGING_ENV_FALLBACKS.get(key) or {}
++    # InstaCloud template patch: a plugin manifest entry carries no `help`, so fill it (and a
++    # missing url) from the fallback table, which is where the Slack request URL guidance lives.
++    fallback = _MESSAGING_ENV_FALLBACKS.get(key)
++    if fallback and info is not fallback:
++        info = dict(info)
++        for field in ("help", "url", "description"):
++            if not info.get(field) and fallback.get(field):
++                info[field] = fallback[field]
+     return {
+         "description": info.get("description", ""),
+         "prompt": info.get("prompt", key),
+--- a/hermes_cli/config_defaults.py
++++ b/hermes_cli/config_defaults.py
+@@ -4694,16 +4694,9 @@
+         "password": True,
+         "category": "messaging",
+     },
+-    "SLACK_APP_TOKEN": {
+-        "description": "Slack app-level token (xapp-) for Socket Mode. Get from Basic Information → "
+-                       "App-Level Tokens. Also ensure Event Subscriptions include: message.im, "
+-                       "message.channels, message.groups, message.mpim, app_mention",
+-        "prompt": "Slack App Token (xapp-...)",
+-        "help": "In your Slack app, enable Socket Mode, then create Basic Information > App-Level Tokens with the connections:write scope.",
+-        "url": "https://api.slack.com/apps",
+-        "password": True,
+-        "category": "messaging",
+-    },
++    # InstaCloud template patch: SLACK_APP_TOKEN (Socket Mode) is not offered in this image, which
++    # runs Slack over the inbound Events API; the dashboard's Channels page and `hermes gateway
++    # setup` both read this table, so removing it here removes the field from both.
+     "SLACK_ALLOWED_USERS": {
+         "description": "Comma-separated Slack member IDs allowed to use Hermes, e.g. U01ABC2DEF3. Without this, Slack may connect but deny messages by default.",
+         "prompt": "Allowed Slack member IDs",
+--- a/plugins/platforms/slack/plugin.yaml
++++ b/plugins/platforms/slack/plugin.yaml
+@@ -4,10 +4,12 @@
+ version: 1.0.0
+ description: >
+   Slack gateway adapter for Hermes Agent.
+-  Connects to Slack via slack-bolt in Socket Mode and relays messages
+-  between Slack channels/DMs and the Hermes agent. Supports slash
+-  commands, threads, mrkdwn rendering, approval blocks, free-response
+-  channels, mention gating, and channel skill bindings.
++  Receives Slack events over the Events API (slack-bolt, inbound HTTP) and
++  relays messages between Slack channels/DMs and the Hermes agent. Supports
++  slash commands, threads, mrkdwn rendering, approval blocks, free-response
++  channels, mention gating, and channel skill bindings. InstaCloud template
++  build: Socket Mode is not offered here, so a scale-to-zero machine can be
++  woken by an incoming event.
+ author: NousResearch
+ requires_env:
+   - name: SLACK_BOT_TOKEN
+@@ -15,9 +17,9 @@
+     prompt: "Slack Bot Token (xoxb-...)"
+     url: "https://api.slack.com/apps"
+     password: true
+-  - name: SLACK_APP_TOKEN
+-    description: "Slack app-level token for Socket Mode (xapp-..., scope connections:write)"
+-    prompt: "Slack App Token (xapp-...)"
++  - name: SLACK_SIGNING_SECRET
++    description: "Slack app signing secret (Basic Information > App Credentials), verifies the events Slack posts to this deployment"
++    prompt: "Slack Signing Secret"
+     url: "https://api.slack.com/apps"
+     password: true
+ optional_env:

@@ -1,0 +1,22 @@
+--- a/plugins/platforms/telegram/adapter.py
++++ b/plugins/platforms/telegram/adapter.py
+@@ -4793,11 +4793,14 @@
+                     webhook_url=webhook_url,
+                     secret_token=webhook_secret,
+                     allowed_updates=Update.ALL_TYPES,
+-                    # Webhooks are push-based — Telegram does not hold a
+-                    # server-side getUpdates queue, so this flag is a no-op
+-                    # in practice. Mirror the polling path's reconnect
+-                    # semantics for consistency.
+-                    drop_pending_updates=not is_reconnect,
++                    # InstaCloud template patch. Telegram DOES keep webhook
++                    # deliveries it has not had a 2xx for, and setWebhook with
++                    # drop_pending_updates=True discards them. On a host that
++                    # scales to zero the update that woke the machine is exactly
++                    # such a delivery: it is in flight while this gateway boots,
++                    # so dropping pending updates here lost the first message
++                    # after every wake. Keep them; Telegram redelivers.
++                    drop_pending_updates=False,
+                 )
+                 self._webhook_mode = True
+                 self._polling_progress_accepting = False

@@ -162,6 +162,20 @@ describe('retention and persistence', () => {
     expect(named(h.query([APP], 0, 150, 30), 'egress_bytes_rate')[0]!.points).toEqual([[60, 0], [120, 100], [150, 100]])
   })
 
+  test.each([{ version: 1, width: 5 }, { version: 2, width: 6 }, { version: 3, width: 7 }])('version $version future samples cannot block readings after the clock moves back', ({ version, width }) => {
+    const saved = new MetricsHistory()
+    saved.record(90, [sample(APP.container, 0.1, 100, 0, 0)])
+    saved.record(3_600, [sample(APP.container, 0.9, 900, 99_000, 99_000), sample('io-future-only', 1, 1)])
+    const h = new MetricsHistory()
+    h.load({ version, samples: Object.fromEntries(
+      Object.entries(saved.toJSON().samples).map(([name, values]) => [name, values.filter((_, i) => i % 7 < width)]),
+    ) }, 90)
+    h.record(120, [sample(APP.container, 0.2, 200, 3_000, 3_000)])
+    expect(h.sampled(on('io-future-only'))).toBe(false)
+    expect(named(h.query([APP], 0, 4_000, 30), 'cpu_cores')[0]!.points).toEqual([[90, 0.1], [120, 0.2]])
+    expect(named(h.query([APP], 0, 4_000, 30), 'egress_bytes_rate')[0]!.points).toEqual([[120, 100]])
+  })
+
   test('load skips malformed containers and past-retention samples instead of failing', () => {
     const h = new MetricsHistory()
     h.load({ version: 1, samples: {

@@ -157,6 +157,7 @@ export class MetricsHistory {
       if (!arr.every((n) => typeof n === 'number' && Number.isFinite(n))) continue
       const kept: number[] = []
       for (let i = 0; i < arr.length; i += width) {
+        if ((arr[i] as number) > nowSec) continue
         if (kept.length >= FIELDS && kept[kept.length - FIELDS]! >= (arr[i] as number)) continue
         const values = arr.slice(i + 1, i + V1_FIELDS) as number[]
         kept.push(arr[i] as number, ...values.map(clean), version === 1 ? 0 : generationValue(arr[i + 5]), version === 3 ? Number(arr[i + 6] === 1) : Number(clean(arr[i + 2] as number) > 0))

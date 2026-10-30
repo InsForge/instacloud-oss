@@ -1,0 +1,47 @@
+code: ubuntu-desktop
+version: "1.0.0"
+maintainer: official
+sourceRepo: InsForge/insta-oss
+
+upstream:
+  repo: fcwu/docker-ubuntu-vnc-desktop
+  image: docker.io/dorowu/ubuntu-desktop-lxde-vnc
+  pinned: "focal"                 # Ubuntu 20.04 LTS + LXDE; upstream ships no numeric tag,
+                                   # only Ubuntu-codename tags (see the README's Configuration table)
+  license: Apache-2.0
+
+services:
+  desktop:
+    type: web
+    image: docker.io/dorowu/ubuntu-desktop-lxde-vnc:focal
+    port: 80
+    healthcheck: /   # nginx answers 401 unauthenticated (HTTP_PASSWORD set), which counts as healthy
+    # No alwaysOn: the browser reaches this INBOUND, so wake-on-request works.
+    # No volume: the desktop/session state lives in the container's root fs ($HOME), not /data.
+    # Upstream's entrypoint offers no way to redirect $HOME onto a mounted path, so state does not
+    # survive a restart either way - see Open questions on the PR.
+    env:
+      required:
+        # Neither `default:` nor `generate:`: this box is a root VNC/desktop session on the public
+        # internet, gated by nginx basic auth. The operator picks it, nothing falls back.
+        USER:
+          description: "Desktop login username (also used for the HTTP basic-auth realm)"
+        PASSWORD:
+          description: "Desktop user's password inside the container"
+        HTTP_PASSWORD:
+          description: "HTTP basic-auth password nginx asks for before serving the desktop at all"
+
+meta:
+  name: Ubuntu Desktop (LXDE, noVNC)
+  tagline: A full Ubuntu 20.04 graphical desktop in your browser, no VNC client needed
+  category: dev-tools
+  tags: [linux, desktop, vnc, dev-tools]
+  architectures: [amd64]   # upstream publishes focal as amd64-only; focal-arm64 is a separate,
+                           # untested tag - see Open questions
+  logo: none  # upstream (fcwu/docker-ubuntu-vnc-desktop) ships no product mark, only README screenshots
+  links:
+    upstream: https://github.com/fcwu/docker-ubuntu-vnc-desktop
+    documentation: https://github.com/fcwu/docker-ubuntu-vnc-desktop#readme
+  draft: true   # no home-directory persistence across restarts, and 'dev-tools' is a proposed
+                # new category (existing set is ai-agent/llm/automation) - both flagged for a human
+                # decision under Open questions

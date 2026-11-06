@@ -128,7 +128,7 @@ immediately. Apps land on `https://<group>-<project>-<branch>.<domain>` and data
 `pg-<name>-<project>-<branch>.<domain>:5432`.
 
 Full details, including firewalls, reflinks and your own domain:
-[docs.instacloud.com/self-hosting](https://docs.instacloud.com/self-hosting/overview).
+[www.instacloud.com/docs/self-hosting](https://www.instacloud.com/docs/self-hosting/overview).
 
 ## Deploy from GitHub
 

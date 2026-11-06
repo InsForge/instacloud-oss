@@ -179,7 +179,7 @@ describe('stripDeployBadge', () => {
   })
 
   it('does not touch an unrelated image or link', () => {
-    const text = `# n8n\n\n![shot](./shot.png)\n\n[docs](https://docs.instacloud.com/)\n`
+    const text = `# n8n\n\n![shot](./shot.png)\n\n[docs](https://www.instacloud.com/docs/)\n`
     expect(stripDeployBadge(text)).toBe(text)
   })
 

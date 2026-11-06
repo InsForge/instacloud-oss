@@ -17,7 +17,7 @@
 
 import type { RunMode } from './mode'
 
-export const DOCS_URL = 'https://docs.instacloud.com/self-hosting/overview'
+export const DOCS_URL = 'https://www.instacloud.com/docs/self-hosting/overview'
 
 const INSTALL = 'npm install -g insta'
 

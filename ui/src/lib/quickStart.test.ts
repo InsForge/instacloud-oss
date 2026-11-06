@@ -72,7 +72,7 @@ describe('quickStartCards', () => {
   })
 
   it('reads docs from the self-hosting guide', () => {
-    expect(DOCS_URL).toBe('https://docs.instacloud.com/self-hosting/overview')
+    expect(DOCS_URL).toBe('https://www.instacloud.com/docs/self-hosting/overview')
   })
 })
 

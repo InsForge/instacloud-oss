@@ -8,7 +8,7 @@ against the daemon. Cloud-only concepts return `501` with guidance rather than p
 
 Two rows differ by run mode. **Server mode** is a box installed with `install.sh`: a domain, one
 admin account, `insta_` tokens. **Local mode** is `npm run dev` on your laptop: no auth, no
-domain. See [self-hosting](https://docs.instacloud.com/self-hosting/overview).
+domain. See [self-hosting](https://www.instacloud.com/docs/self-hosting/overview).
 
 ## CLI commands
 
@@ -82,7 +82,7 @@ access, and the daemon does not verify the signed assertion the CLI attaches to 
 The backups API routes answer `501` with a hint that names the documented path, and there is
 no `insta backup` command yet. Until the backups milestone: `pg_dump "$(insta postgres url)"` per
 branch, a tar of `vol/` and the Garage directories under the data directory. See
-[upgrade and backups](https://docs.instacloud.com/self-hosting/upgrade).
+[upgrade and backups](https://www.instacloud.com/docs/self-hosting/upgrade).
 
 ## MCP tools
 

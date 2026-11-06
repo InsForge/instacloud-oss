@@ -153,5 +153,5 @@ Include: OS, Docker + Node versions, the daemon log, and the failing `insta` com
 
 ## Docs and plans
 
-- `docs/` holds the docs pages in Mintlify format. The published docs at https://www.instacloud.com/docs are built from `content/docs/` in `InsForge/instacloud-landing`. Navigation lives in `docs/docs.json`; a page missing from it still builds (reachable by URL, searchable) but does not appear in the sidebar, so list every page you add. `test/docs-lint.test.ts` fails when a page is unlisted. Preview with `cd docs && npx mint dev`.
+- Published docs at https://www.instacloud.com/docs are built from `content/docs/` in `InsForge/instacloud-landing`; changes that should appear on the site go there. This repository's `docs/` tree, the earlier Mintlify source, is no longer published. `test/docs-lint.test.ts` still checks it: navigation lives in `docs/docs.json`, and the test fails when a page is unlisted. Preview it with `cd docs && npx mint dev`.
 - Internal planning notes live in `plans/`, not under `docs/`.
